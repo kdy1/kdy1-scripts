@@ -1,0 +1,7 @@
+interface:
+  display_name: "Write PRD"
+  short_description: "Create decision-complete PRD issues"
+  default_prompt: "Use $write-prd to resolve the feature decisions and create a repository-compatible PRD issue."
+
+policy:
+  allow_implicit_invocation: false

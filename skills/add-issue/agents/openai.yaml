@@ -1,7 +1,7 @@
 interface:
   display_name: "Add Issue"
   short_description: "Create evidence-backed GitHub issues"
-  default_prompt: "Use $add-issue to investigate the work and create a decision-complete GitHub issue only when evidence shows it remains necessary."
+  default_prompt: "Use $add-issue to investigate the work and create an evidence-complete GitHub problem record without inventing a fix or implementation approach not supplied by the user."
 
 policy:
   allow_implicit_invocation: false

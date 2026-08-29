@@ -1,6 +1,6 @@
 ---
 name: list-good-prs
-description: List open pull requests in the current GitHub repository that are CLEAN and have a +1 reaction from chatgpt-codex-connector[bot]. Use when the user asks for good or Codex-approved PRs; this skill only reports them and never changes repository state.
+description: List open pull requests in the current GitHub repository that are CLEAN or UNSTABLE and have a +1 reaction from chatgpt-codex-connector[bot]. Use when the user asks for good or Codex-approved PRs; this skill only reports them and never changes repository state.
 ---
 
 # List Good PRs
@@ -8,7 +8,7 @@ description: List open pull requests in the current GitHub repository that are C
 Report the current repository's open pull requests that satisfy both of these
 conditions:
 
-- GitHub `mergeStateStatus` is exactly `CLEAN`.
+- GitHub `mergeStateStatus` is exactly `CLEAN` or `UNSTABLE`.
 - The pull request itself has a `+1` reaction from
   `chatgpt-codex-connector[bot]`.
 
@@ -22,9 +22,9 @@ Reactions on reviews, review comments, and issue comments do not qualify.
 2. Enumerate open PR numbers, then fetch each PR individually and filter the
    individual result. Do not request or filter `mergeStateStatus` from
    `gh pr list`: its aggregate results can disagree with a direct PR query.
-3. For each `CLEAN` PR, use GitHub's issue reactions endpoint to fetch every
-   page of top-level `+1` reactions. Pull requests use their PR number as the
-   issue number for this endpoint. Match the actor login exactly.
+3. For each `CLEAN` or `UNSTABLE` PR, use GitHub's issue reactions endpoint to
+   fetch every page of top-level `+1` reactions. Pull requests use their PR
+   number as the issue number for this endpoint. Match the actor login exactly.
 
    Run this read-only Bash query from the repository:
 
@@ -38,13 +38,13 @@ Reactions on reviews, review comments, and issue comments do not qualify.
 
    if [[ -n "$open_pr_numbers" ]]; then
      while IFS= read -r pr_number; do
-       clean_pr="$(
+       eligible_pr="$(
          gh pr view "$pr_number" \
            --json number,title,url,author,headRefName,baseRefName,mergeStateStatus,isDraft,updatedAt \
-           --jq 'select(.mergeStateStatus == "CLEAN")'
+           --jq 'select(.mergeStateStatus == "CLEAN" or .mergeStateStatus == "UNSTABLE")'
        )"
 
-       if [[ -z "$clean_pr" ]]; then
+       if [[ -z "$eligible_pr" ]]; then
          continue
        fi
 
@@ -60,7 +60,7 @@ Reactions on reviews, review comments, and issue comments do not qualify.
        )"
 
        if [[ "$has_codex_plus_one" == "true" ]]; then
-         good_prs+=("$clean_pr")
+         good_prs+=("$eligible_pr")
        fi
      done <<< "$open_pr_numbers"
    fi
@@ -76,11 +76,12 @@ Reactions on reviews, review comments, and issue comments do not qualify.
 5. Report the repository name and result count, followed by a Markdown table
    containing:
    - linked PR number and title
+   - `mergeStateStatus`
    - author login
    - base and head branches as `base ← head`
    - update time
 6. If the result is empty, explicitly say that the repository has no open PRs
-   that are both `CLEAN` and have a `+1` reaction from
+   that are `CLEAN` or `UNSTABLE` and have a `+1` reaction from
    `chatgpt-codex-connector[bot]`.
 
 ## Failures

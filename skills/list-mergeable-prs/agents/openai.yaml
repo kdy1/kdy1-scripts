@@ -1,7 +1,0 @@
-interface:
-  display_name: "List Mergeable PRs"
-  short_description: "Find CLEAN pull requests in the current repository"
-  default_prompt: "Use $list-mergeable-prs to list CLEAN pull requests in the current GitHub repository."
-
-policy:
-  allow_implicit_invocation: true

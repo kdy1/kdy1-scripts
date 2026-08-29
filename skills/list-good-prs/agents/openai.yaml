@@ -1,0 +1,7 @@
+interface:
+  display_name: "List Good PRs"
+  short_description: "Find CLEAN PRs approved by the Codex connector"
+  default_prompt: "Use $list-good-prs to list CLEAN pull requests approved by the Codex connector in the current GitHub repository."
+
+policy:
+  allow_implicit_invocation: true

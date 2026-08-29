@@ -29,6 +29,15 @@ Create one durable, implementation-ready GitHub record per independently impleme
 - Use a browser only when preceding paths are unavailable or insufficient, or when browser-only session state or visual evidence is necessary. Record why it was needed and obey any active restriction on browser workflows.
 - Keep investigation read-only unless the user separately authorizes a state-changing reproduction. A missing tool or expired login does not justify skipping another safe path.
 
+## Subagent Orchestration
+
+- When subagent delegation is available, using it is required. Before drafting a handoff, delegate at least one bounded, read-only investigation and use all useful slots concurrently. Assign separate candidates to separate investigators when possible; for one candidate, split independent evidence boundaries such as repository contracts and source, runtime evidence, affected-versus-default-branch comparison, and duplicate history. The coordinating agent must continue complementary work instead of waiting idly.
+- Give each investigator the active instructions, exact candidate and revision or environment, bounded questions, allowed evidence sources, forbidden mutations, and required deliverable. Require sourced facts, commands or code references, separated inferences, supporting and contradicting evidence, unresolved questions, and any workspace artifacts or changes.
+- Investigation subagents must not create, update, type, or comment on GitHub issues or perform another persistent external mutation. Keep their work read-only by default. If temporary instrumentation or revision-specific execution is necessary and authorized, give each investigator its own isolated worktree or copy; never let concurrent investigators instrument the shared checkout. Require cleanup and a workspace-integrity report.
+- The coordinating agent owns the candidate and evidence ledgers, validates material claims, reconciles conflicts, requests targeted follow-up when needed, selects the classification and outcome, and approves the exact audited handoff payload. Agreement among subagents is not a substitute for causal or authoritative evidence.
+- After the workspace is restored and the handoff is audited, delegate all permitted GitHub writes to one dedicated recording subagent that did not investigate the candidates. Give it the exact repository, candidate outcome, title, complete body or comment, selected Issue Type and other required metadata, and the only permitted action. The recording subagent must serialize candidates, re-check write permission, duplicate state, and Issue Type immediately before each write, and return without improvising if those preconditions or the approved payload no longer match current state. After a write, it must re-fetch the record and return the verified URL, type, title, and action taken.
+- Do not dispatch the recording subagent for `already fixed`, `unconfirmed`, `failed`, or complete existing-issue outcomes, and never dispatch it to write while Plan Mode is active. Delegation never expands authorization. Temporary slot occupancy is not a fallback condition: finish or wait for current investigators, then obtain a distinct recording subagent. Only when subagent capability is absent or no usable subagent can be obtained after current delegated work completes may the coordinating agent perform a required phase locally, and it must report the exact fallback in the final outcome.
+
 ## Classification and Partitioning
 
 Classify by the requested behavior, not by the user's preferred type name:
@@ -83,11 +92,13 @@ For `Task` candidates, resolve the current state, intended maintenance outcome, 
    - Identify the target repository, affected area, intended or expected behavior, current state, impact, environment, evidence, and requested outcome.
    - Read applicable repository instructions, authoritative docs, nearby source, tests, configuration, templates, and relevant issue history before asking discoverable questions.
    - Select `Bug`, `Feature`, or `Task` and partition independently implementable candidates.
+   - Build the subagent investigation map, dispatch the bounded research assignments, and record their sourced results in the candidate and evidence ledgers.
 
 2. Establish readiness.
    - For a `Bug`, reproduce and isolate the failure on the affected revision, inspect relevant authorized read-only runtime evidence, exclude competing explanations, and evaluate the confirmed cause on the freshly fetched default branch.
    - For a `Feature` or `Task`, establish current state and authoritative constraints, evaluate material alternatives, ask for undiscoverable intent, and resolve implementation, compatibility, rollout, operational, and verification decisions that apply.
    - Reduce inaccessible evidence to a portable sanitized representation and prepare exact test setups, actions, and assertions.
+   - Reconcile the subagent findings, independently verify every material claim used in the outcome, and resolve or explicitly fail any contradiction that could change classification, scope, or verification.
 
 3. Build and audit each handoff.
    - Draft one complete new issue or duplicate comment per ready candidate using only facts that can remain in the issue thread and repository.
@@ -101,9 +112,9 @@ For `Task` candidates, resolve the current state, intended maintenance outcome, 
 
 5. Record every ready candidate.
    - In Plan Mode, perform no GitHub write. Return the exact repository, classification, optional supported Issue Type, title, complete body or duplicate comment, and the later `gh` action.
-   - Otherwise, verify authenticated write permission and discover the target repository's required metadata and available Issue Types before writing.
-   - For an open duplicate, update its type only when supported and required, then add one self-contained comment only when the new report supplies missing evidence or decisions. If the existing thread is complete, perform no write and return it.
-   - Without a duplicate, create the issue with the supported metadata required by the repository. When an Issue Type is available and selected, include it in the creation request and re-fetch it; otherwise create without a type.
+   - Otherwise, dispatch the dedicated recording subagent with the approved payload. It must verify authenticated write permission and discover the target repository's required metadata and available Issue Types before writing.
+   - For an open duplicate, the recording subagent must update its type only when supported and required, then add one self-contained comment only when the new report supplies missing evidence or decisions. If the existing thread is complete, it must perform no write and return it.
+   - Without a duplicate, the recording subagent must create the issue with the supported metadata required by the repository. When an Issue Type is available and selected, it must include it in the creation request and re-fetch it; otherwise it must create without a type.
    - If one record fails, retain its failure details and continue with other independently audited candidates when safe.
 
 6. Report every outcome.

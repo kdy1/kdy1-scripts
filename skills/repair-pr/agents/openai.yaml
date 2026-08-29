@@ -4,4 +4,4 @@ interface:
   default_prompt: "Use $repair-pr to repair the current or specified GitHub PR once, then push the finished fixes."
 
 policy:
-  allow_implicit_invocation: true
+  allow_implicit_invocation: false

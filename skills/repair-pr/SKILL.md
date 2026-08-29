@@ -1,13 +1,13 @@
 ---
 name: repair-pr
-description: One-shot GitHub pull request repair workflow for the current or specified repository. Use when asked to repair a PR by resolving merge conflicts, applying actionable unresolved review feedback from chatgpt-codex-connector[bot], fixing failing CI, committing coherent repair chunks, pushing once, and resolving handled bot review threads.
+description: One-shot GitHub pull request repair workflow for the current or specified repository. Use when asked to repair a PR by resolving merge conflicts, handling unresolved review feedback from chatgpt-codex-connector[bot], explaining incorrect feedback in English, fixing failing CI, pushing once, and resolving handled bot review threads.
 ---
 
 # Repair PR
 
 ## Goal
 
-Repair the current or specified GitHub PR once, then stop. Handle merge conflicts, actionable unresolved review feedback from `chatgpt-codex-connector[bot]`, and CI failures in that order. Commit after each coherent repair phase, but push only once after all local changes are complete.
+Repair the current or specified GitHub PR once, then stop. Handle merge conflicts, unresolved review feedback from `chatgpt-codex-connector[bot]`, and CI failures in that order. Correct actionable findings, explain objectively incorrect findings in English in their inline threads, and resolve handled threads. Commit after each coherent repair phase, but push only once after all local changes are complete.
 
 ## Workflow
 
@@ -29,11 +29,13 @@ Repair the current or specified GitHub PR once, then stop. Handle merge conflict
 3. Apply bot review feedback.
    - Consider only unresolved, non-outdated review threads with at least one comment authored by `chatgpt-codex-connector[bot]`.
    - Ignore approvals, resolved threads, outdated threads, duplicates, non-actionable notes, and review threads that do not include `chatgpt-codex-connector[bot]` feedback.
+   - Evaluate each finding against the current diff, applicable contracts, implementation behavior, and tests. Do not assume the review is correct merely because the bot authored it.
    - Group related actionable threads by behavior or file, implement the smallest correct fix, and update documentation or repository instructions when the repository requires it or the public contract changed.
    - Run focused tests for each repair group.
    - Commit each coherent review-fix group.
-   - Record each handled thread id, but do not resolve review threads until the final push succeeds.
-   - If a review comment is ambiguous or would cause a regression, leave the thread unresolved and report the blocker.
+   - When a finding is objectively incorrect, do not change correct code to appease it. Record the thread id and prepare a concise English reply for that same inline thread. Explain the review's incorrect assumption and cite concrete evidence such as the relevant behavior, invariant, or test; do not merely state that the finding is wrong.
+   - Record actionable fixed thread ids separately from incorrect thread ids. Do not resolve either kind until the final push succeeds, if a push is required.
+   - Treat uncertain or ambiguous findings as blockers, not as incorrect findings. Leave their threads unresolved and report what evidence or decision is missing. Also leave a thread unresolved when applying its suggestion would cause a regression but the review's premise cannot be conclusively disproved.
 
 4. Fix CI failures.
    - Use `gh pr checks <pr> --json name,state,bucket,link,workflow` to identify failing checks.
@@ -45,7 +47,9 @@ Repair the current or specified GitHub PR once, then stop. Handle merge conflict
    - Run the validation required by the repository instructions plus the closest relevant checks for every touched area. Derive commands from the target project instead of assuming a language, package manager, or directory layout.
    - Re-run the bundled helper's `status --pr <pr>` command once for a final summary.
    - If any commits were created, push once with `git push` for the current branch. Because this workflow merges instead of rebasing, do not force-push.
-   - After the final push succeeds, resolve each handled review thread with the bundled helper's `resolve-thread <thread-id>` command.
+   - After the final push succeeds, or immediately when no push is needed, post each prepared incorrect-finding explanation to its original inline thread with the bundled helper's `reply-thread <thread-id> --body <english-explanation>` command. Use `--body-file <path>` instead of `--body` when the explanation contains multiline or shell-sensitive text.
+   - Resolve an incorrect-finding thread with `resolve-thread <thread-id>` only after its inline reply succeeds. If the reply fails, leave the thread unresolved and report the failure.
+   - Resolve each actionable fixed thread with `resolve-thread <thread-id>` after the final push succeeds, or immediately when no push is needed. Do not resolve ambiguous, blocked, or otherwise unhandled threads.
    - Do not start a monitoring loop or keep polling checks after the final status check.
 
 ## Helper
@@ -55,6 +59,8 @@ Resolve `<skill-directory>` as the directory containing this `SKILL.md`. The tar
 ```bash
 node "<skill-directory>/scripts/repair-pr.mjs" status
 node "<skill-directory>/scripts/repair-pr.mjs" status --pr 123 --json
+node "<skill-directory>/scripts/repair-pr.mjs" reply-thread PRRT_kwDO... --body "The review assumes ..., but ..."
+node "<skill-directory>/scripts/repair-pr.mjs" reply-thread PRRT_kwDO... --body-file /path/to/reply.md
 node "<skill-directory>/scripts/repair-pr.mjs" resolve-thread PRRT_kwDO...
 ```
 

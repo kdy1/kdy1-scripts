@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { exit } from "node:process";
 
 const REVIEW_AUTHOR = "chatgpt-codex-connector[bot]";
@@ -15,6 +16,8 @@ if (!command || command === "--help" || command === "-h") {
 
 if (command === "status") {
   statusCommand(args.slice(1));
+} else if (command === "reply-thread") {
+  replyThreadCommand(args.slice(1));
 } else if (command === "resolve-thread") {
   resolveThreadCommand(args.slice(1));
 } else {
@@ -67,6 +70,72 @@ function statusCommand(rawArgs) {
   }
 }
 
+function replyThreadCommand(rawArgs) {
+  const options = parseReplyThreadArgs(rawArgs);
+
+  if (options.help) {
+    printReplyThreadHelp();
+    exit(0);
+  }
+
+  if (!options.threadId) {
+    fail("Missing review thread id.");
+  }
+
+  if ((options.body === null) === (options.bodyFile === null)) {
+    fail("Provide exactly one of --body or --body-file.");
+  }
+
+  let body = options.body;
+
+  if (options.bodyFile !== null) {
+    try {
+      body = readFileSync(options.bodyFile, "utf8");
+    } catch (error) {
+      fail(`Could not read reply body file ${options.bodyFile}: ${error.message}`);
+    }
+  }
+
+  if (!body?.trim()) {
+    fail("Review thread reply body must not be empty.");
+  }
+
+  const query = `
+mutation($threadId: ID!, $body: String!) {
+  addPullRequestReviewThreadReply(input: {
+    pullRequestReviewThreadId: $threadId
+    body: $body
+  }) {
+    comment {
+      id
+      url
+    }
+  }
+}`;
+  const result = runJson("gh", [
+    "api",
+    "graphql",
+    "-f",
+    `query=${query}`,
+    "-F",
+    `threadId=${options.threadId}`,
+    "-f",
+    `body=${body}`,
+  ]);
+  failOnGraphQLErrors(result, "reply to review thread");
+
+  const comment = result?.data?.addPullRequestReviewThreadReply?.comment;
+
+  if (!comment?.id) {
+    fail(`GitHub did not report a reply for thread ${options.threadId}.`);
+  }
+
+  process.stdout.write(`Replied to review thread ${options.threadId}\n`);
+  if (comment.url) {
+    process.stdout.write(`${comment.url}\n`);
+  }
+}
+
 function resolveThreadCommand(rawArgs) {
   const options = parseResolveThreadArgs(rawArgs);
 
@@ -105,6 +174,51 @@ mutation($threadId: ID!) {
   }
 
   process.stdout.write(`Resolved review thread ${thread.id}\n`);
+}
+
+function parseReplyThreadArgs(rawArgs) {
+  const parsed = {
+    body: null,
+    bodyFile: null,
+    help: false,
+    threadId: null,
+  };
+
+  for (let i = 0; i < rawArgs.length; i += 1) {
+    const arg = rawArgs[i];
+
+    if (arg === "--help" || arg === "-h") {
+      parsed.help = true;
+    } else if (arg === "--body") {
+      if (parsed.body !== null) {
+        fail("--body may be provided only once.");
+      }
+      parsed.body = requireValue(rawArgs, ++i, arg);
+    } else if (arg.startsWith("--body=")) {
+      if (parsed.body !== null) {
+        fail("--body may be provided only once.");
+      }
+      parsed.body = arg.slice("--body=".length);
+    } else if (arg === "--body-file") {
+      if (parsed.bodyFile !== null) {
+        fail("--body-file may be provided only once.");
+      }
+      parsed.bodyFile = requireValue(rawArgs, ++i, arg);
+    } else if (arg.startsWith("--body-file=")) {
+      if (parsed.bodyFile !== null) {
+        fail("--body-file may be provided only once.");
+      }
+      parsed.bodyFile = arg.slice("--body-file=".length);
+    } else if (arg.startsWith("--")) {
+      fail(`Unknown reply-thread argument: ${arg}`);
+    } else if (!parsed.threadId) {
+      parsed.threadId = arg;
+    } else {
+      fail(`Unexpected reply-thread argument: ${arg}`);
+    }
+  }
+
+  return parsed;
 }
 
 function parseStatusArgs(rawArgs) {
@@ -517,9 +631,23 @@ function printGlobalHelp() {
 
 Commands:
   status          Show PR merge state, unresolved bot review threads, and failing checks.
+  reply-thread    Reply to a GitHub review thread by node id.
   resolve-thread  Resolve a GitHub review thread by node id.
 
 Run "repair-pr.mjs <command> --help" for command-specific options.
+`);
+}
+
+function printReplyThreadHelp() {
+  process.stdout.write(`Usage: repair-pr.mjs reply-thread <thread-id> (--body <text> | --body-file <path>)
+
+Arguments:
+  thread-id                      GitHub review thread GraphQL node id.
+
+Options:
+  --body <text>                  Reply body.
+  --body-file <path>             Read the reply body from a UTF-8 file.
+  -h, --help                     Show this help.
 `);
 }
 

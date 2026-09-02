@@ -1,0 +1,7 @@
+interface:
+  display_name: "Write Marketing Copy"
+  short_description: "Create LinkedIn, X, and Threads marketing copy"
+  default_prompt: "Use $write-marketing-copy to turn this idea into posts for LinkedIn, X, and Threads."
+
+policy:
+  allow_implicit_invocation: false

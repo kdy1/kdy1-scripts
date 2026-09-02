@@ -41,4 +41,6 @@ Unless the user requests only some platforms, return all three sections in this 
 2. `X`
 3. `Threads`
 
-Return only the labeled, ready-to-post copy. Do not add strategy notes, explanations, or alternative drafts unless requested.
+Put each platform's ready-to-post copy in its own fenced code block, with the platform label outside the block. Do not add a language identifier to the fence. If X requires a thread, put each numbered post in a separate fenced code block so it can be copied independently.
+
+Return only the labels and ready-to-post copy. Do not add strategy notes, explanations, or alternative drafts unless requested.

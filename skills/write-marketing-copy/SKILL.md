@@ -1,11 +1,17 @@
 ---
 name: write-marketing-copy
-description: Turn a topic, notes, announcement, or draft into platform-native marketing posts for LinkedIn, X, and Threads. Use when explicitly invoked to produce English LinkedIn and X copy plus formal-polite Korean Threads copy.
+description: Write or rephrase platform-native marketing posts for LinkedIn, X, and Threads. Use when explicitly invoked to turn source material into posts or improve existing social copy, with English LinkedIn and X plus formal-polite Korean Threads defaults.
 ---
 
 # Write Marketing Copy
 
-Create publication-ready social copy from the material the user provides. Adapt the same core message to each platform instead of translating it literally. Do not publish the posts.
+Create or rephrase publication-ready social copy from the material the user provides. Adapt the same core message to each platform instead of translating it literally. Do not publish the posts.
+
+## Choose the operation
+
+- For a topic, notes, announcement, or a request for platform variants, create platform-native posts using the defaults below.
+- When the user asks to rephrase, rewrite, or polish existing copy, return one improved version in the same language and for the same platform. Preserve its point of view, intent, approximate length, and structure unless the user asks to change them. Do not automatically expand a rephrase into all three platforms.
+- In a rephrase, improve clarity, flow, naturalness, and platform fit without adding new ideas, calls to action, or hashtags. Return multiple alternatives only when requested.
 
 ## Preserve the source
 
@@ -35,12 +41,14 @@ Write in natural Korean using consistent formal polite endings such as `-합니�
 
 ## Output
 
-Unless the user requests only some platforms, return all three sections in this order:
+For new copy or cross-platform adaptation, unless the user requests only some platforms, return all three sections in this order:
 
 1. `LinkedIn`
 2. `X`
 3. `Threads`
 
-Put each platform's ready-to-post copy in its own fenced code block, with the platform label outside the block. Do not add a language identifier to the fence. If X requires a thread, put each numbered post in a separate fenced code block so it can be copied independently.
+For a rephrase, return a single fenced code block under the applicable platform label. If the platform is unknown, use `Rephrased copy` as the label.
+
+Put each ready-to-post copy in its own fenced code block, with the label outside the block. Do not add a language identifier to the fence. If X requires a thread, put each numbered post in a separate fenced code block so it can be copied independently.
 
 Return only the labels and ready-to-post copy. Do not add strategy notes, explanations, or alternative drafts unless requested.

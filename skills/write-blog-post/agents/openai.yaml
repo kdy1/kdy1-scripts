@@ -1,0 +1,7 @@
+interface:
+  display_name: "Write Blog Post"
+  short_description: "Suggest blog topics and reshape notes only on request"
+  default_prompt: "Use $write-blog-post to collect my notes and suggest topics to develop; only when I ask, rephrase and reorder my supplied content into a natural blog draft without inventing content."
+
+policy:
+  allow_implicit_invocation: false

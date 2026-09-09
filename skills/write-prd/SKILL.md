@@ -43,11 +43,15 @@ Read these files before asking PRD questions or writing the issue:
 2. Collect decisions.
    - Ask only questions that materially close open ledger rows.
    - Keep asking until every applicable row is answered, explicitly not applicable, or contract-determined.
-   - Reconcile contradictions immediately and track evidence, open questions, and user answers separately.
+   - After each user answer, update the ledger. If applicable rows remain open, perform any needed read-only investigation and ask the next small batch of questions in the same turn; do not wait for a separate request to continue.
+   - Reconcile contradictions immediately and track evidence, open questions, and user answers separately. Partial or ambiguous answers leave the affected decisions open and require follow-up questions, not inferred defaults.
+   - While applicable rows remain open, do not end with only a progress summary, draft, or final plan, ask whether to continue, or request a mode switch to continue collecting decisions. Pair progress summaries with the next questions using the available question mechanism.
+   - Honor an explicit user request to pause or stop. If a real access blocker prevents progress, explain what is missing and how it can be resolved, but continue investigating and asking independent questions before ending for that blocker.
 
 3. Handle Plan Mode.
-   - In Plan Mode, perform no GitHub write or other external mutation.
-   - When the ledger is complete, return the exact issue title, body, target, metadata to apply, and later `gh` action.
+   - Plan Mode does not stop decision collection: continue read-only investigation and questions under step 2. Perform no GitHub write or other mutation prohibited by the active mode.
+   - Prefer `request_user_input` when available in Plan Mode. Waiting for a user answer is part of the collection loop; after the answer arrives, resume the loop automatically. If the tool is unavailable, ask the questions directly and resume when the user replies.
+   - Only when every applicable ledger row is closed, return a final plan containing the exact issue title, body, target, metadata to apply, and later `gh` action, following the active mode's required output format.
    - When later running outside Plan Mode from a complete prior plan, create the issue without asking for another confirmation.
 
 4. Write the PRD issue.

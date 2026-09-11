@@ -21,7 +21,33 @@ Codex discovers a skill when a scanned directory contains its `SKILL.md`. It sca
 
 After installing or updating a skill, Codex normally detects it automatically. Restart Codex if it does not appear.
 
-### Option 1: Copy one skill into a repository
+### Quickest option: `npx skills`
+
+The [`skills` CLI](https://www.skills.sh/docs/cli) recognizes this repository and its eight skills. Run it from the repository where you want project-scoped skills installed:
+
+```sh
+# Install one skill for Codex in the current project.
+npx skills add kdy1/kdy1-scripts --agent codex --skill write-prd
+
+# Install every skill for Codex in the current project.
+npx skills add kdy1/kdy1-scripts --agent codex --skill '*'
+```
+
+Add `--global` to install for the current user instead of the current project:
+
+```sh
+npx skills add kdy1/kdy1-scripts --agent codex --global --skill '*'
+```
+
+The CLI can list the available skills before installing anything:
+
+```sh
+npx skills add kdy1/kdy1-scripts --list --agent codex
+```
+
+It prompts for the installation method when necessary. Add `--copy` to use independent copies instead of symlinks.
+
+### Manual option: Copy one skill into a repository
 
 Use this option to share a selected, versioned skill with everyone working in one repository. Clone this repository, then copy the selected skill into the target project:
 
@@ -35,7 +61,7 @@ git add .agents/skills/write-prd
 
 Replace `write-prd` with any directory listed in [`skills/`](./skills), then commit the copied directory in the target repository. This preserves the exact skill version used by the project; copy it again when you intentionally want to update it.
 
-### Option 2: Install all skills for one user with symlinks
+### Manual option: Install all skills for one user with symlinks
 
 Use this option to make the skills available from every local repository while keeping them connected to this checkout. Pulling updates in the checkout updates the installed skills as well.
 
@@ -51,7 +77,7 @@ To update the installed skills later:
 git -C "$HOME/src/kdy1-scripts" pull --ff-only
 ```
 
-### Option 3: Copy a skill instead of linking it
+### Manual option: Copy a skill instead of linking it
 
 Copying is useful when symlinks are unavailable or when you need an independent, pinned version. This example installs `repair-pr` for the current user:
 

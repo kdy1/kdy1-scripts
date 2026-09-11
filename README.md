@@ -10,7 +10,7 @@ A collection of standalone [Codex skills](https://learn.chatgpt.com/docs/build-s
 | `list-good-prs` | List clean or unstable pull requests that were approved by the Codex connector. |
 | `redesign-ui` | Plan and visualize a UI redesign before creating an issue. |
 | `repair-pr` | Repair merge conflicts, actionable bot feedback, and failing CI on a pull request. |
-| `review-full` | Run repeated independent reviews and publish one consolidated pull-request review. |
+| `review-full` | Run a sustained three-reviewer pull-request review and publish one consolidated review. |
 | `write-blog-post` | Develop a blog-post draft from material supplied by the user. |
 | `write-marketing-copy` | Rephrase source material into LinkedIn, X, and Threads posts. |
 | `write-prd` | Capture product decisions and create an implementation-ready GitHub issue. |

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Fix Issue"
+  short_description: "Fix an issue and maintain its PR until merged"
+  default_prompt: "Use $fix-issue to fix one GitHub issue, open a non-draft PR with a Closes reference, and maintain it every five minutes by explicitly invoking $repair-pr until I merge or close it."

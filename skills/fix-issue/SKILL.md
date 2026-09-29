@@ -1,27 +1,38 @@
 ---
 name: fix-issue
-description: Select and fix one GitHub issue, create a non-draft PR with a Closes reference, and maintain it every five minutes until merged or closed by explicitly invoking $repair-pr. Use for issue implementation that includes ongoing PR maintenance.
+description: Handle one GitHub issue by commenting with evidence and closing it if already resolved, or implementing a fix, opening a non-draft PR with a Closes reference, and maintaining it every five minutes through explicit $repair-pr invocations until merged or closed.
 ---
 
 # Fix Issue
 
-Implement one issue, open a non-draft pull request, and keep maintaining that PR until the user merges or closes it or asks to stop. A merge-ready PR is still being maintained. Never merge the PR or enable auto-merge. Do not pick another issue after this PR finishes.
+Handle one issue. If it is already resolved, post the supporting evidence, close it as completed, and stop. Otherwise implement it, open a non-draft pull request, and keep maintaining that PR until the user merges or closes it or asks to stop. A merge-ready PR is still being maintained. Never merge the PR or enable auto-merge. Do not pick another issue after closing an already-resolved issue or after the PR finishes, including when the issue was selected automatically.
 
 ## Required Skill and Tools
 
 - Use [$repair-pr](../repair-pr/SKILL.md) explicitly for PR repairs. Resolve its installed `SKILL.md` to an absolute path and use a Markdown skill mention, `[$repair-pr](<absolute-skill-path>)`, together with the exact PR URL whenever invoking it, including in the saved automation prompt. Read and follow the referenced skill at execution time.
 - Do not copy, summarize, inline, or reimplement `$repair-pr` instructions here or in automation prompts. Do not substitute direct calls to its helpers for invoking the skill. Keep the existing skill unchanged.
 - Use authenticated `gh` access for GitHub operations. Discover `automation_update` before setting up recurring maintenance; use a heartbeat in the current chat, not a standalone job or a shell polling loop. Discover `attach_artifact` to attach the created PR.
-- Confirm the repair skill and scheduling tool are available before starting. If a dependency is missing or scheduling fails, report the limitation and which work, if any, was completed. Never claim ongoing maintenance is active without a successful automation registration.
+- Confirm the repair skill and scheduling tool are available before starting implementation or resuming PR maintenance. Their absence must not block evidence-backed closure of an already-resolved issue that needs no PR. If a required dependency is missing or scheduling fails, report the limitation and which work, if any, was completed. Never claim ongoing maintenance is active without a successful automation registration.
 
-## Select and Implement One Issue
+## Select and Assess One Issue
 
 1. Resolve the target repository from the user's explicit context, otherwise from the current checkout's GitHub remote. Confirm authentication and read applicable repository instructions. If no unique repository can be determined, ask for it before changing anything.
-2. Check this chat's context, attached PRs, and existing automations before selecting work. If this workflow already has a PR, resume its maintenance instead of creating another issue, branch, PR, or automation. Reconcile GitHub state after an interrupted creation attempt before retrying.
-3. Use the specified issue when provided. Otherwise, inspect open issues and choose one with clear expected behavior, a bounded implementation, and practical verification. Read its discussion and relevant code, confirm it still needs work, and check for an existing PR addressing it. Prefer an independently verifiable fix over work needing unresolved product decisions. Skip already-covered candidates; if the explicitly selected issue is already covered by someone else's PR, report that PR and clarify the intended work instead of duplicating it.
-4. State the chosen issue and why it is suitable, then proceed. Ask only for material decisions that the issue, repository, and discussion cannot resolve. Do not invent requirements or open a new issue as part of this workflow.
-5. Inspect the working tree and attached worktrees. Reuse a suitable clean worktree or create an isolated managed worktree when needed, following the available worktree tools. Preserve pre-existing changes and keep the chosen checkout available throughout maintenance. Start an issue branch from the freshly fetched intended base, using repository conventions and the actual remote and base branch.
-6. Implement the issue, perform the repository's required validation and relevant regression checks, and commit and push the verified change. Keep the change scoped to the selected issue. Follow repository contribution and commit conventions.
+2. Check this chat's context, attached PRs, and existing automations before selecting work. If this workflow already has a PR, resume its maintenance instead of creating another issue, branch, PR, or automation. Reconcile GitHub state after an interrupted creation or issue-closure attempt before retrying.
+3. Use the specified issue when provided. Otherwise, inspect open issues and choose one with clear expected behavior, a bounded implementation, and practical verification. Read its current state, body, discussion, relevant code, and change history, and check for an existing PR addressing it. If the selected issue is already closed, report its state and stop without reopening it or adding a redundant comment. Prefer independently verifiable work over work needing unresolved product decisions.
+4. State the chosen issue and why it is suitable. Before creating a branch or implementing anything, assess whether its full requirements are already satisfied using the closure procedure below. If they are, complete that procedure and stop. For unresolved issues covered by someone else's open PR, skip automatically considered candidates; if the user explicitly selected the issue, report that PR and clarify the intended work instead of duplicating it. Otherwise continue with implementation. Ask only for material decisions that the issue, repository, and discussion cannot resolve. Do not invent requirements or open a new issue as part of this workflow.
+
+## Close an Already-Resolved Issue
+
+1. Compare the full issue requirements and discussion with the freshly fetched intended target branch, identifying the exact revision inspected. Check relevant code, merged changes, and focused verification, including release, deployment, or real-environment acceptance requirements when the issue explicitly requires them. An open PR, partial implementation, a merged PR alone, or failure to reproduce by itself is not proof of completion. If evidence is insufficient, keep the issue open and continue investigation or report the missing evidence.
+2. Prepare a concise evidence comment explaining how the requirements are satisfied, linking the relevant commits, PRs, or code at the inspected revision, and recording verification commands or checks and their actual results. Distinguish executed checks from code inspection; do not claim unperformed validation.
+3. Re-read the issue state and existing comments before posting, including all comment pages needed to detect a previous attempt. If the issue is already closed, report its state and stop. Reuse an existing comment from this workflow only when it contains the same still-valid evidence. Otherwise write the exact comment to a temporary file and post it with `gh issue comment <issue-url> --body-file <comment-file>`. Confirm the comment exists and retain its URL before closing. If posting fails or its outcome is unknown, reconcile the comments before retrying; do not close without a confirmed evidence comment or blindly post a duplicate.
+4. Close the exact issue with `gh issue close <issue-url> --reason completed`, then re-fetch its state and state reason to verify it is closed as completed. If closing or verification fails, report the failure or uncertainty and the evidence comment URL; do not claim successful closure. Before retrying, reconcile the issue state and comments and reuse the confirmed evidence comment rather than posting it again.
+5. Report the issue URL, evidence comment URL, and verified outcome, then stop. Do not create an issue branch, PR, or maintenance automation for this outcome, and do not select another issue whether the issue was specified by the user or selected automatically.
+
+## Implement an Unresolved Issue
+
+1. Inspect the working tree and attached worktrees. Reuse a suitable clean worktree or create an isolated managed worktree when needed, following the available worktree tools. Preserve pre-existing changes and keep the chosen checkout available throughout maintenance. Start an issue branch from the freshly fetched intended base, using repository conventions and the actual remote and base branch.
+2. Implement the issue, perform the repository's required validation and relevant regression checks, and commit and push the verified change. Keep the change scoped to the selected issue. Follow repository contribution and commit conventions.
 
 ## Create and Verify the PR
 

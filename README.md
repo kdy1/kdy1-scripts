@@ -7,7 +7,7 @@ A collection of standalone [Codex skills](https://learn.chatgpt.com/docs/build-s
 | Skill | Purpose |
 | --- | --- |
 | `add-issue` | Investigate confirmed work and create evidence-backed GitHub issues. |
-| `fix-issue` | Fix one issue, open a non-draft PR with a Closes reference, and maintain it every five minutes through explicit `$repair-pr` invocations until merged or closed. |
+| `fix-issue` | Handle one issue: close it with an evidence comment if already resolved; otherwise fix it, open a non-draft PR with a Closes reference, and maintain it every five minutes through explicit `$repair-pr` invocations until merged or closed. |
 | `list-good-prs` | List clean or unstable pull requests that were approved by the Codex connector. |
 | `redesign-ui` | Plan and visualize a UI redesign before creating an issue. |
 | `repair-pr` | Repair merge conflicts, actionable bot feedback, and failing CI on a pull request. |
@@ -102,7 +102,7 @@ The ChatGPT desktop app also shows standalone skills in its Skills sidebar. Seve
 
 ## Notes
 
-- `fix-issue` requires `repair-pr` to be installed alongside it and the desktop app's heartbeat automation tools for ongoing maintenance. It keeps the PR under maintenance until merged or closed; merging remains the user's responsibility.
+- `fix-issue` closes already-resolved issues as completed after posting and confirming an evidence comment, then stops without selecting another issue or creating a PR or automation. Its implementation and PR maintenance path requires `repair-pr` to be installed alongside it and the desktop app's heartbeat automation tools; these dependencies are not required for evidence-backed issue closure. It keeps the PR under maintenance until merged or closed; merging remains the user's responsibility.
 - Do not place the repository itself directly inside `~/.agents/skills`: Codex expects each immediate child there to be a skill directory containing `SKILL.md`. Clone the repository elsewhere and link or copy its individual directories from `skills/`.
 - Avoid installing two different directories with the same skill `name`. Codex does not merge duplicate skill names; both may appear in the selector.
 - Review a skill's `SKILL.md` and any included scripts before installing it, especially when it can run commands or access external services.

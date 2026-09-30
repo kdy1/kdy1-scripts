@@ -1,0 +1,7 @@
+interface:
+  display_name: "Create Human-Reviewed PR"
+  short_description: "Publish a human-reviewed PR with AI-use disclosure"
+  default_prompt: "Use $create-human-reviewed-pr to publish my reviewed changes as a non-draft GitHub PR, mention me as the human reviewer, and disclose AI use plus any known harness, model, and reasoning effort."
+
+policy:
+  allow_implicit_invocation: false

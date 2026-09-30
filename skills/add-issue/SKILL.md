@@ -1,13 +1,13 @@
 ---
 name: add-issue
-description: Evidence-driven GitHub issue creation for confirmed bugs and decision-complete future work. Use only when a human explicitly invokes `$add-issue`; never select this skill automatically from bug reports, feature ideas, TODOs, URLs, issue references, or task similarity. When explicitly invoked, classify independently implementable candidates as Bug, Feature, or Task; prove defect root causes; compare affected revisions with the freshly fetched default branch; restore temporary instrumentation; and create or update self-contained GitHub records without implementing the work.
+description: Evidence-driven GitHub issue creation for confirmed bugs and decision-complete future work, with evidence-backed metadata where authorized. Use only when a human explicitly invokes `$add-issue`; never select this skill automatically from bug reports, feature ideas, TODOs, URLs, issue references, or task similarity. When explicitly invoked, classify independently implementable candidates as Bug, Feature, or Task; prove defect root causes; compare affected revisions with the freshly fetched default branch; restore temporary instrumentation; and create or update self-contained GitHub records without implementing the work.
 ---
 
 # Add Issue
 
 ## Goal
 
-Create one durable, implementation-ready GitHub record per independently implementable item. Classify each item as `Bug`, `Feature`, or `Task`, establish all facts and decisions the implementer needs, and never implement the recorded work in the same invocation, including after a Plan Mode approval.
+Create one durable, implementation-ready GitHub record per independently implementable item. Classify each item as `Bug`, `Feature`, or `Task`, establish all facts and decisions the implementer needs, and apply all clearly supported metadata that the current authenticated account is permitted to modify. Never implement the recorded work in the same invocation, including after a Plan Mode approval.
 
 ## Non-Negotiable Boundaries
 
@@ -16,13 +16,13 @@ Create one durable, implementation-ready GitHub record per independently impleme
 - Do not implement the recorded work, leave permanent repository changes, update dependencies, generate committed artifacts, commit, push, create a pull request, deploy, or mutate production.
 - A Plan Mode approval, Plan Mode exit, or generic instruction to execute or continue the approved plan authorizes only the audited GitHub-recording action below. It never authorizes implementation of the recorded work, regardless of the normal meaning of an approved plan.
 - Do not transition into implementation later in the same invocation. Finish the issue record and require a separate explicit implementation request made after this invocation.
-- Treat creating an issue, updating a matching open duplicate as permitted below, adding one implementation-handoff comment to that duplicate, and the approved GitHub-native image attachments or single new-issue image-handoff comment described below as the only intended persistent mutations, including after a Plan Mode approval.
+- Treat creating an issue, applying audited metadata to that issue or a matching open duplicate (including authorized project membership and item field values), adding one implementation-handoff comment to that duplicate, and the approved GitHub-native image attachments or single new-issue image-handoff comment described below as the only intended persistent mutations, including after a Plan Mode approval.
 - Treat the issue body's `Proposed Scope`, acceptance criteria, and test scenarios as implementation handoff content for a future assignee, never as instructions to execute in this invocation.
 - Once the GitHub-recording action succeeds or cannot safely proceed, end the invocation without starting implementation work.
 - Prefer read-only investigation. Obtain separate authorization before any state-changing reproduction outside a local or isolated test environment.
 - Preserve secrets, credentials, personal data, customer data, and sensitive request values. Redact them from commands, logs, screenshots, artifacts, comments, and issue bodies.
 - Treat provider-console links, log queries, database rows, customer environments, reporter sessions, and local artifacts as supplementary evidence. Make the GitHub record actionable after those sources become inaccessible.
-- Do not invoke `$write-prd` or add unrelated labels, assignees, milestones, projects, issue types, or other metadata unless the human explicitly requested them or the target repository requires them.
+- Do not invoke `$write-prd` or add unrelated metadata. Apply relevant metadata only under `Metadata Selection and Permissions` below; this does not authorize creating or changing label, type, field, option, milestone, or project definitions.
 
 ## Investigation Tool Selection
 
@@ -38,9 +38,9 @@ Create one durable, implementation-ready GitHub record per independently impleme
 - Give each investigator the active instructions, exact candidate and revision or environment, bounded questions, allowed evidence sources, forbidden mutations, and required deliverable. Require sourced facts, commands or code references, separated inferences, supporting and contradicting evidence, unresolved questions, and any workspace artifacts or changes.
 - Investigation subagents must not create, update, type, or comment on GitHub issues or perform another persistent external mutation. Keep their work read-only by default. If temporary instrumentation or revision-specific execution is necessary and authorized, give each investigator its own isolated worktree or copy; never let concurrent investigators instrument the shared checkout. Require cleanup and a workspace-integrity report.
 - The coordinating agent owns the candidate and evidence ledgers, validates material claims, reconciles conflicts, requests targeted follow-up when needed, selects the classification and outcome, and approves the exact audited handoff payload. Agreement among subagents is not a substitute for causal or authoritative evidence.
-- After the workspace is restored and the handoff is audited, delegate all permitted GitHub writes to one dedicated recording subagent that did not investigate the candidates. Give it the exact repository, candidate outcome, title, complete body or comment, selected Issue Type and other required metadata, any approved image handoff described below, and the only permitted action, including any allowed image-handoff comment. The recording subagent must serialize candidates, re-check write permission, duplicate state, and Issue Type immediately before each write, and return without improvising if those preconditions or the approved payload no longer match current state. After a write, it must re-fetch the record and return the verified URL, type, title, action taken, and any attachment URLs or omissions.
-- The recording subagent's scope is limited to the approved GitHub record, its approved GitHub-native image attachments, and required verification reads. It must not modify the candidate repository, run implementation commands, or continue into implementation after recording succeeds or fails.
-- Do not dispatch the recording subagent for `already fixed`, `unconfirmed`, `failed`, or complete existing-issue outcomes, and never dispatch it to write while Plan Mode is active. Delegation never expands authorization. Temporary slot occupancy is not a fallback condition: finish or wait for current investigators, then obtain a distinct recording subagent. Only when subagent capability is absent or no usable subagent can be obtained after current delegated work completes may the coordinating agent perform a required phase locally, and it must report the exact fallback in the final outcome.
+- After the workspace is restored and the handoff is audited, delegate all permitted GitHub writes to one dedicated recording subagent that did not investigate the candidates. Give it the exact repository, candidate outcome, title, complete body or comment when needed, audited metadata payload, any approved image handoff described below, and the only permitted actions. The recording subagent must serialize candidates and re-check action-specific permission, duplicate state, and metadata definitions and values immediately before each write. If preconditions change, follow only the audited optional-metadata omission policy; otherwise return without improvising. After a write, it must re-fetch the record and any relevant project item and return the verified URL, title, action taken, applied metadata, and any attachment URLs or omissions.
+- The recording subagent's scope is limited to the approved GitHub record, its audited metadata and approved GitHub-native image attachments, and required verification reads. It must not modify the candidate repository, run implementation commands, or continue into implementation after recording succeeds or fails.
+- Do not dispatch the recording subagent for `already fixed`, `unconfirmed`, `failed`, or existing-issue outcomes with neither missing handoff content nor permitted metadata changes, and never dispatch it to write while Plan Mode is active. Delegation never expands authorization. Temporary slot occupancy is not a fallback condition: finish or wait for current investigators, then obtain a distinct recording subagent. Only when subagent capability is absent or no usable subagent can be obtained after current delegated work completes may the coordinating agent perform a required phase locally, and it must report the exact fallback in the final outcome.
 
 ## Classification and Partitioning
 
@@ -53,7 +53,21 @@ Classify by the requested behavior, not by the user's preferred type name:
 
 Maintain one candidate ledger across all three classifications. Split candidates when they can be implemented and verified independently. Keep them together only when the same intended outcome, change boundary, and verification require one implementation.
 
-Classification does not require GitHub Issue Types. If the target supports and enables the exact `Bug`, `Feature`, or `Task` type, set and verify it. If Issue Types are unavailable, create the issue without a type unless the repository contract requires one; if a required type cannot be set, perform no write.
+Classification does not require GitHub Issue Types. If the target supports and enables the exact `Bug`, `Feature`, or `Task` type and permission to set it is confirmed, select and verify it under the metadata rules below. Otherwise create the issue without a type unless the repository contract requires one; if a required type cannot be set, perform no write.
+
+## Metadata Selection and Permissions
+
+- Discover the target repository's instructions, templates, enabled Issue Types, labels and descriptions, organization issue fields and options, and relevant project fields before auditing a handoff. Inspect a bounded set of comparable issues when needed to establish conventions. Reuse existing definitions and exact supported values; do not invent labels, fields, options, or scales.
+- Apply every relevant value that evidence clearly supports, including optional metadata. Use the selected classification for Issue Type and confirmed areas, symptoms, platforms, or other established categories for labels. Do not apply mutually exclusive or contradictory labels merely to maximize coverage.
+- For priority, use demonstrated impact, affected scope, urgency, and available workarounds. For effort or size, use the selected implementation boundary, complexity, dependencies, testing, and migration work. Follow explicit repository rubrics first; otherwise allow a reasoned estimate when the existing scale has a clear meaning, using comparable work where helpful. Record the reasoning. Do not default unknown values to medium or invent precise hours or points; omit ambiguous estimates.
+- Apply other fields when their values are equally well supported. Set assignees, milestones, dates, iterations, or project membership only when the user specifies them or an authoritative repository rule determines them. Do not infer ownership or delivery commitments from code authorship, effort, or the mere existence of a project.
+- Distinguish organization issue fields from project-local fields. Follow the repository's source-of-truth convention for overlapping concepts; absent a convention, prefer an available organization issue field. Do not mirror values into several fields or labels without an established convention. Use project-local fields only for an existing project item or an explicitly authorized project addition. Preserve field visibility; do not copy private values into public issue bodies or comments.
+- Verify permission for each intended operation using the current authenticated identity, read-only repository, organization, or project permission evidence, and the selected API's credential requirements. Permission to create or comment on an issue, read a field, or edit repository metadata does not establish permission to edit every field or project. Confirm the necessary role or capability and credential scope; do not use a speculative write as a permission probe.
+- If support, value, or permission is missing or cannot be confirmed, skip that optional metadata and record why. Do not request extra access, refresh authentication to expand scopes, or switch accounts to fill metadata. If required metadata cannot be selected and applied with confirmed permission, mark the candidate `failed` before any write for it.
+- Include a metadata entry in the audited payload for each intended value: exact issue or project destination, field or label identifier and name, selected value, evidence or estimate rationale, required/optional status, observed existing value, and permission evidence. Include known omissions and authorize skipping optional entries if support or permission is lost or a conflicting value appears before recording; never substitute an unaudited value.
+- On an open duplicate, add missing labels, type, or field values under the same rules, even when its body and thread are complete. Preserve existing values and unrelated metadata. An overwrite or conflicting label change requires an explicit user instruction or authoritative repository rule included in the audited payload. Leave unresolved optional conflicts unchanged; an unresolved required conflict fails the candidate. Metadata-only changes require no comment.
+- Use additive or individual-field writes and re-fetch values afterward. For organization issue fields, use the additive API with a nonempty payload, not the bulk replacement API; an empty additive payload can clear existing values. Do not replace full label or field collections to add missing entries. Verify that existing unrelated values remain intact.
+- If an optional metadata write fails after recording begins, preserve the verified issue and successful metadata and report the omission. If required metadata fails, report `failed` with the surviving record URL and incomplete fields. For an uncertain write outcome, inspect the issue, thread, and relevant project item before retrying; never recreate an issue, comment, or project item while the outcome is unknown.
 
 ## Decision-Complete Handoff Standard
 
@@ -95,6 +109,7 @@ For `Task` candidates, resolve the current state, intended maintenance outcome, 
 1. Ground and classify each candidate.
    - Identify the target repository, affected area, intended or expected behavior, current state, impact, environment, evidence, and requested outcome.
    - Read applicable repository instructions, authoritative docs, nearby source, tests, configuration, templates, and relevant issue history before asking discoverable questions.
+   - Discover metadata conventions, available definitions, and action-specific permissions under `Metadata Selection and Permissions`.
    - Select `Bug`, `Feature`, or `Task` and partition independently implementable candidates.
    - Build the subagent investigation map, dispatch the bounded research assignments, and record their sourced results in the candidate and evidence ledgers.
 
@@ -105,7 +120,7 @@ For `Task` candidates, resolve the current state, intended maintenance outcome, 
    - Reconcile the subagent findings, independently verify every material claim used in the outcome, and resolve or explicitly fail any contradiction that could change classification, scope, or verification.
 
 3. Build and audit each handoff.
-   - Draft one complete new issue or duplicate comment per ready candidate using only facts that can remain in the issue thread and repository.
+   - Draft one complete recording payload per ready candidate, with a new issue body or a duplicate comment only when needed. Use facts that can remain in the issue thread and repository, and include the audited metadata entries and optional omission policy.
    - For an approved redesign, include its self-contained text specification, final prompts, and approved image handoff in the audited payload, following `Approved Redesign Images` below.
    - Audit the draft from the perspective of an engineer with no other context.
    - Treat the draft solely as a GitHub handoff. Its proposed implementation and tests must not become work for this invocation, even if the Plan Mode result is approved.
@@ -114,20 +129,21 @@ For `Task` candidates, resolve the current state, intended maintenance outcome, 
 4. Restore the workspace and check duplicates.
    - Remove temporary instrumentation and compare the workspace with the captured baseline.
    - Search open issues for the same root cause or intended outcome and implementation boundary. Similar symptoms or themes alone are not duplicates.
+   - Inspect each matching issue's current metadata and relevant project items; reduce its payload to missing handoff content and permitted metadata changes. A complete thread may still need metadata, while a metadata-only update must not add a comment.
    - Treat closed issues as history. Link relevant closed records, but create a new issue for current work.
 
 5. Record every ready candidate.
-   - In Plan Mode, perform no GitHub write or attachment upload. Return the exact repository, classification, optional supported Issue Type, title, complete body or duplicate comment, any approved image handoff, and the later recording action.
+   - In Plan Mode, perform no GitHub write or attachment upload. Return the exact repository, classification, title, complete body or duplicate comment when needed, audited metadata entries and omissions, any approved image handoff, and the later recording actions.
    - After Plan Mode approval or outside Plan Mode, dispatch the dedicated recording subagent with the approved payload. Approval permits this recording action only; it does not relax any prohibition on implementing the recorded work.
-   - The recording subagent must verify authenticated write permission and discover the target repository's required metadata and available Issue Types before writing.
-   - For an open duplicate, the recording subagent must update its type only when supported and required, then add one self-contained comment only when the new report supplies missing evidence or decisions. If the existing thread is complete, it must perform no write and return it.
-   - Without a duplicate, the recording subagent must create the issue with the supported metadata required by the repository. When an Issue Type is available and selected, it must include it in the creation request and re-fetch it; otherwise it must create without a type.
+   - The recording subagent must re-check permission for each intended operation and validate metadata definitions, options, and current values against the audited payload before writing. Resolve required-metadata failures before any write and skip optional entries only under the audited omission policy.
+   - For an open duplicate, apply permitted metadata changes and add one self-contained comment only when the new report supplies missing evidence or decisions. If neither content nor permitted metadata changes are needed, perform no write and return the existing issue.
+   - Without a duplicate, create the issue with all audited, supported metadata that can be included in the creation request, including a selected Issue Type when permitted. Apply remaining audited issue fields or project item values to the verified new issue and re-fetch them. Do not omit optional metadata merely because it requires a separate supported request.
    - Include and verify approved redesign images as described below. Attachment fallback never relaxes required metadata or creates another issue for the same candidate.
    - If one record fails, retain its failure details and continue with other independently audited candidates when safe. After every candidate reaches an outcome, end the invocation; do not begin implementation.
 
 6. Report every outcome.
-   - Report `new issue`, `duplicate comment`, `existing issue`, `already fixed`, `unconfirmed`, or `failed` for each candidate.
-   - Include the issue or comment URL, classification, applied Issue Type when any, title, target repository, strongest evidence, and root cause for a `Bug`.
+   - Report `new issue`, `duplicate comment`, `metadata update`, `existing issue`, `already fixed`, `unconfirmed`, or `failed` for each candidate. Use `metadata update` for a duplicate changed only through metadata; include accompanying metadata changes with a new issue or duplicate comment outcome.
+   - Include the issue or comment URL, classification, verified applied metadata (including Issue Type, labels, and issue or project fields), title, target repository, strongest evidence, and root cause for a `Bug`. Report omitted, conflicting, failed, or unverified metadata and why, distinguishing permission limits from insufficient evidence or unsupported fields.
    - For an approved image handoff, report the verified attachment URLs and identify any omitted images and reasons. A verified text-only record remains a successful recording outcome when optional attachments fail.
    - State clearly when no successful GitHub write occurred and report the shared workspace cleanup result once. End after this report without starting, staging, or proposing implementation work.
 
@@ -137,7 +153,7 @@ For `Task` candidates, resolve the current state, intended maintenance outcome, 
 - Keep the text specification authoritative and sufficient without the images. Include the final prompts and descriptions of the approved visuals in the issue thread, respecting repository templates. Local paths belong in the recording payload, never in published image links.
 - Upload only as GitHub-native attachments to the target issue during authorized recording outside Plan Mode. A `$redesign-ui` handoff requires a separate explicit human `$add-issue` invocation outside Plan Mode. Do not upload beforehand, commit images to the repository, publish them to external hosting, or create another persistent artifact to host them.
 - Confirm the relevant `gh issue create --help` or `gh issue comment --help` exposes `--attach` before using it. Prefer `--attach` with the audited `--body-file`, actual file path, and descriptive alt text. If unsupported, use an available authenticated browser's native GitHub attachment flow for the same target and incorporate its returned Markdown into the audited body or comment. Do not silently upgrade the CLI or use unofficial upload endpoints. If browser attachment is also unavailable, continue with text only.
-- Prefer images in the new issue body. When the required metadata-writing path cannot include attachments, create and verify the issue with the complete text specification and final prompts, then add at most one audited image-handoff comment to that verified issue. For an open duplicate, include missing approved visual evidence in the single permitted implementation-handoff comment. Inspect the body and thread first; do not repeat images already recorded or write when the existing thread is complete.
+- Prefer images in the new issue body. When the required metadata-writing path cannot include attachments, create and verify the issue with the complete text specification and final prompts, then add at most one audited image-handoff comment to that verified issue. For an open duplicate, include missing approved visual evidence in the single permitted implementation-handoff comment. Inspect the body and thread first; do not repeat images already recorded or add a comment when the existing thread is complete. Permitted metadata-only updates remain independent of image handoff.
 - After recording, re-fetch the body or comment and verify the GitHub attachment URLs, captions, final prompts, and text specification. A non-zero CLI exit or lost response can still leave a created record or successful attachments. Inspect returned URLs and the target repository or issue thread before retrying; never repeat creation or a comment while its outcome is unknown. Report unresolved outcomes instead of risking a duplicate.
 - If an approved file is missing or an upload fails, preserve any verified record and successful attachments, continue with the self-contained text specification and final prompts, and report each omitted image and reason. Do not publish broken local-file references or treat missing optional images as a reason to implement the redesign.
 
@@ -198,6 +214,21 @@ gh issue comment "$ISSUE" --repo "$OWNER_REPO" --body-file "$COMMENT_FILE"
 ```
 
 Use safely quoted variables and temporary files for multiline Markdown.
+
+For metadata discovery and recording, inspect current command help and the target host's API support first. These are command forms, not permission checks; use only the audited subset after confirming each operation's permission:
+
+```bash
+gh issue create --help
+gh issue edit --help
+gh api --paginate "orgs/$ORG/issue-fields"
+gh api --paginate "repos/$OWNER_REPO/issues/$ISSUE_NUMBER/issue-field-values"
+gh project field-list "$PROJECT_NUMBER" --owner "$PROJECT_OWNER" --format json
+gh issue edit "$ISSUE_NUMBER" --repo "$OWNER_REPO" --type "$ISSUE_TYPE" --add-label "$LABEL"
+gh api --method POST "repos/$OWNER_REPO/issues/$ISSUE_NUMBER/issue-field-values" --input "$METADATA_FILE"
+gh project item-edit --id "$ITEM_ID" --project-id "$PROJECT_ID" --field-id "$FIELD_ID" --single-select-option-id "$OPTION_ID"
+```
+
+For native issue fields, build `METADATA_FILE` as JSON with a nonempty `issue_field_values` array of audited `field_id` and typed `value` entries. Single-select values use an existing option name; project-local single-select writes use the discovered option ID. Never send an empty array or use the replacement `PUT` endpoint. Consult the official [issue field definitions](https://docs.github.com/en/rest/orgs/issue-fields) and [issue field values](https://docs.github.com/en/rest/issues/issue-field-values) API documentation for supported types and permission requirements. Use `--type` only when current CLI help exposes it; retain the API creation path above otherwise.
 
 For approved redesign images, use these attachment forms only after the relevant command's help confirms support, retaining all required metadata options:
 

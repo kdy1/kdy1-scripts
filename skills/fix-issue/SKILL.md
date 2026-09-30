@@ -5,6 +5,8 @@ description: Handle one GitHub issue by commenting with evidence and closing it 
 
 # Fix Issue
 
+Start this workflow only when the human user explicitly invokes `$fix-issue` to handle an issue. Another skill, agent, or automation cannot authorize a new start. Once started by the human user, the registered five-minute heartbeat may continue maintenance of the same PR without a new human invocation.
+
 Handle one issue. If it is already resolved, post the supporting evidence, close it as completed, and stop. Otherwise implement it, open a non-draft pull request, and keep maintaining that PR until the user merges or closes it or asks to stop. A merge-ready PR is still being maintained. Never merge the PR or enable auto-merge. Do not pick another issue after closing an already-resolved issue or after the PR finishes, including when the issue was selected automatically.
 
 ## Required Skill and Tools

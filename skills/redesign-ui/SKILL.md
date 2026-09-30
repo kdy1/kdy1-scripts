@@ -55,9 +55,12 @@ human invocation.
      behavior, keyboard/focus/accessibility requirements, preserved behavior,
      compatibility constraints, acceptance criteria, test scenarios, and
      explicit out-of-scope work.
-   - Record the approved preview, final prompt, and text specification in the
-     conversation's decision-complete Plan Mode result. Do not implement it or
-     create/update a GitHub issue.
+   - Record the approved previews and text specification in the conversation's
+     decision-complete Plan Mode result. For each approved final preview, retain
+     the actual absolute saved file path returned by image generation, target
+     surface, viewport and state, caption or alt text, and final prompt. Keep the
+     preview rendered inline and exclude discarded or superseded variants from
+     the handoff. Do not implement it or create/update a GitHub issue.
 
 4. Require a separate `$add-issue` handoff.
    - While Plan Mode remains active, do not invoke `$add-issue` or perform a
@@ -65,7 +68,7 @@ human invocation.
    - After approval, tell the user to leave Plan Mode and send a new message that
      explicitly invokes `$add-issue`, for example:
 
-     `Use $add-issue to record the approved redesign from this conversation.`
+     `Use $add-issue to record the approved redesign from this conversation, including the approved ImageGen previews and final prompts.`
 
    - The initial `$redesign-ui` invocation, design approval, or a generic request
      such as "file it" does not count as an explicit `$add-issue` invocation.
@@ -78,13 +81,22 @@ human invocation.
 
 - Treat the approved text specification as the durable source of truth and the
   image as supporting evidence.
-- If the permitted GitHub issue-writing path can include the approved image as
-  part of the issue record, attach it. Do not perform a separate upload, publish
-  it to external hosting, commit it to the repository, or introduce another
-  persistent mutation solely to make the image available.
+- Pass the approved final images, their saved file paths and descriptions, final
+  prompts, and text specification through `$add-issue`'s audited recording
+  payload. Its recording phase must include the final prompts and attempt to
+  attach the images to the new issue body or, when that writing path cannot
+  include attachments, one image-handoff comment on the same issue. For an open
+  duplicate, include missing approved visuals in its permitted handoff comment;
+  do not attach images already recorded in the thread.
+- Allow uploads only as GitHub-native attachments to the target issue during
+  the separately authorized `$add-issue` recording phase. Never upload in Plan
+  Mode, publish to external hosting, commit the images to the repository, or
+  introduce another persistent mutation solely to make them available. Follow
+  `$add-issue`'s attachment support checks, browser fallback, and verification.
 - If attachment is unavailable or fails, continue with the self-contained text
-  specification and describe the approved visual precisely enough that the
-  implementer does not need access to the local image.
+  specification and final prompts. Describe the approved visual precisely enough
+  that the implementer does not need access to the local image, and report which
+  images were omitted and why. Never publish local paths as GitHub image links.
 
 ## Boundaries
 

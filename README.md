@@ -16,6 +16,7 @@ A collection of standalone [Codex skills](https://learn.chatgpt.com/docs/build-s
 | `review-full` | Run a sustained three-reviewer pull-request review and publish one consolidated review. |
 | `slop-fix-issue` | Generate AI slop for one GitHub issue: close it with supporting evidence if already resolved; otherwise implement and verify it, open a non-draft PR with a Closes reference, and delegate maintenance to `$slop-maintain-pr`. |
 | `slop-maintain-pr` | Maintain one PR through explicit scheduled `$repair-pr` invocations at a configurable interval, defaulting to five minutes, until merged, closed, or stopped. |
+| `slop-maintain-repo-prs` | Explicitly watch my open PRs in the current repository with `$bulk-watch` and delegate each PR to `$slop-maintain-pr`. |
 | `write-blog-post` | Develop a blog-post draft from material supplied by the user. |
 | `write-marketing-copy` | Rephrase source material into LinkedIn, X, and Threads posts. |
 | `write-prd` | Capture product decisions and create an implementation-ready GitHub issue. |
@@ -28,7 +29,7 @@ After installing or updating a skill, Codex normally detects it automatically. R
 
 ### Quickest option: `npx skills`
 
-The [`skills` CLI](https://www.skills.sh/docs/cli) recognizes this repository and its thirteen skills. Run it from the repository where you want project-scoped skills installed:
+The [`skills` CLI](https://www.skills.sh/docs/cli) recognizes this repository and its fourteen skills. Run it from the repository where you want project-scoped skills installed:
 
 ```sh
 # Install one skill for Codex in the current project.
@@ -122,13 +123,22 @@ Concurrency: 3
 
 The source can be any available read-only lookup with stable item identities. The interval and concurrency limit are optional. The first read includes existing items; later reads add only previously unrecorded identities. Tell the coordinating chat to stop when you want to end discovery.
 
+To watch your open PRs in the current repository and start maintenance for each, invoke:
+
+```text
+$slop-maintain-repo-prs
+```
+
+It uses `repo:<owner/repo> is:pr is:open author:@me` on the resolved GitHub host, including draft PRs. An optional interval applies to both discovery and PR maintenance; concurrency applies to the watch. Without an interval, each skill preserves an existing cadence or defaults to five minutes.
+
 ## Notes
 
 - `bulk` starts only when the user explicitly invokes `$bulk` with an item list and a common prompt. It requires a Git project and the Codex app's chat tools, creates one worktree chat per item in the current project from its default branch unless the user requests another starting Git state, and tracks progress through completion in the coordinating chat. Independent items continue when one fails or needs input; follow-up messages require the user's authorization for that chat.
-- `bulk-watch` starts only when the human explicitly invokes `$bulk-watch` with source instructions and a common prompt. It is self-contained and does not require installing `bulk`. It requires read-only source access, stable item identities, a Git project, the Codex app's chat tools, and its heartbeat automation tool. One heartbeat in the coordinating chat defaults to five minutes; users can specify another supported interval. It keeps watching after an empty read or completion of all known items, and retains its ledger in that chat to avoid reassigning recorded items. Local scheduled work requires the computer and app to remain running. A user stop ends further dispatch; existing item chats retain their actual state. Follow-up messages require authorization for the affected chat.
+- `bulk-watch` starts on a human's explicit invocation with source instructions and a common prompt, or an authorized handoff from another explicitly invoked skill within the original request's source and task. Handoffs retain the original human invocation, delegation chain, and authorized scope through scheduling and item chats. GitHub sources may target issues or PRs. It is self-contained and does not require installing `bulk`. It requires read-only source access, stable item identities, a Git project, the Codex app's chat tools, and its heartbeat automation tool. One heartbeat in the coordinating chat defaults to five minutes; users can specify another supported interval. It keeps watching after an empty read or completion of all known items, and retains its ledger in that chat to avoid reassigning recorded items. Local scheduled work requires the computer and app to remain running. A user stop ends further dispatch; existing item chats retain their actual state. Follow-up messages require authorization for the affected chat.
 - `create-human-reviewed-pr` starts only when the human directly invokes `$create-human-reviewed-pr`; invoking it declares that the current changes have been human-reviewed. It resolves the reviewer from an explicit username or the target GitHub host's authenticated account and includes execution details only when known.
 - `slop-fix-issue` generates AI slop to implement one issue while retaining required verification. It closes already-resolved issues as completed after posting and confirming an evidence comment, then stops without selecting another issue or creating a PR or automation. Its implementation path requires `slop-maintain-pr`, `repair-pr`, and the desktop app's heartbeat automation tools; these dependencies are not required for evidence-backed issue closure. After verifying and attaching its non-draft PR, it delegates maintenance to `slop-maintain-pr`, forwarding any user-specified interval.
-- `slop-maintain-pr` starts only on a human's explicit invocation or a handoff of the same PR from a human-invoked `slop-fix-issue`. Previously authorized maintenance and handoffs remain valid for their recorded PR after either skill is renamed. Install `repair-pr` alongside it. It uses one heartbeat in the current chat, defaults to five minutes for new maintenance, and preserves an existing cadence when resuming unless the user changes it. Every eligible pass explicitly invokes `repair-pr` once, even when the PR appears healthy. It continues until merged, closed, or stopped; merging remains the user's responsibility.
+- `slop-maintain-pr` starts on a human's explicit invocation or an authorized maintenance handoff from another explicitly invoked skill, including `slop-fix-issue` and item chats created for `slop-maintain-repo-prs`. Handoffs carry the original human invocation, delegation chain, authorized scope, and exact PR URL. Previously authorized maintenance and handoffs remain valid for their recorded PR after skill renames. Install `repair-pr` alongside it. It uses one heartbeat in the current chat, defaults to five minutes for new maintenance, and preserves an existing cadence when resuming unless the user changes it. Every eligible pass explicitly invokes `repair-pr` once, even when the PR appears healthy. It continues until merged, closed, or stopped; merging remains the user's responsibility.
+- `slop-maintain-repo-prs` starts only when the human explicitly invokes it. Install `bulk-watch`, `slop-maintain-pr`, and `repair-pr` alongside it. It delegates discovery and per-PR maintenance instead of implementing their procedures again. Stopping the coordinating watch stops discovery and new assignments; existing PR maintenance follows its own termination rules.
 - Do not place the repository itself directly inside `~/.agents/skills`: Codex expects each immediate child there to be a skill directory containing `SKILL.md`. Clone the repository elsewhere and link or copy its individual directories from `skills/`.
 - Avoid installing two different directories with the same skill `name`. Codex does not merge duplicate skill names; both may appear in the selector.
 - Review a skill's `SKILL.md` and any included scripts before installing it, especially when it can run commands or access external services.

@@ -1,0 +1,6 @@
+interface:
+  display_name: "Slop Maintain Repo PRs"
+  short_description: "Watch my open repo PRs and delegate their maintenance"
+
+policy:
+  allow_implicit_invocation: false

@@ -1,6 +1,6 @@
 interface:
   display_name: "Bulk"
-  short_description: "Apply one prompt to text items using subagents"
+  short_description: "Run one prompt per item in project worktree chats"
 
 policy:
   allow_implicit_invocation: false

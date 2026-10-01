@@ -7,7 +7,7 @@ A collection of standalone [Codex skills](https://learn.chatgpt.com/docs/build-s
 | Skill | Purpose |
 | --- | --- |
 | `add-issue` | Investigate confirmed work and create evidence-backed GitHub issues. |
-| `bulk` | Explicitly apply one common prompt to a text list of items through per-item subagents, coordinating parallel execution and results in the current chat. |
+| `bulk` | Explicitly apply one common prompt to a text list of items through per-item worktree chats in the current project, coordinating parallel execution and results in the current chat. |
 | `create-human-reviewed-pr` | Explicitly publish human-reviewed changes as a non-draft PR with AI-use disclosure, a reviewer mention, and known harness, model, and reasoning-effort details. |
 | `fix-issue` | Handle one issue: close it with an evidence comment if already resolved; otherwise fix it, open a non-draft PR with a Closes reference, and delegate its maintenance to `$maintain-pr`. |
 | `list-good-prs` | List clean or unstable pull requests that were approved by the Codex connector. |
@@ -105,7 +105,7 @@ The ChatGPT desktop app also shows standalone skills in its Skills sidebar. Seve
 
 ## Notes
 
-- `bulk` starts only when the user explicitly invokes `$bulk` with an item list and a common prompt. It uses available subagent capacity, continues independent items when one fails or needs input, and tracks progress for continuation in the same chat.
+- `bulk` starts only when the user explicitly invokes `$bulk` with an item list and a common prompt. It requires a Git project and the Codex app's chat tools, creates one worktree chat per item in the current project from its default branch unless the user requests another starting Git state, and tracks progress through completion in the coordinating chat. Independent items continue when one fails or needs input; follow-up messages require the user's authorization for that chat.
 - `create-human-reviewed-pr` starts only when the human directly invokes `$create-human-reviewed-pr`; invoking it declares that the current changes have been human-reviewed. It resolves the reviewer from an explicit username or the target GitHub host's authenticated account and includes execution details only when known.
 - `fix-issue` closes already-resolved issues as completed after posting and confirming an evidence comment, then stops without selecting another issue or creating a PR or automation. Its implementation path requires `maintain-pr`, `repair-pr`, and the desktop app's heartbeat automation tools; these dependencies are not required for evidence-backed issue closure. After verifying and attaching its non-draft PR, it delegates maintenance to `maintain-pr`, forwarding any user-specified interval.
 - `maintain-pr` starts only on a human's explicit invocation or a handoff of the same PR from a human-invoked `fix-issue`. Install `repair-pr` alongside it. It uses one heartbeat in the current chat, defaults to five minutes for new maintenance, and preserves an existing cadence when resuming unless the user changes it. Every eligible pass explicitly invokes `repair-pr` once, even when the PR appears healthy. It continues until merged, closed, or stopped; merging remains the user's responsibility.

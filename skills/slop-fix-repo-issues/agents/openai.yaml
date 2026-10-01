@@ -1,6 +1,6 @@
 interface:
   display_name: "Slop Fix Repo Issues"
-  short_description: "Watch my open repo issues and delegate their fixes"
+  short_description: "Watch open repo issues using required user conditions"
 
 policy:
   allow_implicit_invocation: false

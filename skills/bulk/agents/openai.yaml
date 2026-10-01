@@ -1,0 +1,6 @@
+interface:
+  display_name: "Bulk"
+  short_description: "Apply one prompt to text items using subagents"
+
+policy:
+  allow_implicit_invocation: false

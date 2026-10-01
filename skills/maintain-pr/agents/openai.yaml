@@ -1,7 +1,0 @@
-interface:
-  display_name: "Maintain PR"
-  short_description: "Maintain one PR with scheduled repair-pr runs"
-  default_prompt: "Use $maintain-pr to maintain this GitHub PR at my chosen interval (default: five minutes) by explicitly invoking $repair-pr until I merge or close it or ask to stop."
-
-policy:
-  allow_implicit_invocation: false

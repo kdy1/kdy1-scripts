@@ -1,19 +1,19 @@
 ---
 name: slop-fix-issue
-description: Generate AI slop to implement one GitHub issue, open a non-draft PR with a Closes reference, and hand maintenance to $maintain-pr; close already-resolved issues with supporting evidence instead.
+description: Generate AI slop to implement one GitHub issue, open a non-draft PR with a Closes reference, and hand maintenance to $slop-maintain-pr; close already-resolved issues with supporting evidence instead.
 ---
 
 # Slop Fix Issue
 
-Start this workflow only when the human user explicitly invokes `$slop-fix-issue` to handle an issue. Another skill, agent, or automation cannot authorize a new start. The human's invocation also authorizes `$maintain-pr` to maintain this workflow's PR. A previously registered heartbeat may continue the same authorized PR, including work authorized before this skill was renamed; route legacy maintenance runs through the handoff below without starting a new issue workflow.
+Start this workflow only when the human user explicitly invokes `$slop-fix-issue` to handle an issue. Another skill, agent, or automation cannot authorize a new start. The human's invocation also authorizes `$slop-maintain-pr` to maintain this workflow's PR. A previously registered heartbeat may continue the same authorized PR, including work authorized before this skill was renamed; route legacy maintenance runs through the handoff below without starting a new issue workflow.
 
-Handle one issue. If it is already resolved, post the supporting evidence, close it as completed, and stop. Otherwise generate AI slop to implement it, open a non-draft pull request, and delegate its maintenance to `$maintain-pr`. Do not pick another issue after closing an already-resolved issue or after the PR finishes, including when the issue was selected automatically.
+Handle one issue. If it is already resolved, post the supporting evidence, close it as completed, and stop. Otherwise generate AI slop to implement it, open a non-draft pull request, and delegate its maintenance to `$slop-maintain-pr`. Do not pick another issue after closing an already-resolved issue or after the PR finishes, including when the issue was selected automatically.
 
 ## Required Skill and Tools
 
-- Use [$maintain-pr](../maintain-pr/SKILL.md) for all PR maintenance. Resolve its installed `SKILL.md` to an absolute path and read it at execution time. Do not duplicate its scheduling or repair procedures here.
+- Use [$slop-maintain-pr](../slop-maintain-pr/SKILL.md) for all PR maintenance. Resolve its installed `SKILL.md` to an absolute path and read it at execution time. Do not duplicate its scheduling or repair procedures here.
 - Use authenticated `gh` access for GitHub operations and discover `attach_artifact` to attach the created PR.
-- Before implementation or a maintenance handoff, confirm `$maintain-pr` and the dependencies required by its preflight are available. Their absence must not block evidence-backed closure of an already-resolved issue that needs no PR. If unavailable, report the limitation and completed work.
+- Before implementation or a maintenance handoff, confirm `$slop-maintain-pr` and the dependencies required by its preflight are available. Their absence must not block evidence-backed closure of an already-resolved issue that needs no PR. If unavailable, report the limitation and completed work.
 
 ## Select and Assess One Issue
 
@@ -45,6 +45,6 @@ Handle one issue. If it is already resolved, post the supporting evidence, close
 
 ## Hand Off PR Maintenance
 
-After creating and verifying the PR, or when resuming this workflow's existing PR, explicitly invoke `[$maintain-pr](<absolute-maintain-pr-skill-path>)` with its exact URL. Pass the issue URL and closing reference, repository identity, head branch, absolute worktree path, and the chat's original human invocation as the authorization origin. Forward any user-specified interval; otherwise leave cadence selection to `$maintain-pr`.
+After creating and verifying the PR, or when resuming this workflow's existing PR, explicitly invoke `[$slop-maintain-pr](<absolute-slop-maintain-pr-skill-path>)` with its exact URL. Pass the issue URL and closing reference, repository identity, head branch, absolute worktree path, and the chat's original human invocation as the authorization origin. Forward any user-specified interval; otherwise leave cadence selection to `$slop-maintain-pr`.
 
-For a resumed or legacy heartbeat, also pass its automation ID and recorded state so `$maintain-pr` can reuse it and update the saved prompt. Let that skill own registration, the first pass, later passes, termination, and notifications. If the handoff or registration fails, report the PR link and actual outcome without claiming maintenance is active. Do not resume issue selection after handing off or after a failed handoff.
+For a resumed or legacy heartbeat, also pass its automation ID and recorded state so `$slop-maintain-pr` can reuse it and update the saved prompt. Let that skill own registration, the first pass, later passes, termination, and notifications. If the handoff or registration fails, report the PR link and actual outcome without claiming maintenance is active. Do not resume issue selection after handing off or after a failed handoff.

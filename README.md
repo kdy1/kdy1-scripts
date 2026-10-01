@@ -8,6 +8,7 @@ A collection of standalone [Codex skills](https://learn.chatgpt.com/docs/build-s
 | --- | --- |
 | `add-issue` | Investigate confirmed work and create evidence-backed GitHub issues. |
 | `bulk` | Explicitly apply one common prompt to a text list of items through per-item worktree chats in the current project, coordinating parallel execution and results in the current chat. |
+| `bulk-watch` | Explicitly watch a user-specified source and apply one common prompt to existing and newly discovered items through per-item worktree chats, defaulting to five-minute heartbeats. |
 | `create-human-reviewed-pr` | Explicitly publish human-reviewed changes as a non-draft PR with AI-use disclosure, a reviewer mention, and known harness, model, and reasoning-effort details. |
 | `list-good-prs` | List clean or unstable pull requests that were approved by the Codex connector. |
 | `redesign-ui` | Plan and visualize a UI redesign before creating an issue. |
@@ -27,7 +28,7 @@ After installing or updating a skill, Codex normally detects it automatically. R
 
 ### Quickest option: `npx skills`
 
-The [`skills` CLI](https://www.skills.sh/docs/cli) recognizes this repository and its twelve skills. Run it from the repository where you want project-scoped skills installed:
+The [`skills` CLI](https://www.skills.sh/docs/cli) recognizes this repository and its thirteen skills. Run it from the repository where you want project-scoped skills installed:
 
 ```sh
 # Install one skill for Codex in the current project.
@@ -103,9 +104,28 @@ $write-prd
 
 The ChatGPT desktop app also shows standalone skills in its Skills sidebar. Several skills in this repository intentionally require explicit invocation, so invoking them by name is the reliable way to start their workflows.
 
+For example, invoke `bulk-watch` with source instructions and a common prompt:
+
+```text
+$bulk-watch
+
+Source:
+Search GitHub issues in kdy1/kdy1-scripts matching
+repo:kdy1/kdy1-scripts is:issue is:open label:ready.
+
+Common prompt:
+Investigate the assigned issue and report a concrete implementation plan.
+
+Interval: 5 minutes
+Concurrency: 3
+```
+
+The source can be any available read-only lookup with stable item identities. The interval and concurrency limit are optional. The first read includes existing items; later reads add only previously unrecorded identities. Tell the coordinating chat to stop when you want to end discovery.
+
 ## Notes
 
 - `bulk` starts only when the user explicitly invokes `$bulk` with an item list and a common prompt. It requires a Git project and the Codex app's chat tools, creates one worktree chat per item in the current project from its default branch unless the user requests another starting Git state, and tracks progress through completion in the coordinating chat. Independent items continue when one fails or needs input; follow-up messages require the user's authorization for that chat.
+- `bulk-watch` starts only when the human explicitly invokes `$bulk-watch` with source instructions and a common prompt. It is self-contained and does not require installing `bulk`. It requires read-only source access, stable item identities, a Git project, the Codex app's chat tools, and its heartbeat automation tool. One heartbeat in the coordinating chat defaults to five minutes; users can specify another supported interval. It keeps watching after an empty read or completion of all known items, and retains its ledger in that chat to avoid reassigning recorded items. Local scheduled work requires the computer and app to remain running. A user stop ends further dispatch; existing item chats retain their actual state. Follow-up messages require authorization for the affected chat.
 - `create-human-reviewed-pr` starts only when the human directly invokes `$create-human-reviewed-pr`; invoking it declares that the current changes have been human-reviewed. It resolves the reviewer from an explicit username or the target GitHub host's authenticated account and includes execution details only when known.
 - `slop-fix-issue` generates AI slop to implement one issue while retaining required verification. It closes already-resolved issues as completed after posting and confirming an evidence comment, then stops without selecting another issue or creating a PR or automation. Its implementation path requires `slop-maintain-pr`, `repair-pr`, and the desktop app's heartbeat automation tools; these dependencies are not required for evidence-backed issue closure. After verifying and attaching its non-draft PR, it delegates maintenance to `slop-maintain-pr`, forwarding any user-specified interval.
 - `slop-maintain-pr` starts only on a human's explicit invocation or a handoff of the same PR from a human-invoked `slop-fix-issue`. Previously authorized maintenance and handoffs remain valid for their recorded PR after either skill is renamed. Install `repair-pr` alongside it. It uses one heartbeat in the current chat, defaults to five minutes for new maintenance, and preserves an existing cadence when resuming unless the user changes it. Every eligible pass explicitly invokes `repair-pr` once, even when the PR appears healthy. It continues until merged, closed, or stopped; merging remains the user's responsibility.

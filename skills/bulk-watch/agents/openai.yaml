@@ -1,0 +1,6 @@
+interface:
+  display_name: "Bulk Watch"
+  short_description: "Watch a source and run one prompt per new item"
+
+policy:
+  allow_implicit_invocation: false

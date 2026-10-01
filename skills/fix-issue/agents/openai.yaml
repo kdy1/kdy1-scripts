@@ -1,7 +1,7 @@
 interface:
   display_name: "Fix Issue"
-  short_description: "Close resolved issues with evidence or fix and maintain a PR"
-  default_prompt: "Use $fix-issue to handle one GitHub issue: if already resolved, post the evidence, close it as completed, and stop; otherwise fix it, open a non-draft PR with a Closes reference, and maintain it every five minutes by explicitly invoking $repair-pr until I merge or close it."
+  short_description: "Close resolved issues or fix and delegate PR maintenance"
+  default_prompt: "Use $fix-issue to handle one GitHub issue: if already resolved, post the evidence, close it as completed, and stop; otherwise fix it, open a non-draft PR with a Closes reference, and delegate its maintenance to $maintain-pr at my chosen interval."
 
 policy:
   allow_implicit_invocation: false

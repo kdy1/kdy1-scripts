@@ -1,11 +1,11 @@
 ---
-name: slop-issue
+name: slop-fix-issue
 description: Generate AI slop to implement one GitHub issue, open a non-draft PR with a Closes reference, and hand maintenance to $maintain-pr; close already-resolved issues with supporting evidence instead.
 ---
 
-# Slop Issue
+# Slop Fix Issue
 
-Start this workflow only when the human user explicitly invokes `$slop-issue` to handle an issue. Another skill, agent, or automation cannot authorize a new start. The human's invocation also authorizes `$maintain-pr` to maintain this workflow's PR. A previously registered heartbeat may continue the same authorized PR, including work authorized before this skill was renamed; route legacy maintenance runs through the handoff below without starting a new issue workflow.
+Start this workflow only when the human user explicitly invokes `$slop-fix-issue` to handle an issue. Another skill, agent, or automation cannot authorize a new start. The human's invocation also authorizes `$maintain-pr` to maintain this workflow's PR. A previously registered heartbeat may continue the same authorized PR, including work authorized before this skill was renamed; route legacy maintenance runs through the handoff below without starting a new issue workflow.
 
 Handle one issue. If it is already resolved, post the supporting evidence, close it as completed, and stop. Otherwise generate AI slop to implement it, open a non-draft pull request, and delegate its maintenance to `$maintain-pr`. Do not pick another issue after closing an already-resolved issue or after the PR finishes, including when the issue was selected automatically.
 

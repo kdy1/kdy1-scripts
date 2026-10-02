@@ -16,8 +16,7 @@ A collection of standalone [Codex skills](https://learn.chatgpt.com/docs/build-s
 | `review-full` | Run a sustained three-reviewer pull-request review and publish one consolidated review. |
 | `slop-fix-issue` | Generate AI slop for one GitHub issue: close it with supporting evidence if already resolved; otherwise implement and verify it, open and attach a non-draft PR with a Closes reference, and stop. |
 | `slop-fix-repo-issues` | Explicitly collect open issues matching required user-specified conditions in the current repository once, then use `$bulk` to delegate each issue to `$slop-fix-issue` through PR creation. |
-| `slop-maintain-pr` | Maintain one PR through explicit scheduled `$repair-pr` invocations at a configurable interval, defaulting to five minutes, until merged, closed, or stopped. |
-| `slop-maintain-repo-prs` | Explicitly watch my open PRs in the current repository with `$bulk-watch` and delegate each PR to `$slop-maintain-pr`. |
+| `slop-maintain-repo-prs` | Periodically scan all my open repo PRs, dispatch needed one-shot `$repair-pr` runs in GPT-5.6 Luna worktree chats, and archive successfully completed repair chats. |
 | `write-blog-post` | Develop a blog-post draft from material supplied by the user. |
 | `write-marketing-copy` | Rephrase source material into LinkedIn, X, and Threads posts. |
 | `write-prd` | Capture product decisions and create an implementation-ready GitHub issue. |
@@ -30,7 +29,7 @@ After installing or updating a skill, Codex normally detects it automatically. R
 
 ### Quickest option: `npx skills`
 
-The [`skills` CLI](https://www.skills.sh/docs/cli) recognizes this repository and its fifteen skills. Run it from the repository where you want project-scoped skills installed:
+The [`skills` CLI](https://www.skills.sh/docs/cli) recognizes this repository and its fourteen skills. Run it from the repository where you want project-scoped skills installed:
 
 ```sh
 # Install one skill for Codex in the current project.
@@ -124,13 +123,15 @@ Concurrency: 3
 
 The source can be any available read-only lookup with stable item identities. The interval and concurrency limit are optional. The first read includes existing items; later reads add only previously unrecorded identities. Tell the coordinating chat to stop when you want to end discovery.
 
-To watch your open PRs in the current repository and start maintenance for each, invoke:
+To periodically scan all your open PRs in the current repository and repair those that need attention, invoke:
 
 ```text
 $slop-maintain-repo-prs
 ```
 
-It uses `repo:<owner/repo> is:pr is:open author:@me` on the resolved GitHub host, including draft PRs. An optional interval applies to both discovery and PR maintenance; concurrency applies to the watch. Without an interval, each skill preserves an existing cadence or defaults to five minutes.
+It uses `repo:<owner/repo> is:pr is:open author:@me` on the resolved GitHub host, including draft PRs, and records the authenticated author for subsequent scans. One heartbeat scans every matching PR on every pass, including previously repaired PRs. The interval is configurable: a new watch defaults to five minutes, while resuming preserves its existing cadence. Concurrency defaults to three preparing/running repairs and can be configured within app limits.
+
+Confirmed merge conflicts, current-head CI failures, or unresolved, non-outdated Codex bot review threads trigger a one-shot `$repair-pr` invocation in a dedicated GPT-5.6 Luna worktree chat. Healthy PRs, pending checks, and missing approvals alone do not create repair chats. The coordinator prevents overlapping repairs and unchanged failed or blocked retries, but can dispatch a new attempt when relevant new evidence appears, including a new review on the same head. After capturing a successful repair's results, it archives the repair chat without waiting for the PR to merge or follow-up CI to finish. Failed, uncertain, and input-waiting chats remain open; the coordinator and Git worktrees remain available.
 
 To handle a batch of currently open issues in the repository once, invoke with explicit selection conditions in natural language or as a GitHub search expression:
 
@@ -149,8 +150,7 @@ It combines `repo:<owner/repo> is:issue is:open` with the user's conditions on t
 - `create-human-reviewed-pr` starts only when the human directly invokes `$create-human-reviewed-pr`; invoking it declares that the current changes have been human-reviewed. It resolves the reviewer from an explicit username or the target GitHub host's authenticated account and includes execution details only when known.
 - `slop-fix-issue` starts on a human's explicit invocation or an authorized issue handoff from another explicitly invoked skill, including item chats created for `slop-fix-repo-issues`. Handoffs carry the original human invocation, delegation chain, authorized scope, and exact issue URL through closure or PR creation. It generates AI slop to implement one issue while retaining required verification. It closes already-resolved issues as completed after posting and confirming an evidence comment, then stops without selecting another issue or creating a PR or automation. Otherwise it verifies and attaches a non-draft PR with a Closes reference and stops. It uses authenticated `gh` and the desktop app's PR attachment tool; PR-maintenance skills and heartbeat tools are not dependencies. Existing PRs are reconciled and reported without replacement or maintenance, and no CI, review, or merge loop follows PR creation.
 - `slop-fix-repo-issues` starts only when the human explicitly invokes it and supplies issue-selection conditions. Install `bulk` and `slop-fix-issue` alongside it. It collects matching issues once, deduplicates by host/repository/issue number, and delegates the fixed URL list to `bulk`. It resumes only unfinished items from that run's recorded list and ledger; new issues require a new human-authorized run. Result collection and automatic item-chat archiving follow `bulk`, with closure or verified PR creation as the completion condition.
-- `slop-maintain-pr` starts on a human's explicit invocation or an authorized maintenance handoff from another explicitly invoked skill, including item chats created for `slop-maintain-repo-prs`. Handoffs carry the original human invocation, delegation chain, authorized scope, and exact PR URL. New invocations of the one-shot fix skills do not authorize maintenance; previously recorded maintenance authorization and handoffs remain valid for their recorded PR after skill renames or the one-shot change. Install `repair-pr` alongside it. It uses one heartbeat in the current chat, defaults to five minutes for new maintenance, and preserves an existing cadence when resuming unless the user changes it. Every eligible pass explicitly invokes `repair-pr` once, even when the PR appears healthy. It continues until merged, closed, or stopped; merging remains the user's responsibility.
-- `slop-maintain-repo-prs` starts only when the human explicitly invokes it. Install `bulk-watch`, `slop-maintain-pr`, and `repair-pr` alongside it. It delegates discovery and per-PR maintenance instead of implementing their procedures again. Stopping the coordinating watch stops discovery and new assignments; existing PR maintenance follows its own termination rules.
+- `slop-maintain-repo-prs` starts only when the human explicitly invokes it to maintain their PRs. Install `repair-pr` alongside it; it manages its own scanning, heartbeat, and repair chats without requiring `bulk` or `bulk-watch`. It requires authenticated `gh` access, the current Git project, and the Codex app's scheduling and chat tools. Repair chats use `gpt-5.6-luna` with no reasoning-effort override or model fallback and never register their own automations. Full inventories and relevant review/check data must be verified before dispatch; incomplete reads are reported rather than treated as healthy state. The watch continues when no PR needs repair and stops new assignments when the user stops it; already-running repairs retain their actual state. It never merges or enables auto-merge. Local scheduled work requires the computer and app to remain running. Editing the skill does not start a watch, migrate existing automations, or archive existing chats.
 - Do not place the repository itself directly inside `~/.agents/skills`: Codex expects each immediate child there to be a skill directory containing `SKILL.md`. Clone the repository elsewhere and link or copy its individual directories from `skills/`.
 - Avoid installing two different directories with the same skill `name`. Codex does not merge duplicate skill names; both may appear in the selector.
 - Review a skill's `SKILL.md` and any included scripts before installing it, especially when it can run commands or access external services.

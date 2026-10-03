@@ -13,7 +13,10 @@ Target URL, environment, app repository/revision evidence, and approved access m
 Scope mode and exact user checklist when supplied: <scope-mode-and-checklist>.
 Assigned coverage items, expected behavior and sources, and required checks: <item-assignments>.
 Read the relevant coverage guidance at <absolute-qa-checklist-path>.
+Human browser/tab preference, selected provider, assigned tab/context handles, and any fallback reason: <browser-selection-and-allocation>.
 Your browser tab/context, test-data namespace, and permitted shared-state operations: <isolation-and-state-allocation>.
+
+Honor the human's specified browser or tab. Otherwise prefer Chrome (chrome), using the in-app Browser (iab) only when Chrome cannot be controlled with available tools. Select the assigned provider explicitly. If it becomes unavailable, report the reason to the root for reassignment; keep an unavailable human-specified browser/tab blocked. The root allocates replacement tabs and shared-state ownership and records fallback reasons.
 
 Perform every assigned applicable check and return evidence per item. Use pending/running/passed/failed/blocked/not applicable accurately; missing access, a failed tool, or a partial check is not a pass. Report new in-scope coverage items to the root for assignment. Preserve a supplied checklist's exact scope.
 
@@ -35,7 +38,10 @@ Delegation chain and MainQA root coordinator handle: <chain-and-root-handle>.
 Active repository/scoped instructions: <applicable-instructions>.
 Authorized app GitHub repository, environment, QA scope, and coverage item IDs: <target-and-scope>.
 Candidate observations, expected behavior and sources, reproduction, affected-revision evidence, impact, artifacts, and related reports: <complete-sanitized-candidate-context>.
+Human browser/tab preference, selected provider, assigned tab/context handles for any browser reproduction, and any fallback reason: <browser-selection-and-allocation>.
 Root-granted nested slot allocation and other active/reserved occupancy: <allocation>.
+
+For browser reproduction, honor the human's specified browser or tab. Otherwise prefer Chrome (chrome), using the in-app Browser (iab) only when Chrome cannot be controlled with available tools. Select the assigned provider explicitly and pass this policy and the assigned browser context to any investigator doing browser work. Obtain tab and shared-state allocations from the root before browser reproduction or a provider change; report fallback reasons. Keep unavailable human-specified browsers/tabs or unavailable browser tools blocked.
 
 This handoff conveys the original human MainQA invocation within its scope; it does not authorize another QA run, unrelated planned work, or implementation. Follow the full $add-issue workflow. Establish the cause and affected revision, compare the same causal boundary with the freshly fetched default branch, check duplicates and metadata, restore the workspace, audit the complete handoff, and use a distinct dedicated recording subagent that did not investigate the candidates. Browser symptoms alone do not authorize an issue.
 

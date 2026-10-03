@@ -123,6 +123,8 @@ Directory: /path/to/app
 
 Without a checklist, MainQA discovers and tests the whole app; it does not ask for a checklist. Supply a checklist to restrict the run to only those items. Independent screens and workflows are divided among GPT-5.6 Luna subagents with `xhigh` reasoning. Up to ten subagents may run simultaneously across QA and nested issue investigation/recording, further limited by actual runtime capacity. Install `add-issue` alongside `main-qa`: reporting subagents explicitly invoke it for in-scope candidates after central reconciliation. It confirms root causes and checks the freshly fetched default branch before recording, so a browser symptom does not automatically become an issue.
 
+MainQA honors a user-specified browser or tab. Otherwise it prefers Chrome and falls back to the in-app Browser only when Chrome cannot be controlled with the available tools, recording the reason. This policy also applies to QA workers and browser reproduction during issue investigation.
+
 Request draft-only reporting to receive the issue handoff payloads in chat without writing to GitHub.
 
 For example, invoke `bulk-watch` with source instructions and a common prompt:

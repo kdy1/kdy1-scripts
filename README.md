@@ -11,7 +11,7 @@ A collection of standalone [Codex skills](https://learn.chatgpt.com/docs/build-s
 | `bulk-watch` | Explicitly watch a source and apply one common prompt to existing and new items through per-item worktree chats, with five-minute heartbeats and automatic archiving of chats that no longer need attention. |
 | `create-human-reviewed-pr` | Explicitly publish human-reviewed changes as a non-draft PR with AI-use disclosure, a reviewer mention, and known harness, model, and reasoning-effort details. |
 | `list-good-prs` | List clean or unstable pull requests that were approved by the Codex connector. |
-| `main-qa` | Explicitly run parallel app QA with GPT-5.6 Luna `xhigh` subagents and report discovered problems through `$add-issue`. |
+| `main-qa` | Explicitly run parallel functional and usability QA with GPT-5.6 Luna `xhigh` subagents and report discovered problems through `$add-issue`. |
 | `redesign-ui` | Plan and visualize a UI redesign before creating an issue. |
 | `repair-pr` | Repair merge conflicts, actionable bot feedback, and failing CI on a pull request. |
 | `review-full` | Run a sustained three-reviewer pull-request review and publish one consolidated review. |
@@ -121,7 +121,9 @@ Start: pnpm dev
 Directory: /path/to/app
 ```
 
-Without a checklist, MainQA discovers and tests the whole app; it does not ask for a checklist. Supply a checklist to restrict the run to only those items. Independent screens and workflows are divided among GPT-5.6 Luna subagents with `xhigh` reasoning. Up to ten subagents may run simultaneously across QA and nested issue investigation/recording, further limited by actual runtime capacity. Install `add-issue` alongside `main-qa`: reporting subagents explicitly invoke it for in-scope candidates after central reconciliation. It confirms root causes and checks the freshly fetched default branch before recording, so a browser symptom does not automatically become an issue.
+Without a checklist, MainQA discovers and tests the whole app; it does not ask for a checklist. Supply a checklist to restrict the run to only those items. Independent screens and workflows are divided among GPT-5.6 Luna subagents with `xhigh` reasoning. Up to ten subagents may run simultaneously across QA and nested issue investigation/recording, further limited by actual runtime capacity. Install `add-issue` alongside `main-qa`: reporting subagents explicitly invoke it for in-scope candidates after central reconciliation. It applies its classification-specific evidence requirements, including confirmed root causes and freshly fetched default-branch checks for bugs, before recording; a browser observation does not automatically become an issue.
+
+Coverage includes usability problems even when actions succeed: ambiguous controls or instructions, hard-to-find existing actions, unclear results, missing next steps or recovery guidance, and inconsistent interactions that make an existing flow hard to use. Usability candidates require a reproducible obstacle, exact screen/state and viewport, sanitized screenshot, and concrete user impact. Cosmetic polish without usability impact, new features, and broad redesigns are excluded. `$add-issue` distinguishes existing behavior defects (`Bug`) from bounded UI clarification or cleanup that preserves product behavior (`Task`); an unresolved bug cannot be relabeled as a task to bypass investigation.
 
 MainQA honors a user-specified browser or tab. Otherwise it prefers Chrome and falls back to the in-app Browser only when Chrome cannot be controlled with the available tools, recording the reason. This policy also applies to QA workers and browser reproduction during issue investigation.
 

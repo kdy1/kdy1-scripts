@@ -1,0 +1,7 @@
+interface:
+  display_name: "MainQA"
+  short_description: "Run parallel app QA and report confirmed GitHub issues"
+  default_prompt: "Use $main-qa to QA my app with parallel GPT-5.6 Luna xhigh agents and report confirmed problems through $add-issue."
+
+policy:
+  allow_implicit_invocation: false

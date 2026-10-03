@@ -11,6 +11,7 @@ A collection of standalone [Codex skills](https://learn.chatgpt.com/docs/build-s
 | `bulk-watch` | Explicitly watch a source and apply one common prompt to existing and new items through per-item worktree chats, with five-minute heartbeats and automatic archiving of chats that no longer need attention. |
 | `create-human-reviewed-pr` | Explicitly publish human-reviewed changes as a non-draft PR with AI-use disclosure, a reviewer mention, and known harness, model, and reasoning-effort details. |
 | `list-good-prs` | List clean or unstable pull requests that were approved by the Codex connector. |
+| `main-qa` | Explicitly run parallel app QA with GPT-5.6 Luna `xhigh` subagents and report discovered problems through `$add-issue`. |
 | `redesign-ui` | Plan and visualize a UI redesign before creating an issue. |
 | `repair-pr` | Repair merge conflicts, actionable bot feedback, and failing CI on a pull request. |
 | `review-full` | Run a sustained three-reviewer pull-request review and publish one consolidated review. |
@@ -29,7 +30,7 @@ After installing or updating a skill, Codex normally detects it automatically. R
 
 ### Quickest option: `npx skills`
 
-The [`skills` CLI](https://www.skills.sh/docs/cli) recognizes this repository and its fourteen skills. Run it from the repository where you want project-scoped skills installed:
+The [`skills` CLI](https://www.skills.sh/docs/cli) recognizes this repository and its fifteen skills. Run it from the repository where you want project-scoped skills installed:
 
 ```sh
 # Install one skill for Codex in the current project.
@@ -105,6 +106,25 @@ $write-prd
 
 The ChatGPT desktop app also shows standalone skills in its Skills sidebar. Several skills in this repository intentionally require explicit invocation, so invoking them by name is the reliable way to start their workflows.
 
+To run MainQA against an existing app server, explicitly invoke:
+
+```text
+$main-qa
+URL: http://localhost:3000
+```
+
+If the development server needs to be started, supply its startup method and directory instead:
+
+```text
+$main-qa
+Start: pnpm dev
+Directory: /path/to/app
+```
+
+Without a checklist, MainQA discovers and tests the whole app; it does not ask for a checklist. Supply a checklist to restrict the run to only those items. Independent screens and workflows are divided among GPT-5.6 Luna subagents with `xhigh` reasoning. Up to ten subagents may run simultaneously across QA and nested issue investigation/recording, further limited by actual runtime capacity. Install `add-issue` alongside `main-qa`: reporting subagents explicitly invoke it for in-scope candidates after central reconciliation. It confirms root causes and checks the freshly fetched default branch before recording, so a browser symptom does not automatically become an issue.
+
+Request draft-only reporting to receive the issue handoff payloads in chat without writing to GitHub.
+
 For example, invoke `bulk-watch` with source instructions and a common prompt:
 
 ```text
@@ -144,6 +164,7 @@ It combines `repo:<owner/repo> is:issue is:open` with the user's conditions on t
 
 ## Notes
 
+- `main-qa` starts only on a human's direct `$main-qa` invocation or explicit request to run MainQA. Generic QA requests, URLs alone, and skill editing do not start a run. It requires browser tools, subagent controls, and `gpt-5.6-luna` with `xhigh`; unavailable settings are reported without substitution. Missing server details are requested when needed. A human MainQA invocation authorizes only its scoped `$add-issue` handoffs, which retain the original request and delegation context; other skill handoffs do not gain this exception. All investigation and recording descendants share the concurrency limit and Luna settings. In Plan Mode it prepares a plan only. It reports blocked or incomplete coverage honestly, cleans up only its own server/test resources, and never fixes code, deploys, or starts a monitor.
 - `bulk` starts on the human's explicit invocation with a finite item list and a common prompt, or an authorized handoff from another explicitly invoked skill within the original request's scope. Handoffs retain the original human invocation, delegation chain, fixed list, common prompt, and authorized scope through the ledger and item chats. It requires a Git project and the Codex app's chat tools, creates one worktree chat per item in the current project from its default branch unless the user requests another starting Git state, and tracks progress through completion in the coordinating chat. Independent items continue when one fails or needs input; follow-up messages require the user's authorization for that chat.
 - `bulk-watch` starts on a human's explicit invocation with source instructions and a common prompt, or an authorized handoff from another explicitly invoked skill within the original request's source and task. Handoffs retain the original human invocation, delegation chain, and authorized scope through scheduling and item chats. GitHub sources may target issues or PRs. It is self-contained and does not require installing `bulk`. It requires read-only source access, stable item identities, a Git project, the Codex app's chat tools, and its heartbeat automation tool. One heartbeat in the coordinating chat defaults to five minutes; users can specify another supported interval. It keeps watching after an empty read or completion of all known items, and retains its ledger in that chat to avoid reassigning recorded items. Local scheduled work requires the computer and app to remain running. A user stop ends further dispatch; existing item chats retain their actual state. Follow-up messages require authorization for the affected chat.
 - Both `bulk` and `bulk-watch` automatically archive their item chats after collecting verified results when no continuing work or unresolved human action needs that chat. They retain chats with failures, pending input, uncaptured review context, or active maintenance heartbeats, and honor user requests to keep chats open. Archived items remain in the coordinator's ledger and results and are never reassigned merely because their chat was archived. Coordinating chats, worktrees, branches, commits, and PRs remain available; chat archiving does not clean up Git state.

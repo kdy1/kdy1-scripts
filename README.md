@@ -13,6 +13,7 @@ A collection of standalone [Codex skills](https://learn.chatgpt.com/docs/build-s
 | `create-pr` | Publish changes through a shared PR workflow with verified Closes references for resolved issues and Refs for partial or related work. |
 | `list-good-prs` | List clean or unstable pull requests that were approved by the Codex connector. |
 | `main-qa` | Explicitly run parallel functional and usability QA with GPT-5.6 Luna `xhigh` subagents and report discovered problems through `$add-issue`. |
+| `merge-pr` | Squash merge authorized GitHub PRs without overriding the commit subject, then verify the result. |
 | `redesign-ui` | Automatically plan and visualize UI changes only in Plan Mode, then implement the approved design in the same chat. |
 | `repair-pr` | Repair merge conflicts, actionable bot feedback, and failing CI on a pull request. |
 | `review-full` | Run a sustained three-reviewer pull-request review and publish one consolidated review. |

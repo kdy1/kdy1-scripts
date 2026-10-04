@@ -1,0 +1,7 @@
+interface:
+  display_name: "Merge PR"
+  short_description: "Squash merge PRs without overriding commit subjects"
+  default_prompt: "Use $merge-pr to squash merge the requested GitHub PR without setting a commit subject, and report any blockers."
+
+policy:
+  allow_implicit_invocation: true

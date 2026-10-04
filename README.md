@@ -106,6 +106,8 @@ $write-prd
 
 The ChatGPT desktop app also shows standalone skills in its Skills sidebar. Several skills in this repository intentionally require explicit invocation, so invoking them by name is the reliable way to start their workflows.
 
+When using `$add-issue` in Plan Mode, finish investigation and finalize the exact issue title, complete body or duplicate comment, metadata, attachments, and recording action in the final plan. After approval and leaving Plan Mode, it resumes directly at recording with that payload; it does not repeat investigation, classification, reproduction, or drafting. It performs only bounded pre-write checks and verifies the result. A new matching duplicate or changed required condition stops that candidate and is reported without automatically changing the target or content. A missing finalized payload is reported rather than reconstructed. Draft-only restrictions continue after a mode change, and the issue's proposed work is never implemented in the same invocation. A fresh invocation outside Plan Mode retains the full investigation workflow.
+
 To run MainQA against an existing app server, explicitly invoke:
 
 ```text

@@ -1,6 +1,6 @@
 ---
 name: redesign-ui
-description: Plan and visualize UI changes in Plan Mode, then implement the approved design in the same conversation after leaving Plan Mode when implementation is authorized. Use automatically whenever a task changes a product's UI, including layout, styling, components, content, interaction, navigation, or responsive behavior; no explicit `$redesign-ui` invocation is required. Read-only UI inspection or a screenshot alone does not trigger this workflow.
+description: Select automatically only in Plan Mode for product UI changes, including layout, styling, components, content, interaction, navigation, or responsive behavior. Outside Plan Mode, do not select automatically; explicit `$redesign-ui` invocation requires a switch to Plan Mode before proposal work. Plan and visualize the redesign, then implement the approved design in the same conversation after leaving Plan Mode when implementation is authorized. Read-only UI inspection, a screenshot alone, or editing this skill does not trigger the redesign workflow.
 ---
 
 # Redesign UI
@@ -13,17 +13,22 @@ conversation when implementation is within the authorized task.
 
 ## Entry Conditions
 
-- Use this skill automatically whenever the authorized task requires changing a
-  product's UI, whether the change is requested directly or identified while
-  working on the task. The human does not need to name `$redesign-ui`.
+- Use this skill automatically only when Plan Mode is active and the authorized
+  task requires changing a product's UI, whether the change is requested directly
+  or identified while working on the task. The human does not need to name
+  `$redesign-ui`.
+- Outside Plan Mode, do not select this skill automatically or ask for a mode
+  switch solely because the task requires UI changes.
 - Read-only UI inspection, a screenshot without a change request, or editing
   this skill does not start the redesign workflow.
-- Run the proposal phase only in Plan Mode. When starting that phase outside
-  Plan Mode, ask the user to switch to Plan Mode, then stop. Do not inspect the
-  product, generate an image, or modify files before the mode change. Resume
-  the proposal phase in Plan Mode without requiring an explicit skill invocation.
-  An approved design ready for authorized implementation resumes at step 4
-  outside Plan Mode.
+- Run the proposal phase only in Plan Mode. If the human explicitly invokes
+  `$redesign-ui` outside Plan Mode to start proposal work, ask the user to switch
+  to Plan Mode, then stop. Do not inspect the product, generate an image, or
+  modify files before the mode change. Resume the proposal phase in Plan Mode
+  without requiring another explicit skill invocation.
+- An approved design ready for authorized implementation resumes at step 4
+  outside Plan Mode. This continues the existing workflow and does not count as
+  a new automatic skill selection.
 - Selecting `$redesign-ui`, explicitly or automatically, starts proposal work
   only within the authorized task. It never authorizes GitHub issue creation or
   another external mutation.

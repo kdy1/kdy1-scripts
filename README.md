@@ -161,6 +161,8 @@ It uses `repo:<owner/repo> is:pr is:open author:@me` on the resolved GitHub host
 
 Confirmed merge conflicts, current-head CI failures, or unresolved, non-outdated Codex bot review threads trigger a one-shot `$repair-pr` invocation in a dedicated GPT-5.6 Luna worktree chat with `xhigh` reasoning effort. Healthy PRs, pending checks, and missing approvals alone do not create repair chats. The coordinator prevents overlapping repairs and unchanged failed or blocked retries, but can dispatch a new attempt when relevant new evidence appears, including a new review on the same head. After capturing a successful repair's results, it archives the repair chat without waiting for the PR to merge or follow-up CI to finish. Failed, uncertain, and input-waiting chats remain open; the coordinator and Git worktrees remain available.
 
+`repair-pr` and `slop-maintain-repo-prs` report routine repair progress and results in Codex chats without posting PR comments or reviews by default. Other comments require an explicit human request, preserved with its scope through heartbeats and repair chats. Objectively incorrect bot findings are the exception: a concise English explanation with concrete evidence may be posted in the original inline thread. After a successful final push, or when no push is needed, those threads must be resolved even if the optional reply is omitted or fails. Uncertain findings remain unresolved, and reply or resolution failures are reported in chat. This policy applies to PR repairs; `review-full` publication and issue-comment workflows retain their own policies.
+
 To handle a batch of currently open issues in the repository once, invoke with explicit selection conditions in natural language or as a GitHub search expression:
 
 ```text

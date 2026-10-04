@@ -12,7 +12,7 @@ A collection of standalone [Codex skills](https://learn.chatgpt.com/docs/build-s
 | `create-human-reviewed-pr` | Explicitly publish human-reviewed changes as a non-draft PR with AI-use disclosure, a reviewer mention, and known harness, model, and reasoning-effort details. |
 | `list-good-prs` | List clean or unstable pull requests that were approved by the Codex connector. |
 | `main-qa` | Explicitly run parallel functional and usability QA with GPT-5.6 Luna `xhigh` subagents and report discovered problems through `$add-issue`. |
-| `redesign-ui` | Plan and visualize a UI redesign before creating an issue. |
+| `redesign-ui` | Automatically plan and visualize UI changes before issue handoff. |
 | `repair-pr` | Repair merge conflicts, actionable bot feedback, and failing CI on a pull request. |
 | `review-full` | Run a sustained three-reviewer pull-request review and publish one consolidated review. |
 | `slop-fix-issue` | Generate AI slop for one GitHub issue: close it with supporting evidence if already resolved; otherwise implement and verify it, open and attach a non-draft PR with a Closes reference, and stop. |
@@ -105,6 +105,8 @@ $write-prd
 ```
 
 The ChatGPT desktop app also shows standalone skills in its Skills sidebar. Several skills in this repository intentionally require explicit invocation, so invoking them by name is the reliable way to start their workflows.
+
+`redesign-ui` is selected automatically whenever a task requires UI changes, including layout, styling, components, content, interaction, navigation, or responsive behavior. It runs the proposal workflow in Plan Mode; if needed, it asks for a mode switch and resumes without an explicit `$redesign-ui` invocation. Recording the approved proposal still requires a separate explicit `$add-issue` invocation outside Plan Mode.
 
 When using `$add-issue` in Plan Mode, finish investigation and finalize the exact issue title, complete body or duplicate comment, metadata, attachments, and recording action in the final plan. After approval and leaving Plan Mode, it resumes directly at recording with that payload; it does not repeat investigation, classification, reproduction, or drafting. It performs only bounded pre-write checks and verifies the result. A new matching duplicate or changed required condition stops that candidate and is reported without automatically changing the target or content. A missing finalized payload is reported rather than reconstructed. Draft-only restrictions continue after a mode change, and the issue's proposed work is never implemented in the same invocation. A fresh invocation outside Plan Mode retains the full investigation workflow.
 

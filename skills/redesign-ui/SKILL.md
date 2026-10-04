@@ -1,6 +1,6 @@
 ---
 name: redesign-ui
-description: Plan and visualize a UI redesign before handing approved work to GitHub issue creation. Use only when a human explicitly invokes `$redesign-ui`; never select it automatically from UI feedback, redesign requests, screenshots, or issue-planning similarity.
+description: Plan and visualize UI changes before handing approved work to GitHub issue creation. Use automatically whenever a task changes a product's UI, including layout, styling, components, content, interaction, navigation, or responsive behavior; no explicit `$redesign-ui` invocation is required. Read-only UI inspection or a screenshot alone does not trigger this workflow.
 ---
 
 # Redesign UI
@@ -13,14 +13,19 @@ human invocation.
 
 ## Entry Conditions
 
-- A human must explicitly invoke `$redesign-ui`. Do not infer invocation from a
-  redesign request or similar context.
+- Use this skill automatically whenever the authorized task requires changing a
+  product's UI, whether the change is requested directly or identified while
+  working on the task. The human does not need to name `$redesign-ui`.
+- Read-only UI inspection, a screenshot without a change request, or editing
+  this skill does not start the redesign workflow.
 - Run the redesign workflow only in Plan Mode. If Plan Mode is not active, ask
-  the user to switch to Plan Mode and explicitly invoke `$redesign-ui` again,
-  then stop. Do not inspect the product, generate an image, modify files, or
-  start an issue workflow in that invocation.
-- The `$redesign-ui` invocation authorizes proposal work only. It never
-  authorizes GitHub issue creation or another external mutation.
+  the user to switch to Plan Mode, then stop. Do not inspect the product,
+  generate an image, modify files, or start an issue workflow before the mode
+  change. Resume this workflow in Plan Mode without requiring an explicit skill
+  invocation.
+- Selecting `$redesign-ui`, explicitly or automatically, starts proposal work
+  only within the authorized task. It never authorizes GitHub issue creation or
+  another external mutation.
 
 ## Workflow
 
@@ -70,8 +75,9 @@ human invocation.
 
      `Use $add-issue to record the approved redesign from this conversation, including the approved ImageGen previews and final prompts.`
 
-   - The initial `$redesign-ui` invocation, design approval, or a generic request
-     such as "file it" does not count as an explicit `$add-issue` invocation.
+   - Starting `$redesign-ui` explicitly or automatically, design approval, or a
+     generic request such as "file it" does not count as an explicit `$add-issue`
+     invocation.
    - Only after the human explicitly invokes `$add-issue` outside Plan Mode,
      load and follow that skill in full. Let `$add-issue` independently classify,
      investigate, audit, and record the work; do not bypass any of its evidence,

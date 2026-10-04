@@ -11,6 +11,10 @@ Start for a human request to create a PR, or a publishing handoff within an alre
 
 Publish the intended changes only. Do not implement additional work or modify source to fix failed checks. Stop and report blocking validation failures. End after publication and verification; do not merge, enable auto-merge, or start PR maintenance.
 
+## Required Writing Skill
+
+Read [$write-ste](../write-ste/SKILL.md) and resolve its installed `SKILL.md` to an absolute path. Use it for PR titles and bodies. If unavailable, report the missing dependency and stop before publishing instead of skipping it.
+
 ## Invocation and Handoff
 
 Reuse reliable information from the current task. A calling skill supplies the following when known:
@@ -31,7 +35,9 @@ Resolve missing facts through the checkout and authenticated GitHub reads. Ask o
 4. Establish the repository's required checks and relevant validation. Reuse recorded successful checks only when they cover the current intended changes; run missing or invalidated checks and record actual results. Stop on blocking failures without rewriting source, including human-reviewed changes.
 5. Commit intended uncommitted changes in coherent, verified units, following repository instructions, and push any required head commits to the confirmed remote. Stage only the intended files. Skip already completed commits or pushes; do not create empty commits or publish unrelated changes.
 
-## Write the Body and Issue References
+## Write the Title, Body, and Issue References
+
+Explicitly invoke `[$write-ste](<absolute-write-ste-skill-path>)` when drafting or revising the PR title and body. Apply it only to the intended PR prose. Preserve the requested language, repository template, required disclosures, exact `Closes` and `Refs` lines, technical literals, factual meaning, uncertainty, and actual validation status.
 
 Follow the repository's template and language. Lead with the concrete problem and resulting behavior, and report validation actually performed. Incorporate the caller's required body content. For an existing PR, preserve unrelated content and update equivalent sections rather than duplicating them. Preserve supplied disclosures and known execution details without inventing missing facts.
 

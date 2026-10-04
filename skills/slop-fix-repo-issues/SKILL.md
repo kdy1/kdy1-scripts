@@ -24,13 +24,15 @@ Use `repo:<owner/repo> is:issue is:open` as the base scope. Translate natural-la
 
 ## Delegate the fixed list
 
-Explicitly invoke `[$bulk](<absolute-bulk-skill-path>)` with the fixed issue URL list and the common prompt below, replacing both skill-path placeholders. Supply shared context containing the original human invocation, delegation chain, human selection conditions verbatim, resolved host/repository and exact query, recorded author when applicable, and the authorized task of handling only each assigned issue through closure or PR creation. Preserve this context in the batch ledger and every item chat. Forward concurrency and any explicitly requested starting Git state to `$bulk`.
+Invoke `$bulk` with the fixed issue URL list and the common prompt below. Keep the original human invocation, delegation chain, selection conditions, resolved host/repository, exact query, recorded author, and authorized scope in the coordinator ledger. Do not pass shared context or extra instructions into item prompts. Forward concurrency and any explicitly requested starting Git state as dispatch settings.
 
 ### Common prompt
 
 ```text
-Explicitly invoke [$slop-fix-issue](<absolute-slop-fix-issue-skill-path>) with the assigned issue's exact URL. Carry the original human invocation, delegation chain, and authorized repository/query/task scope supplied in shared context as the authorization origin. Handle only this assigned issue; do not select another. Stop after evidence-backed issue closure or verified PR creation and attachment. Report its state, evidence-comment or PR links, performed verification and actual results, and any blockers or unresolved limits. Do not register automations, invoke PR maintenance, or wait for CI, reviews, or merging.
+$slop-fix-issue <issue_url>
 ```
+
+Treat `<issue_url>` as the item placeholder and replace it with the assigned canonical issue URL. Require `create_thread.prompt` to equal that single line with no prefix, suffix, Markdown skill path, or additional context.
 
 Let `$bulk` own item chats, coordination, result collection, and its existing automatic archiving rules, and let `$slop-fix-issue` own each issue's assessment, closure, or implementation through PR creation. A failed item or one needing input does not stop independent items. Report each item's actual outcome and links, including incomplete work and attachment or cleanup limitations, then end the batch.
 

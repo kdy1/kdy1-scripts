@@ -1,7 +1,7 @@
 interface:
   display_name: "Redesign UI"
-  short_description: "Plan UI redesigns before issue handoff"
-  default_prompt: "Use $redesign-ui in Plan Mode to inspect the current UI, generate an ImageGen redesign preview, and prepare an approved issue handoff."
+  short_description: "Plan and implement approved UI redesigns"
+  default_prompt: "Use $redesign-ui to plan and preview my UI changes in Plan Mode, then implement the approved design in this conversation after leaving Plan Mode."
 
 policy:
   allow_implicit_invocation: true

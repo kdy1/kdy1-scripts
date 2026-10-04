@@ -1,15 +1,15 @@
 ---
 name: redesign-ui
-description: Plan and visualize UI changes before handing approved work to GitHub issue creation. Use automatically whenever a task changes a product's UI, including layout, styling, components, content, interaction, navigation, or responsive behavior; no explicit `$redesign-ui` invocation is required. Read-only UI inspection or a screenshot alone does not trigger this workflow.
+description: Plan and visualize UI changes in Plan Mode, then implement the approved design in the same conversation after leaving Plan Mode when implementation is authorized. Use automatically whenever a task changes a product's UI, including layout, styling, components, content, interaction, navigation, or responsive behavior; no explicit `$redesign-ui` invocation is required. Read-only UI inspection or a screenshot alone does not trigger this workflow.
 ---
 
 # Redesign UI
 
 ## Goal
 
-Produce an approved, implementation-ready UI redesign proposal without changing
-the product, then hand the proposal to `$add-issue` only after a separate explicit
-human invocation.
+Produce an approved, implementation-ready UI redesign proposal in Plan Mode.
+After leaving Plan Mode, implement and verify the approved design in the same
+conversation when implementation is within the authorized task.
 
 ## Entry Conditions
 
@@ -18,11 +18,12 @@ human invocation.
   working on the task. The human does not need to name `$redesign-ui`.
 - Read-only UI inspection, a screenshot without a change request, or editing
   this skill does not start the redesign workflow.
-- Run the redesign workflow only in Plan Mode. If Plan Mode is not active, ask
-  the user to switch to Plan Mode, then stop. Do not inspect the product,
-  generate an image, modify files, or start an issue workflow before the mode
-  change. Resume this workflow in Plan Mode without requiring an explicit skill
-  invocation.
+- Run the proposal phase only in Plan Mode. When starting that phase outside
+  Plan Mode, ask the user to switch to Plan Mode, then stop. Do not inspect the
+  product, generate an image, or modify files before the mode change. Resume
+  the proposal phase in Plan Mode without requiring an explicit skill invocation.
+  An approved design ready for authorized implementation resumes at step 4
+  outside Plan Mode.
 - Selecting `$redesign-ui`, explicitly or automatically, starts proposal work
   only within the authorized task. It never authorizes GitHub issue creation or
   another external mutation.
@@ -65,49 +66,41 @@ human invocation.
      the actual absolute saved file path returned by image generation, target
      surface, viewport and state, caption or alt text, and final prompt. Keep the
      preview rendered inline and exclude discarded or superseded variants from
-     the handoff. Do not implement it or create/update a GitHub issue.
+     the approved design record. Do not implement it during the proposal phase.
 
-4. Require a separate `$add-issue` handoff.
-   - While Plan Mode remains active, do not invoke `$add-issue` or perform a
-     GitHub write.
-   - After approval, tell the user to leave Plan Mode and send a new message that
-     explicitly invokes `$add-issue`, for example:
+4. Implement the approved design in the same conversation.
+   - If implementation is part of the authorized task, tell the user to leave
+     Plan Mode after design approval. While Plan Mode remains active, retain the
+     approved design record without modifying product files. For a proposal-only
+     request, finish with the approved Plan Mode result.
+   - Once Plan Mode is no longer active, continue from the approved design record
+     without requiring another skill invocation or an issue handoff. Preserve
+     the original task scope and restrictions; leaving Plan Mode does not
+     authorize implementation of a proposal-only request.
+   - Use the approved text specification and final previews to implement the
+     redesign in the target repository. Do not repeat completed proposal work or
+     regenerate approved previews. If feedback or new evidence requires a
+     design change, return to the proposal phase in Plan Mode and obtain approval
+     of the revised preview and text specification before implementing it.
+   - Run the relevant checks and inspect the rendered result against the approved
+     acceptance criteria, viewports, and states. Report the changes, verification
+     results, and any remaining limitations in the same conversation.
 
-     `Use $add-issue to record the approved redesign from this conversation, including the approved ImageGen previews and final prompts.`
-
-   - Starting `$redesign-ui` explicitly or automatically, design approval, or a
-     generic request such as "file it" does not count as an explicit `$add-issue`
-     invocation.
-   - Only after the human explicitly invokes `$add-issue` outside Plan Mode,
-     load and follow that skill in full. Let `$add-issue` independently classify,
-     investigate, audit, and record the work; do not bypass any of its evidence,
-     workspace-integrity, duplicate, metadata, or delegation requirements.
-
-## Approved Image Handoff
+## Approved Design References
 
 - Treat the approved text specification as the durable source of truth and the
   image as supporting evidence.
-- Pass the approved final images, their saved file paths and descriptions, final
-  prompts, and text specification through `$add-issue`'s audited recording
-  payload. Its recording phase must include the final prompts and attempt to
-  attach the images to the new issue body or, when that writing path cannot
-  include attachments, one image-handoff comment on the same issue. For an open
-  duplicate, include missing approved visuals in its permitted handoff comment;
-  do not attach images already recorded in the thread.
-- Allow uploads only as GitHub-native attachments to the target issue during
-  the separately authorized `$add-issue` recording phase. Never upload in Plan
-  Mode, publish to external hosting, commit the images to the repository, or
-  introduce another persistent mutation solely to make them available. Follow
-  `$add-issue`'s attachment support checks, browser fallback, and verification.
-- If attachment is unavailable or fails, continue with the self-contained text
-  specification and final prompts. Describe the approved visual precisely enough
-  that the implementer does not need access to the local image, and report which
-  images were omitted and why. Never publish local paths as GitHub image links.
+- Keep the approved previews in the image-generation default storage. Use their
+  saved paths, descriptions, and final prompts from the conversation as local
+  implementation references. Do not upload, copy into the target repository, or
+  commit the previews merely to preserve or share the design record.
+- If an approved image is unavailable, continue from the self-contained text
+  specification, description, and final prompt. Report the missing reference;
+  do not silently regenerate or substitute the approved preview.
 
 ## Boundaries
 
-- Never implement the redesign during this workflow.
+- Never implement the redesign during the Plan Mode proposal phase.
 - Never modify repository-tracked files during the Plan Mode proposal phase.
-- Never create or update a GitHub issue from Plan Mode.
-- Refer to the issue skill only as `$add-issue`, never by a local filesystem
-  path.
+- Do not invoke an issue-recording skill or create/update a GitHub issue as part
+  of this workflow.

@@ -1,6 +1,6 @@
 ---
 name: add-issue
-description: Evidence-driven GitHub issue creation for confirmed bugs and decision-complete future work, with evidence-backed metadata where authorized. Start only on explicit human `$add-issue` invocation or an authorized candidate handoff from human-invoked MainQA; never select this skill automatically from bug reports, feature ideas, TODOs, URLs, issue references, or task similarity. Classify independently implementable candidates as Bug, Feature, or Task; prove defect root causes; compare affected revisions with the freshly fetched default branch; restore temporary instrumentation; and create or update self-contained GitHub records without implementing the work.
+description: Evidence-driven GitHub issue creation for confirmed bugs and decision-complete future work, with evidence-backed metadata where authorized. Start only on explicit human `$add-issue` invocation or an authorized candidate handoff from human-invoked MainQA; never select this skill automatically from bug reports, feature ideas, TODOs, URLs, issue references, or task similarity. Classify independently implementable candidates as Bug, Feature, or Task; prove defect root causes at the identified commit; restore temporary instrumentation; and create or update self-contained GitHub records without implementing the work.
 ---
 
 # Add Issue
@@ -43,19 +43,19 @@ Preserve the human's narrower restrictions through every handoff. For a draft-on
 ## Subagent Orchestration
 
 - For a MainQA handoff, every investigation and recording descendant uses `gpt-5.6-luna` with `xhigh` reasoning and participates in MainQA's shared limit of at most ten simultaneous descendants, further bounded by runtime capacity. Obtain a slot allocation from the MainQA root coordinator before spawning; record the intended unique task name/run/role/candidate identity, accepted child handles, and verified terminal/released state. An uncertain spawn retains its allocation until agent-state inspection recovers the handle or proves absence; never retry blindly. Propagate the same authorization, root handle, and allocation rules to every child. Use explicit `model`, `reasoning_effort`, and `fork_turns: "none"` when supported; supply the complete task context. Never substitute a model, exceed the allocation, or perform a required delegated phase locally because the requested settings or slots are unavailable. Wait for occupied slots; report a capability blocker when the required phases cannot be delegated.
-- When subagent delegation is available, using it is required. Before drafting a handoff, delegate at least one bounded, read-only investigation and use all useful slots concurrently. Assign separate candidates to separate investigators when possible; for one candidate, split independent evidence boundaries such as repository contracts and source, runtime evidence, affected-versus-default-branch comparison, and duplicate history. The coordinating agent must continue complementary work instead of waiting idly.
+- When subagent delegation is available, using it is required. Before drafting a handoff, delegate at least one bounded, read-only investigation and use all useful slots concurrently. Assign separate candidates to separate investigators when possible; for one candidate, split independent evidence boundaries such as repository contracts and source, runtime evidence, revision provenance and reproducibility, and duplicate history. The coordinating agent must continue complementary work instead of waiting idly.
 - Give each investigator the active instructions, exact candidate and revision or environment, bounded questions, allowed evidence sources, forbidden mutations, and required deliverable. Require sourced facts, commands or code references, separated inferences, supporting and contradicting evidence, unresolved questions, and any workspace artifacts or changes.
 - Investigation subagents must not create, update, type, or comment on GitHub issues or perform another persistent external mutation. Keep their work read-only by default. If temporary instrumentation or revision-specific execution is necessary and authorized, give each investigator its own isolated worktree or copy; never let concurrent investigators instrument the shared checkout. Require cleanup and a workspace-integrity report.
 - The coordinating agent owns the candidate and evidence ledgers, validates material claims, reconciles conflicts, requests targeted follow-up when needed, selects the classification and outcome, and approves the exact audited handoff payload. Agreement among subagents is not a substitute for causal or authoritative evidence.
 - After the workspace is restored and the handoff is audited, delegate all permitted GitHub writes to one dedicated recording subagent that did not investigate the candidates. Give it the exact repository, candidate outcome, title, complete body or comment when needed, audited metadata payload, any approved image handoff described below, and the only permitted actions. The recording subagent must serialize candidates and re-check action-specific permission, duplicate state, and metadata definitions and values immediately before each write. If preconditions change, follow only the audited optional-metadata omission policy; otherwise return without improvising. After a write, it must re-fetch the record and any relevant project item and return the verified URL, title, action taken, applied metadata, and any attachment URLs or omissions.
 - The recording subagent's scope is limited to the approved GitHub record, its audited metadata and approved GitHub-native image attachments, and required verification reads. It must not modify the candidate repository, run implementation commands, or continue into implementation after recording succeeds or fails.
-- Do not dispatch the recording subagent for `already fixed`, `unconfirmed`, `failed`, or existing-issue outcomes with neither missing handoff content nor permitted metadata changes, and never dispatch it to write while Plan Mode or a draft-only restriction is active. Delegation never expands authorization. Temporary slot occupancy is not a fallback condition: finish or wait for current investigators, then obtain a distinct recording subagent. Outside a MainQA handoff, only when subagent capability is absent or no usable subagent can be obtained after current delegated work completes may the coordinating agent perform a required phase locally, and it must report the exact fallback in the final outcome. A MainQA handoff must retain the queued/blocked phase and report the limitation instead of falling back locally.
+- Do not dispatch the recording subagent for `unconfirmed`, `failed`, or existing-issue outcomes with neither missing handoff content nor permitted metadata changes, and never dispatch it to write while Plan Mode or a draft-only restriction is active. Delegation never expands authorization. Temporary slot occupancy is not a fallback condition: finish or wait for current investigators, then obtain a distinct recording subagent. Outside a MainQA handoff, only when subagent capability is absent or no usable subagent can be obtained after current delegated work completes may the coordinating agent perform a required phase locally, and it must report the exact fallback in the final outcome. A MainQA handoff must retain the queued/blocked phase and report the limitation instead of falling back locally.
 
 ## Classification and Partitioning
 
 Classify by the requested behavior, not by the user's preferred type name:
 
-- Select `Bug` for unexpected current behavior, a regression, a failure, or a violated existing invariant. Confirm the root cause, identify the affected deployed or reported revision, and compare it with the freshly fetched authoritative default branch before recording it. If the cause remains unconfirmed or the default branch already fixes it, do not create or comment on an issue for that candidate.
+- Select `Bug` for unexpected current behavior, a regression, a failure, or a violated existing invariant. Identify the investigation revision and confirm the root cause on that revision before recording it. If the cause remains unconfirmed, do not create or comment on an issue for that candidate.
 - Select `Feature` for new user-visible functionality or a material expansion of existing product behavior.
 - Select `Task` for maintenance, refactoring, documentation, testing, security hardening, operations, cleanup, migrations, or other work that adds no new product behavior and does not correct a confirmed defect.
 - Ask the user before any GitHub write when classification or intended behavior remains ambiguous after repository investigation.
@@ -92,18 +92,17 @@ For `Feature` candidates, resolve the relevant product outcome, actors, UX and e
 
 For `Task` candidates, resolve the current state, intended maintenance outcome, exact implementation boundary, preserved behavior, dependencies, compatibility or migration handling, operational impact, and verification. Do not turn an unresolved bug hypothesis into a `Task` merely to bypass the root-cause standard.
 
-## Bug Root-Cause and Default-Branch Standard
+## Bug Root-Cause and Revision Standard
 
 - Distinguish the user-visible symptom, trigger, propagation path, and underlying root cause.
 - Require causal evidence, not a plausible hypothesis or timing correlation. Confirm the cause through a minimal reproduction, controlled counterfactual, or deterministic code, configuration, or runtime trace corroborated by logs or tests.
 - Test material competing explanations and record why they were excluded.
 - Maintain a separate evidence-ledger entry for every candidate defect, including its causal chain, selected correction, supporting and contradicting evidence, and outcome.
-- For deployed behavior, identify the exact environment and deployed version, release tag, image digest, task definition, build identifier, or equivalent artifact, and trace it to the exact repository commit. For non-deployed reports, identify the exact observed revision. Never assume the current checkout is the affected revision.
-- Resolve the authoritative default branch from repository metadata, freshly fetch it, and record its name, commit, remote, and fetch time. Do not assume a branch name or rely on a stale remote-tracking ref.
-- Establish the root cause against the affected revision, then evaluate the same trigger and causal boundary on the fetched default branch in an isolated worktree or other workspace-safe checkout.
-- Treat a defect as fixed on the default branch only when causal evidence shows the root-cause condition is absent and expected behavior holds. A changed file, merged pull request, or plausible patch alone is insufficient.
-- When the default branch already fixes the defect, classify the outcome as `already fixed` and perform no GitHub write. Report the affected revision, fetched default-branch revision, fixing change when traceable, verification on both revisions, and any deployment lag.
-- If the affected revision cannot be established, the default branch cannot be fetched, or the comparison cannot prove whether the cause remains, mark the candidate `failed` and perform no GitHub write.
+- For local investigation, use the current `HEAD` unless the human or an authorized handoff specifies another revision. Resolve and record the exact commit SHA and branch when available; a non-default branch or detached HEAD is valid. Keep pre-existing uncommitted changes distinct from committed-revision evidence.
+- For deployed behavior, identify the exact environment and deployed version, release tag, image digest, task definition, build identifier, or equivalent artifact, and trace it to the exact repository commit. For other runtime reports, identify the exact observed revision. Never assume the current checkout matches a reported runtime revision.
+- Establish the root cause on the identified investigation revision and include its commit SHA, causal evidence, and portable reproduction in the recording payload.
+- Do not require a default-branch fetch, comparison, or verification. Its state, fetch availability, or a fix on another revision must not block recording a defect confirmed on the investigation revision.
+- If the investigation revision cannot be established, mark the candidate `failed` and perform no GitHub write.
 
 ## Workspace Integrity
 
@@ -123,7 +122,7 @@ For `Task` candidates, resolve the current state, intended maintenance outcome, 
    - Build the subagent investigation map, dispatch the bounded research assignments, and record their sourced results in the candidate and evidence ledgers.
 
 2. Establish readiness.
-   - For a `Bug`, reproduce and isolate the failure on the affected revision, inspect relevant authorized read-only runtime evidence, exclude competing explanations, and evaluate the confirmed cause on the freshly fetched default branch.
+   - For a `Bug`, reproduce and isolate the failure on the identified investigation revision, inspect relevant authorized read-only runtime evidence, exclude competing explanations, and record the commit SHA and reproduction evidence.
    - For a `Feature` or `Task`, establish current state and authoritative constraints, evaluate material alternatives, ask for undiscoverable intent, and resolve implementation, compatibility, rollout, operational, and verification decisions that apply.
    - Reduce inaccessible evidence to a portable sanitized representation and prepare exact test setups, actions, and assertions.
    - Reconcile the subagent findings, independently verify every material claim used in the outcome, and resolve or explicitly fail any contradiction that could change classification, scope, or verification.
@@ -133,7 +132,7 @@ For `Task` candidates, resolve the current state, intended maintenance outcome, 
    - For an approved redesign, include its self-contained text specification, final prompts, and approved image handoff in the audited payload, following `Approved Redesign Images` below.
    - Audit the draft from the perspective of an engineer with no other context.
    - Treat the draft solely as a GitHub handoff. Its proposed implementation and tests must not become work for this invocation, even if the Plan Mode result is approved.
-   - Mark unconfirmed bugs as `unconfirmed`, verified default-branch fixes as `already fixed`, and decision-incomplete planned work as `failed`; perform no GitHub write for them.
+   - Mark unconfirmed bugs as `unconfirmed` and decision-incomplete planned work as `failed`; perform no GitHub write for them.
 
 4. Restore the workspace and check duplicates.
    - Remove temporary instrumentation and compare the workspace with the captured baseline.
@@ -151,7 +150,7 @@ For `Task` candidates, resolve the current state, intended maintenance outcome, 
    - If one record fails, retain its failure details and continue with other independently audited candidates when safe. After every candidate reaches an outcome, end the invocation; do not begin implementation.
 
 6. Report every outcome.
-   - Report `new issue`, `duplicate comment`, `metadata update`, `existing issue`, `already fixed`, `unconfirmed`, or `failed` for each candidate. Use `metadata update` for a duplicate changed only through metadata; include accompanying metadata changes with a new issue or duplicate comment outcome.
+   - Report `new issue`, `duplicate comment`, `metadata update`, `existing issue`, `unconfirmed`, or `failed` for each candidate. Use `metadata update` for a duplicate changed only through metadata; include accompanying metadata changes with a new issue or duplicate comment outcome.
    - Include the issue or comment URL, classification, verified applied metadata (including Issue Type, labels, and issue or project fields), title, target repository, strongest evidence, and root cause for a `Bug`. Report omitted, conflicting, failed, or unverified metadata and why, distinguishing permission limits from insufficient evidence or unsupported fields.
    - For an approved image handoff, report the verified attachment URLs and identify any omitted images and reasons. A verified text-only record remains a successful recording outcome when optional attachments fail.
    - State clearly when no successful GitHub write occurred and report the shared workspace cleanup result once. End after this report without starting, staging, or proposing implementation work.
@@ -175,8 +174,8 @@ Follow the target repository's title, body, template, and metadata contracts whe
 State the requested outcome, affected users or systems, impact, and confirmed root cause for a Bug.
 
 ## Evidence
-- Affected environment and repository revision:
-- Affected and fetched default-branch revisions and comparison result for a Bug:
+- Investigated environment, exact repository commit SHA, and branch or detached HEAD:
+- Reported runtime revision and its provenance when applicable:
 - Source provenance and implementer access assumptions:
 - Current and expected behavior:
 - Portable reproduction, fixture, test vector, or repository evidence:
@@ -210,11 +209,10 @@ Replace every prompt with candidate-specific content. Use a justified `Not appli
 ## Useful Commands
 
 ```bash
-gh repo view --json nameWithOwner,url,defaultBranchRef
-gh repo view "$OWNER_REPO" --json viewerPermission,defaultBranchRef
-DEFAULT_BRANCH="$(gh repo view "$OWNER_REPO" --json defaultBranchRef --jq '.defaultBranchRef.name')"
-git fetch --no-tags "$REMOTE" "$DEFAULT_BRANCH"
-git rev-parse "refs/remotes/$REMOTE/$DEFAULT_BRANCH"
+gh repo view --json nameWithOwner,url
+gh repo view "$OWNER_REPO" --json viewerPermission
+git rev-parse HEAD
+git branch --show-current
 gh issue list --repo "$OWNER_REPO" --state open --search "$SEARCH_TERMS"
 gh label list --repo "$OWNER_REPO"
 gh issue create --repo "$OWNER_REPO" --title "$TITLE" --body-file "$BODY_FILE"

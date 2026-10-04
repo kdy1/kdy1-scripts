@@ -1,0 +1,7 @@
+interface:
+  display_name: "Write STE"
+  short_description: "Write clear technical text with STE principles"
+  default_prompt: "Use $write-ste to write or revise technical text with practical ASD-STE100 principles while preserving its language and meaning."
+
+policy:
+  allow_implicit_invocation: true

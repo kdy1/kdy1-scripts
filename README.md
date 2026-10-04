@@ -21,6 +21,7 @@ A collection of standalone [Codex skills](https://learn.chatgpt.com/docs/build-s
 | `write-blog-post` | Develop a blog-post draft from material supplied by the user. |
 | `write-marketing-copy` | Rephrase source material into LinkedIn, X, and Threads posts. |
 | `write-prd` | Capture product decisions and create an implementation-ready GitHub issue. |
+| `write-ste` | Automatically apply practical ASD-STE100 clarity principles to technical text while preserving its language and meaning. |
 
 ## Install for Codex
 
@@ -30,7 +31,7 @@ After installing or updating a skill, Codex normally detects it automatically. R
 
 ### Quickest option: `npx skills`
 
-The [`skills` CLI](https://www.skills.sh/docs/cli) recognizes this repository and its fifteen skills. Run it from the repository where you want project-scoped skills installed:
+The [`skills` CLI](https://www.skills.sh/docs/cli) recognizes this repository and its sixteen skills. Run it from the repository where you want project-scoped skills installed:
 
 ```sh
 # Install one skill for Codex in the current project.
@@ -107,6 +108,8 @@ $write-prd
 The ChatGPT desktop app also shows standalone skills in its Skills sidebar. Several skills in this repository intentionally require explicit invocation, so invoking them by name is the reliable way to start their workflows.
 
 `redesign-ui` is selected automatically whenever a task requires UI changes, including layout, styling, components, content, interaction, navigation, or responsive behavior. It runs the proposal workflow in Plan Mode; if needed, it asks for a mode switch and resumes without an explicit `$redesign-ui` invocation. Recording the approved proposal still requires a separate explicit `$add-issue` invocation outside Plan Mode.
+
+`write-ste` allows automatic selection when drafting or revising PRs, issues, reviews, technical documentation, and code explanations, including technical chat replies. It applies practical ASD-STE100 clarity principles while preserving the text's language, meaning, templates, and technical literals. For Korean and other languages, it uses natural local grammar. Ordinary conversation and marketing copy are excluded. It does not check the official approved vocabulary or certify full standard compliance. Automatic selection does not guarantee invocation for every eligible task; invoke `$write-ste` explicitly when needed.
 
 When using `$add-issue` in Plan Mode, finish investigation and finalize the exact issue title, complete body or duplicate comment, metadata, attachments, and recording action in the final plan. After approval and leaving Plan Mode, it resumes directly at recording with that payload; it does not repeat investigation, classification, reproduction, or drafting. It performs only bounded pre-write checks and verifies the result. A new matching duplicate or changed required condition stops that candidate and is reported without automatically changing the target or content. A missing finalized payload is reported rather than reconstructed. Draft-only restrictions continue after a mode change, and the issue's proposed work is never implemented in the same invocation. A fresh invocation outside Plan Mode retains the full investigation workflow.
 

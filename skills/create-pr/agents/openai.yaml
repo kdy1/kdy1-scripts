@@ -1,0 +1,7 @@
+interface:
+  display_name: "Create PR"
+  short_description: "Publish PRs with verified Closes and Refs references"
+  default_prompt: "Use $create-pr to publish my intended changes as a GitHub PR, using Closes for fully resolved issues and Refs for partial or related work, and verify the references."
+
+policy:
+  allow_implicit_invocation: true

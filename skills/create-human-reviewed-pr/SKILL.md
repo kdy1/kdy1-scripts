@@ -9,12 +9,14 @@ Start only when the human user directly invokes `$create-human-reviewed-pr`. Tha
 
 Publish the reviewed changes only. Do not implement additional work, rewrite the reviewed source, merge the PR, enable auto-merge, or start recurring maintenance.
 
-## Prepare the Changes
+## Required Skill
 
-1. Resolve the repository and GitHub host from the user's explicit target, otherwise from the checkout's remote. Read applicable repository instructions, contribution guidance, and PR templates. Inspect the working tree and intended diff; preserve unrelated changes. Ask only when the intended repository or change set cannot be determined.
-2. Use the requested head and base when provided; otherwise use the current branch as head and its configured PR base, falling back to the repository's default branch. If a feature branch is needed, follow repository conventions, using `codex/` by default, and preserve the reviewed changes. Confirm the exact head repository, remote, branch, and base before publishing.
-3. Resolve the reviewer's GitHub username from an explicit user-supplied value, otherwise run `gh api --hostname <github-host> user --jq .login` for the target host's authenticated account. Never hardcode a personal username or infer it from the repository owner, commit author, or PR author. If the account is a bot or the human identity cannot be resolved, ask for the reviewer's username before publishing.
-4. Run the repository's required checks and relevant validation, recording actual results. Stop and report blocking failures rather than changing the reviewed source to fix them. Commit any intended uncommitted changes in coherent units and push the required head commits to the intended remote. Do not publish unrelated changes or silently create a fork. If there is no change to propose against the base, report that and stop.
+Read [$create-pr](../create-pr/SKILL.md) and resolve its installed `SKILL.md` to an absolute path. It owns the shared publication steps. If unavailable, report the missing dependency and stop instead of publishing directly.
+
+## Prepare the Human Review Context
+
+1. Identify the reviewed change set and resolve the repository and GitHub host from the user's explicit target, otherwise from the checkout's remote. Preserve unrelated changes. Collect the checkout path, requested head/base, issue context, existing PR, and validation already performed for the handoff. Let `$create-pr` perform the shared repository, validation, commit, push, and publication checks.
+2. Resolve the reviewer's GitHub username from an explicit user-supplied value, otherwise run `gh api --hostname <github-host> user --jq .login` for the target host's authenticated account. Never hardcode a personal username or infer it from the repository owner, commit author, or PR author. If the account is a bot or the human identity cannot be resolved, ask for the reviewer's username before publishing.
 
 ## Write the PR Body
 
@@ -40,10 +42,8 @@ Use explicit session or harness information, or verified execution records for t
 
 ## Publish and Verify
 
-1. Look for an open PR in the target repository with the exact head repository and branch before creating one. Reuse a matching PR. If multiple candidates exist or an existing PR has a different base from the intended target, clarify rather than duplicating or silently retargeting it.
-2. Write the exact body to a temporary file and use `--body-file` for GitHub writes. For a new PR, use `gh pr create` with explicit `--repo`, `--base`, `--head`, and `--title`, without `--draft`. For an existing PR, use `gh pr edit` to update the body while preserving unrelated content and use `gh pr ready` only if it is a draft.
-3. If a write fails or its outcome is uncertain, re-fetch the PR or query matching PRs before retrying. Continue only when the actual state and failure cause establish a safe next action; otherwise report the uncertainty and stop. Never blindly retry creation.
-4. Re-fetch the PR and verify its repository, head repository and branch, base, `isDraft: false`, reviewer mention, and disclosure details. Correct only mismatches introduced by this invocation, then verify again. Do not claim success until the published state is confirmed.
-5. In the Codex app, attach every created or updated PR to the current chat using the available `attach_artifact` tool. If attachment is unavailable or fails, report that separately from the verified GitHub result.
+Explicitly invoke `[$create-pr](<absolute-create-pr-skill-path>)` in this task with the original human invocation and reviewed change set, repository/checkout/head/base context, known issue references and validation results, and the prepared disclosure section. Require **non-draft** (`isDraft: false`) publication, preservation of the reviewed source, and verification of the reviewer mention and known disclosure details.
+
+Let `$create-pr` own missing validation, coherent commits and pushes, PR reuse or creation, required `Closes` or `Refs` references, publication verification, and attachment. Do not duplicate or bypass those steps. A failed check must be reported without fixing the reviewed source. Keep this skill's human-only invocation requirement; calling `$create-pr` does not authorize calling this skill in reverse or declaring a human review.
 
 Return the PR URL and verified non-draft state, plus any material validation or attachment limitations. End the invocation after publication and verification.

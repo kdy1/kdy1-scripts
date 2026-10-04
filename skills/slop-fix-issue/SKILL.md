@@ -11,9 +11,10 @@ This is a one-shot workflow. Do not register a watch or heartbeat, invoke a PR-m
 
 Handle one issue. If it is already resolved, post the supporting evidence, close it as completed, and stop. Otherwise generate AI slop to implement it, open and verify a non-draft pull request, attach it, and stop. Do not pick another issue after closing an already-resolved issue or creating the PR, including when the issue was selected automatically.
 
-## Required Tools
+## Required Tools and Skill
 
 - Use authenticated `gh` access for GitHub operations and discover `attach_artifact` to attach the created PR.
+- PR publication or reconciliation requires [$create-pr](../create-pr/SKILL.md). Read it and resolve its installed `SKILL.md` to an absolute path before implementing an unresolved issue or handling this workflow's existing PR. If unavailable, report the missing dependency and stop instead of publishing directly. The already-resolved issue closure path does not require PR publication.
 
 ## Select and Assess One Issue
 
@@ -33,15 +34,13 @@ Handle one issue. If it is already resolved, post the supporting evidence, close
 ## Implement an Unresolved Issue
 
 1. Inspect the working tree and attached worktrees. Reuse a suitable clean worktree or create an isolated managed worktree when needed, following the available worktree tools. Preserve pre-existing changes and keep the chosen checkout available for review. Start an issue branch from the freshly fetched intended base, using repository conventions and the actual remote and base branch.
-2. Implement the issue, perform the repository's required validation and relevant regression checks, and commit and push the verified change. Keep the change scoped to the selected issue. Follow repository contribution and commit conventions.
+2. Implement the issue, perform the repository's required validation and relevant regression checks, and commit each coherent, verified unit according to repository instructions. Keep the change scoped to the selected issue and retain the actual validation results for `$create-pr`. Let it push the required head commits during publication.
 
 ## Create and Verify the PR
 
-1. Check again for a PR for this issue branch before creating one. Reuse this workflow's existing PR when present. If it is already merged or closed, attach it, report its current state and available results, and stop without reopening it or creating a replacement.
-2. If no PR exists, create a **non-draft** PR against the intended base. Follow the repository's PR template and describe the problem, resulting behavior, and validation.
-3. Put a standalone closing reference in the **PR body**: `Closes #123`, with the actual selected issue number. For an issue in another repository, use `Closes owner/repo#123`. A title reference, plain link, or `Refs #123` is not a substitute.
-4. Re-fetch the PR and verify its repository, base, head, `isDraft: false`, and exact closing reference. Correct any mismatch introduced by this workflow before reporting the PR as created successfully. Preserve the closing reference in later body edits.
-5. Attach the PR to the current chat with `attach_artifact`. If attachment fails or is unavailable, report the limitation with the verified PR URL; do not create another PR.
+Explicitly invoke `[$create-pr](<absolute-create-pr-skill-path>)` in this task with the original human invocation and delegation chain, authorized issue scope, exact selected issue URL, repository and absolute worktree path, intended head repository/remote/branch and base, existing PR URL when known, and actual validation results. Describe the problem and resulting behavior, identify the issue as fully resolved only when supported by the implementation and checks, and require **non-draft** (`isDraft: false`) publication.
+
+Let `$create-pr` own publication, PR reuse and interrupted-write reconciliation, required `Closes` or `Refs` references and their verification, and attachment. Do not duplicate or bypass its workflow. If this workflow's PR is already merged or closed, its recorded-PR handling reports and attaches it without creating a replacement. Return after its verified result or blocker; do not pick another issue or start PR maintenance.
 
 ## Return the Result
 

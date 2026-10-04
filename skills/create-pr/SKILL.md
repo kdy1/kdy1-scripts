@@ -1,0 +1,69 @@
+---
+name: create-pr
+description: "Publish intended changes as a GitHub pull request with verified Closes references for fully resolved issues and Refs for partial or related work, then attach the result. Use when an authorized task includes PR creation or another skill delegates its PR publishing step."
+---
+
+# Create PR
+
+Own the shared PR publishing workflow. Other skills that create PRs must invoke this skill for publication instead of copying its steps or creating PRs directly.
+
+Start for a human request to create a PR, or a publishing handoff within an already human-authorized task. Automatic selection does not authorize publishing from ordinary code changes. Loading, editing, or planning this skill does not start publication. A handoff carries the original human request, delegation context, and intended scope; it does not expand that scope.
+
+Publish the intended changes only. Do not implement additional work or modify source to fix failed checks. Stop and report blocking validation failures. End after publication and verification; do not merge, enable auto-merge, or start PR maintenance.
+
+## Invocation and Handoff
+
+Reuse reliable information from the current task. A calling skill supplies the following when known:
+
+- GitHub host and repository, absolute checkout/worktree path, intended change set, head repository/remote/branch, and base branch.
+- Exact issue URLs or qualified numbers, distinguishing fully resolved issues from partial or related work.
+- Validation commands, actual results, and the revision or changes they covered.
+- Required body content and any disclosure section, requested draft state, and constraints such as preserving human-reviewed source.
+- An existing PR URL and the original human authorization and delegation context when applicable.
+
+Resolve missing facts through the checkout and authenticated GitHub reads. Ask only when the intended changes, target, issue identity, or another material decision remains ambiguous. Honor the user's instructions and the calling workflow's applicable constraints. Default to non-draft unless the user or caller requests draft.
+
+## Prepare the Publication
+
+1. Confirm authenticated `gh` access for the resolved GitHub host. Read applicable repository instructions, contribution guidance, and PR templates. Resolve the target from explicit task context, otherwise the checkout's remote. Inspect the intended diff and preserve unrelated changes.
+2. Use the requested head and base when provided; otherwise use the current branch and its configured PR base, falling back to the repository's default branch. If a feature branch is needed, follow repository conventions, using `codex/` by default. Confirm the exact head repository, push remote, branch, and base. Do not silently fork or retarget the PR. If there is no intended change against the base, report that and stop.
+3. Check an explicitly supplied or recorded PR and search for an open PR with the exact head repository and branch before publishing. Reuse a matching PR. If multiple candidates exist or its base differs from the intended base, clarify rather than duplicating or silently retargeting it. If this workflow's recorded PR is merged or closed, attach it, report its state, and stop without reopening it or creating a replacement.
+4. Establish the repository's required checks and relevant validation. Reuse recorded successful checks only when they cover the current intended changes; run missing or invalidated checks and record actual results. Stop on blocking failures without rewriting source, including human-reviewed changes.
+5. Commit intended uncommitted changes in coherent, verified units, following repository instructions, and push any required head commits to the confirmed remote. Stage only the intended files. Skip already completed commits or pushes; do not create empty commits or publish unrelated changes.
+
+## Write the Body and Issue References
+
+Follow the repository's template and language. Lead with the concrete problem and resulting behavior, and report validation actually performed. Incorporate the caller's required body content. For an existing PR, preserve unrelated content and update equivalent sections rather than duplicating them. Preserve supplied disclosures and known execution details without inventing missing facts.
+
+Determine issue identity and completion from the human request, authorized handoff, task history, issue requirements, and intended changes. Verify the referenced GitHub issues and their repositories; do not guess an issue number from a branch name or invent an issue for unrelated work. If the task fixes or relates to an issue but its identity cannot be determined, resolve it before publishing.
+
+For **every fully resolved issue**, put a standalone closing line in the **PR body**, outside code fences:
+
+```markdown
+Closes #123
+Closes #456
+Closes owner/other-repo#789
+```
+
+Use `Closes #123` for an issue in the PR's repository and `Closes owner/repo#123` for another repository. Repeat the full syntax on a separate line for each issue. A title reference, plain link, comment, commit message, `Refs`, `Fixes`, or `Resolves` is not a substitute for the required `Closes` line. Do not duplicate an existing correct line.
+
+For **every issue partially addressed or otherwise related to the changes**, use a standalone non-closing reference in the PR body instead:
+
+```markdown
+Refs #234
+Refs owner/other-repo#567
+```
+
+Use the same repository qualification rules as for `Closes`, with a separate line for each issue. Choose `Closes` when fully resolved and `Refs` otherwise; do not retain both standalone kinds for the same issue. A PR may contain both kinds for different issues. Do not add references when no associated issue exists.
+
+Preserve existing issue references in body edits and avoid duplicate lines. When an issue's verified completion changes, replace its existing standalone line with the appropriate `Closes` or `Refs` line, preserving other references and unrelated content. Correct a confirmed closing reference that would incorrectly close a partially resolved issue; if its scope or completion is unclear, resolve that ambiguity before publishing.
+
+Closing keywords are interpreted by GitHub only when the PR targets the repository's default branch; `Refs` does not close issues. Honor an explicitly requested base and report that automatic closure will not occur for a different base; do not silently change it. See [GitHub's closing-reference documentation](https://docs.github.com/en/issues/tracking-your-work-with-issues/using-issues/linking-a-pull-request-to-an-issue).
+
+## Publish, Verify, and Return
+
+1. Recheck for a matching PR immediately before creation. Write the exact body to a temporary file and use `--body-file`. Create with `gh pr create` and explicit `--repo`, `--base`, `--head`, and `--title`, adding `--draft` only when requested. For a matching existing PR, use `gh pr edit`; when its draft state differs from the requested state, use `gh pr ready` for non-draft or `gh pr ready --undo` for draft instead of creating another PR.
+2. If a write fails or its outcome is uncertain, re-fetch the PR or query matching PRs before retrying. Continue only when the actual state and failure cause establish a safe next action; otherwise report the uncertainty and stop. Never blindly retry creation.
+3. Re-fetch the published PR and verify its repository, exact head repository and branch, base, draft state, required body content, and every required standalone `Closes` or `Refs` line with the correct completion classification. For human-reviewed publication, also verify the caller's reviewer mention and disclosure details. Correct omissions or mismatches introduced by this invocation, preserve unrelated content and issue references, and verify again before reporting success.
+4. In the Codex app, attach each created or updated PR to this chat with `attach_artifact`. Report an unavailable or failed attachment separately from the verified GitHub result; do not create another PR to compensate.
+5. Return the PR URL and verified state, issue references, checkout path and head branch, performed validation and actual results, and any material limitations. Distinguish local validation from pending or unperformed CI and review. Leave the checkout available for review and return control to the calling skill.

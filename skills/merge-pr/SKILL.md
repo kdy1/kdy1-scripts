@@ -1,11 +1,17 @@
 ---
 name: merge-pr
-description: "Merge an authorized GitHub pull request with squash merge and the default commit subject. Use when a task includes an authorized PR merge request or a handoff within that scope."
+description: "Squash-merge GitHub pull requests with the default commit subject when the user explicitly invokes this skill, requests a merge, or authorizes a handoff within that scope."
 ---
 
 # Merge PR
 
-Merge the requested PR and verify the result. Automatic selection does not authorize a merge. Start only for a human merge request or a handoff that retains the original human authorization and target. Loading, editing, or planning this skill does not start a merge.
+Merge the requested PRs and verify each result.
+
+## Authorization
+
+An explicit user invocation of `$merge-pr` is a merge request and authorizes merging the targets identified by the user's request or conversation context. This includes PRs returned by a selection workflow requested in the same message. Do not request confirmation again because the targets came from tool results rather than manually supplied PR numbers.
+
+Automatic skill selection alone does not authorize a merge. A request to edit, inspect, or discuss this skill authorizes that work only. A handoff must retain the original human merge authorization and target scope.
 
 ## Core Rules
 
@@ -16,7 +22,9 @@ See the [GitHub CLI merge documentation](https://cli.github.com/manual/gh_pr_mer
 
 ## Resolve and Merge
 
-Use the requested PR URL or number with the repository context. If the target is omitted, resolve the current branch's PR with `gh pr view --json url`. Ask only when the target or authorized scope remains ambiguous.
+Use the requested PR URLs, numbers, or selection criteria with the repository context. Resolve targets from the request and conversation context, including the complete results of a requested selection workflow. Use those targets even when the checkout has a detached HEAD.
+
+Only when the request and conversation context do not identify targets, resolve the current branch's PR with `gh pr view --json url`. Ask for a target only when neither source identifies the intended PRs or when the requested scope is genuinely ambiguous. Do not ask for merge authorization again after an explicit invocation.
 
 Once the target is identified, attempt the merge immediately. Do not preflight authentication, CI, reviews, draft status, conflicts, squash support, merge queues, or head SHAs. Let GitHub enforce its merge requirements. Do not announce plans to check readiness.
 

@@ -1,17 +1,17 @@
 ---
 name: merge-pr
-description: "Squash-merge GitHub pull requests with the default commit subject when the user explicitly invokes this skill, requests a merge, or authorizes a handoff within that scope."
+description: "Squash-merge GitHub pull requests immediately or enable auto-merge with the default commit subject when the user explicitly invokes this skill, requests a merge, or authorizes a handoff within that scope."
 ---
 
 # Merge PR
 
-Merge the requested PRs and verify each result.
+Merge the requested PRs immediately when possible, or enable auto-merge, and verify each result.
 
 ## Authorization
 
-An explicit user invocation of `$merge-pr` is a merge request and authorizes merging the targets identified by the user's request or conversation context. This includes PRs returned by a selection workflow requested in the same message. Do not request confirmation again because the targets came from tool results rather than manually supplied PR numbers.
+An explicit user invocation of `$merge-pr` is a merge request and authorizes merging the targets identified by the user's request or conversation context. This authorization includes enabling auto-merge for those targets when immediate merging is unavailable. The authorized targets include PRs returned by a selection workflow requested in the same message. Do not request confirmation again because the targets came from tool results rather than manually supplied PR numbers.
 
-Automatic skill selection alone does not authorize a merge. A request to edit, inspect, or discuss this skill authorizes that work only. A handoff must retain the original human merge authorization and target scope.
+Automatic skill selection alone does not authorize merging or enabling auto-merge. A request to edit, inspect, or discuss this skill authorizes that work only. A handoff must retain the original human merge authorization and target scope.
 
 ## Core Rules
 
@@ -29,17 +29,23 @@ Only when the request and conversation context do not identify targets, resolve 
 Once the target is identified, attempt the merge immediately. Do not preflight authentication, CI, reviews, draft status, conflicts, squash support, merge queues, or head SHAs. Let GitHub enforce its merge requirements. Do not announce plans to check readiness.
 
 ```sh
-gh pr merge <PR_URL> --squash
+gh pr merge <PR_URL> --squash --auto
 ```
 
-An explicit PR number can replace `<PR_URL>`. Omit `--auto`, `--admin`, and `--delete-branch` by default. Do not fix source, change PR metadata, submit approvals, or bypass rules to make the merge succeed. Additional actions require applicable human instructions. The two core rules still apply.
+An explicit PR number can replace `<PR_URL>`. Use `--auto` by default: `gh` merges immediately when possible and enables auto-merge when requirements remain unmet. Omit `--admin` and `--delete-branch` by default. Do not fix source, change PR metadata, submit approvals, or bypass rules to make the merge succeed. Additional actions require applicable human instructions. The two core rules still apply.
 
 For multiple authorized PRs, attempt them sequentially in the requested order, or the supplied list order when no separate order is specified. Continue to the remaining PRs after an individual failure.
 
 ## Verify and Report
 
-After each attempt, fetch the PR's URL, state, `mergedAt`, and `mergeCommit`. Report success only when GitHub confirms the PR is merged, and return its URL and merge commit SHA. Report an unavailable commit SHA or unreadable state as unverified.
+After each attempt, fetch the PR's URL, state, `mergedAt`, `mergeCommit`, and `autoMergeRequest`:
 
-If `gh` adds the PR to a merge queue or enables auto-merge under the repository's queue rules, report that result without claiming the PR has merged. Do not block the attempt because a queue applies or add `--admin` to bypass it.
+```sh
+gh pr view <PR_URL> --json url,state,mergedAt,mergeCommit,autoMergeRequest
+```
 
-If the command fails, report the GitHub or CLI error briefly along with any verified outcome. Do not retry automatically or start a merge-readiness investigation. Keep the final report concise.
+Report a completed merge only when GitHub confirms the PR is merged, and return its URL and merge commit SHA. Report an unavailable commit SHA or unreadable state as unverified.
+
+For an open PR, report it as queued and pending if the CLI explicitly confirms merge queue registration. Otherwise, report auto-merge as enabled and pending when `autoMergeRequest` is non-null. Neither result is a completed merge. If verification cannot confirm the result, report it as unverified. Do not block the attempt because a queue applies or add `--admin` to bypass it.
+
+If the command fails, including when auto-merge is disabled or permissions are insufficient, report the GitHub or CLI error briefly along with any verified outcome. Do not retry automatically or start a merge-readiness investigation. Keep the final report concise.

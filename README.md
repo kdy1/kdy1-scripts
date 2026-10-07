@@ -17,6 +17,7 @@ A collection of standalone [Codex skills](https://learn.chatgpt.com/docs/build-s
 | `redesign-ui` | Automatically plan and visualize UI changes only in Plan Mode, then implement the approved design in the same chat. |
 | `repair-pr` | Repair merge conflicts, actionable bot feedback, and failing CI on a pull request. |
 | `review-full` | Run a sustained three-reviewer pull-request review and publish one consolidated review. |
+| `slop-fix-batch` | Explicitly fix matching open issues once with parallel subagents, group related fixes, and publish stacked PRs with `gh stack`. |
 | `slop-fix-issue` | Generate AI slop for one GitHub issue: close it with supporting evidence if already resolved; otherwise implement and verify it, open and attach a non-draft PR with a Closes reference, and stop. |
 | `slop-fix-repo-issues` | Explicitly collect open issues matching required user-specified conditions in the current repository once, then use `$bulk` to delegate each issue to `$slop-fix-issue` through PR creation. |
 | `slop-maintain-repo-prs` | Periodically scan all my open repo PRs, dispatch needed one-shot `$repair-pr` runs in GPT-5.6 Luna worktree chats with `xhigh` reasoning effort, and archive successfully completed repair chats. |
@@ -57,7 +58,9 @@ npx skills add kdy1/kdy1-scripts --list --agent codex
 
 It prompts for the installation method when necessary. Add `--copy` to use independent copies instead of symlinks.
 
-When installing selected skills, include their skill dependencies. `create-pr` requires `write-ste`. `create-human-reviewed-pr` and `slop-fix-issue` require both `create-pr` and its `write-ste` dependency. `slop-fix-repo-issues` requires `bulk`, `slop-fix-issue`, `create-pr`, and `write-ste`. Installing every skill includes these dependencies. The same rule applies when copying individual skill directories manually.
+When installing selected skills, include their skill dependencies. `create-pr` requires `write-ste`. `create-human-reviewed-pr`, `slop-fix-issue`, and `slop-fix-batch` require both `create-pr` and its `write-ste` dependency. `slop-fix-repo-issues` requires `bulk`, `slop-fix-issue`, `create-pr`, and `write-ste`. Installing every skill includes these dependencies. The same rule applies when copying individual skill directories manually.
+
+`slop-fix-batch` also requires subagent controls, isolated Git worktrees, authenticated `gh` access, and the [`github/gh-stack` extension](https://github.com/github/gh-stack). Install the extension separately with `gh extension install github/gh-stack`; the skill checks installed command support and does not silently install or upgrade tools.
 
 ### Manual option: Copy one skill into a repository
 
@@ -182,6 +185,18 @@ Conditions: label:bug
 ```
 
 It combines `repo:<owner/repo> is:issue is:open` with the user's conditions on the resolved GitHub host. For example, “issues labeled bug” is equivalent to `label:bug`; an author filter applies only when requested. A bare invocation asks for conditions before searching, and an explicit request for “all open issues” is valid. Ambiguous conditions or conditions conflicting with the base scope require clarification. It fetches all search pages and checks completeness before fixing the issue URL list; an incomplete or capped search is reported without dispatch, and an empty result ends the run. The original conditions, exact resolved query, fixed list, and authorization context are retained in the coordinator ledger. Each item prompt is exactly `$slop-fix-issue <issue_url>`, with the assigned URL substituted and no additional context. Concurrency and an explicitly requested starting Git state apply to `$bulk`. The batch collects closure or PR-creation results and ends without adding new issues, registering a heartbeat, or starting PR maintenance.
+
+To fix matching issues through grouped stacked PRs, explicitly invoke:
+
+```text
+$slop-fix-batch
+Conditions: label:bug
+Concurrency: 6
+```
+
+Natural-language conditions and an explicit request for all open issues are also accepted. A bare invocation asks for selection conditions. The skill collects a complete fixed list once, investigates it with subagents, and groups issues that share a root cause or need one inseparable implementation. Independent groups run in separate worktrees; dependent groups start from integrated prerequisite fixes. Workers inherit the parent's model and reasoning settings, with a default ceiling of six active subagents across the descendant tree, further bounded by available capacity.
+
+The coordinator closes already-resolved issues only after confirming target-branch evidence and posting a verified evidence comment. Issues covered by an existing fixing PR are reported without duplicate implementation. Blocked groups and their dependents remain available, while independent verified groups continue to publication. Each completed group becomes one non-draft PR through `create-pr`; `gh stack` connects the PRs in dependency order. The bottom PR targets the selected base, and later PRs target the preceding layer. Closing references on upper layers do not guarantee automatic issue closure. A single completed group is reported as one PR. The batch records its state for continuation and ends after publication without merging, monitoring, or waiting for CI or reviews.
 
 ## Notes
 

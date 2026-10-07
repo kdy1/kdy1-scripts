@@ -1,0 +1,6 @@
+interface:
+  display_name: "Slop Fix Batch"
+  short_description: "Fix matching issues in parallel and publish stacked PRs"
+
+policy:
+  allow_implicit_invocation: false

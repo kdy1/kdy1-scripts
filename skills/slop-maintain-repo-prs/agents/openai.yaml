@@ -1,7 +1,7 @@
 interface:
   display_name: "Slop Maintain Repo PRs"
   short_description: "Maintain my PRs and recover incomplete Luna repairs"
-  default_prompt: "Use $slop-maintain-repo-prs to maintain all my open PRs at my chosen interval (default: five minutes), recover incomplete repairs automatically in GPT-5.6 Luna worktree chats with xhigh reasoning effort, and archive successful repair chats."
+  default_prompt: "Use $slop-maintain-repo-prs to maintain all my open PRs at my chosen interval (default: five minutes), recover incomplete repairs automatically in GPT-6 Luna worktree chats with xhigh reasoning effort, and archive successful repair chats."
 
 policy:
   allow_implicit_invocation: false

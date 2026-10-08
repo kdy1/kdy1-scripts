@@ -22,6 +22,7 @@ A collection of standalone [Codex skills](https://learn.chatgpt.com/docs/build-s
 | `slop-fix-repo-issues` | Explicitly collect open issues matching required user-specified conditions in the current repository once, then use `$bulk` to delegate each issue to `$slop-fix-issue` through PR creation. |
 | `slop-maintain-repo-prs` | Periodically scan all my open repo PRs, dispatch needed one-shot `$repair-pr` runs in GPT-5.6 Luna worktree chats with `xhigh` reasoning effort, and archive successfully completed repair chats. |
 | `write-blog-post` | Develop a blog-post draft from material supplied by the user. |
+| `write-comment` | Explicitly plan exact public comments in Plan Mode, default to English, and publish approved text unchanged after authorized execution. |
 | `write-marketing-copy` | Rephrase source material into LinkedIn, X, and Threads posts. |
 | `write-prd` | Capture product decisions and create an implementation-ready GitHub issue. |
 | `write-ste` | Automatically apply practical ASD-STE100 clarity principles to technical text while preserving its language and meaning. |
@@ -58,7 +59,7 @@ npx skills add kdy1/kdy1-scripts --list --agent codex
 
 It prompts for the installation method when necessary. Add `--copy` to use independent copies instead of symlinks.
 
-When installing selected skills, include their skill dependencies. `create-pr` requires `write-ste`. `create-human-reviewed-pr`, `slop-fix-issue`, and `slop-fix-batch` require both `create-pr` and its `write-ste` dependency. `slop-fix-repo-issues` requires `bulk`, `slop-fix-issue`, `create-pr`, and `write-ste`. Installing every skill includes these dependencies. The same rule applies when copying individual skill directories manually.
+When installing selected skills, include their skill dependencies. `create-pr` requires `write-ste`. `write-comment` requires `write-ste` for technical comments. `create-human-reviewed-pr`, `slop-fix-issue`, and `slop-fix-batch` require both `create-pr` and its `write-ste` dependency. `slop-fix-repo-issues` requires `bulk`, `slop-fix-issue`, `create-pr`, and `write-ste`. Installing every skill includes these dependencies. The same rule applies when copying individual skill directories manually.
 
 `slop-fix-batch` also requires subagent controls, isolated Git worktrees, authenticated `gh` access, and the [`github/gh-stack` extension](https://github.com/github/gh-stack). Install the extension separately with `gh extension install github/gh-stack`; the skill checks installed command support and does not silently install or upgrade tools.
 

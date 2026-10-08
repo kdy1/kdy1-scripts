@@ -1,0 +1,7 @@
+interface:
+  display_name: "Write Comment"
+  short_description: "Plan exact public comments and publish approved text"
+  default_prompt: "Use $write-comment in Plan Mode to draft the exact public comment in English unless I request another language, then publish the approved text when I authorize execution outside Plan Mode."
+
+policy:
+  allow_implicit_invocation: false

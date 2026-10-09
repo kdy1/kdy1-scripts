@@ -66,6 +66,10 @@ conversation when implementation is within the authorized task.
    - Use an available current-UI screenshot as an edit target or reference when
      visual continuity matters. State each input image's role and preserve every
      agreed invariant.
+   - Use supplied screenshots that show a wider area as context and style
+     references. Explicitly instruct the prompt to show only the area being
+     changed in each final preview submitted for approval. If changes affect
+     several separate areas, create a separate preview for each area.
    - For a new UI without an existing screen, generate the preview from the
      grounded requirements and user flows, using any available design system.
    - Show the final prompt with the preview, validate it against the grounded
@@ -86,8 +90,13 @@ conversation when implementation is within the authorized task.
      decision-complete Plan Mode result. For each approved final preview, retain
      the actual absolute saved file path returned by image generation, target
      surface, viewport and state, caption or alt text, and final prompt. Keep the
-     preview rendered inline and exclude discarded or superseded variants from
-     the approved design record. Do not implement it during the proposal phase.
+     approved preview rendered inline, showing only the area being changed.
+     Exclude unchanged surrounding UI, full-screen reference images, and
+     discarded or superseded variants from the final plan. For example, when
+     only the sidebar changes, include only the sidebar preview even if the
+     supplied screenshot shows the whole screen. Ensure each saved path,
+     description, and final prompt matches the actual approved image. Do not
+     implement it during the proposal phase.
    - For issue preparation, supply the approved design record to the already
      authorized issue workflow before it finalizes the issue text. That workflow
      owns GitHub recording and image attachments under its existing restrictions.

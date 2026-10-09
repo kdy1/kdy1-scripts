@@ -1,0 +1,7 @@
+interface:
+  display_name: "Design UI"
+  short_description: "Preview and implement new or revised UI designs"
+  default_prompt: "Use $design-ui to plan and preview my new or existing UI in Plan Mode, then implement the approved design in this conversation after leaving Plan Mode."
+
+policy:
+  allow_implicit_invocation: true

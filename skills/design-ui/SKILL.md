@@ -1,35 +1,38 @@
 ---
-name: redesign-ui
-description: Select automatically only in Plan Mode for product UI changes, including layout, styling, components, content, interaction, navigation, or responsive behavior. Outside Plan Mode, do not select automatically; explicit `$redesign-ui` invocation requires a switch to Plan Mode before proposal work. Plan and visualize the redesign, then implement the approved design in the same conversation after leaving Plan Mode when implementation is authorized. Read-only UI inspection, a screenshot alone, or editing this skill does not trigger the redesign workflow.
+name: design-ui
+description: Select automatically only in Plan Mode for creating or changing product UI, including new features and screens, layout, styling, components, content, interaction, navigation, or responsive behavior. Outside Plan Mode, do not select automatically; explicit `$design-ui` invocation requires a switch to Plan Mode before proposal work. Plan and preview the UI design, then implement the approved design in the same conversation after leaving Plan Mode when implementation is authorized. Read-only UI inspection, a screenshot alone, or editing this skill does not trigger the design workflow.
 ---
 
-# Redesign UI
+# Design UI
 
 ## Goal
 
-Produce an approved, implementation-ready UI redesign proposal in Plan Mode.
+Produce an approved, implementation-ready design proposal for a new or existing
+UI in Plan Mode.
 After leaving Plan Mode, implement and verify the approved design in the same
 conversation when implementation is within the authorized task.
 
 ## Entry Conditions
 
 - Use this skill automatically only when Plan Mode is active and the authorized
-  task requires changing a product's UI, whether the change is requested directly
-  or identified while working on the task. The human does not need to name
-  `$redesign-ui`.
+  task requires creating or changing a product's UI, including the initial UI
+  for a new feature or screen. This applies whether the UI work is requested
+  directly or identified while working on the task. The human does not need to
+  name `$design-ui`.
 - Outside Plan Mode, do not select this skill automatically or ask for a mode
-  switch solely because the task requires UI changes.
-- Read-only UI inspection, a screenshot without a change request, or editing
-  this skill does not start the redesign workflow.
+  switch solely because the task requires UI creation or changes.
+- Backend-only or other work without UI creation or changes, read-only UI
+  inspection, a screenshot without a change request, and editing this skill
+  do not start the design workflow.
 - Run the proposal phase only in Plan Mode. If the human explicitly invokes
-  `$redesign-ui` outside Plan Mode to start proposal work, ask the user to switch
+  `$design-ui` outside Plan Mode to start proposal work, ask the user to switch
   to Plan Mode, then stop. Do not inspect the product, generate an image, or
   modify files before the mode change. Resume the proposal phase in Plan Mode
   without requiring another explicit skill invocation.
 - An approved design ready for authorized implementation resumes at step 4
   outside Plan Mode. This continues the existing workflow and does not count as
   a new automatic skill selection.
-- Selecting `$redesign-ui`, explicitly or automatically, starts proposal work
+- Selecting `$design-ui`, explicitly or automatically, starts proposal work
   only within the authorized task. It never authorizes GitHub issue creation or
   another external mutation.
 
@@ -37,11 +40,13 @@ conversation when implementation is within the authorized task.
 
 1. Ground the proposal.
    - Read the target repository's instructions and authoritative contracts.
-   - Inspect the current UI source, design system, tokens, and relevant rendered
-     states or supplied screenshots through read-only means.
+   - Inspect available UI source, design system, tokens, and relevant rendered
+     states or supplied screenshots through read-only means. For a new UI, ground
+     the proposal in feature requirements, user flows, and any available design
+     system; an existing screen or screenshot is not required.
    - Resolve discoverable facts before asking the user about product intent.
-   - Establish the target surface, users, goal, viewports, states, current gap,
-     and behavior or content that must remain unchanged.
+   - Establish the target surface, users, goal, viewports, states, requirements
+     or current gap, and behavior or content that must remain unchanged.
 
 2. Create the preview with `$imagegen`.
    - Load and follow `$imagegen`, using its built-in tool mode by default and
@@ -52,6 +57,8 @@ conversation when implementation is within the authorized task.
    - Use an available current-UI screenshot as an edit target or reference when
      visual continuity matters. State each input image's role and preserve every
      agreed invariant.
+   - For a new UI without an existing screen, generate the preview from the
+     grounded requirements and user flows, using any available design system.
    - Show the final prompt with the preview, validate it against the grounded
      constraints, and iterate with one targeted change per feedback round.
 
@@ -83,8 +90,8 @@ conversation when implementation is within the authorized task.
      the original task scope and restrictions; leaving Plan Mode does not
      authorize implementation of a proposal-only request.
    - Use the approved text specification and final previews to implement the
-     redesign in the target repository. Do not repeat completed proposal work or
-     regenerate approved previews. If feedback or new evidence requires a
+     new or revised UI in the target repository. Do not repeat completed proposal
+     work or regenerate approved previews. If feedback or new evidence requires a
      design change, return to the proposal phase in Plan Mode and obtain approval
      of the revised preview and text specification before implementing it.
    - Run the relevant checks and inspect the rendered result against the approved
@@ -105,7 +112,7 @@ conversation when implementation is within the authorized task.
 
 ## Boundaries
 
-- Never implement the redesign during the Plan Mode proposal phase.
+- Never implement the UI design during the Plan Mode proposal phase.
 - Never modify repository-tracked files during the Plan Mode proposal phase.
 - Do not invoke an issue-recording skill or create/update a GitHub issue as part
   of this workflow.

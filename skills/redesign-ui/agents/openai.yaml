@@ -1,7 +1,0 @@
-interface:
-  display_name: "Redesign UI"
-  short_description: "Plan and implement approved UI redesigns"
-  default_prompt: "Use $redesign-ui to plan and preview my UI changes in Plan Mode, then implement the approved design in this conversation after leaving Plan Mode."
-
-policy:
-  allow_implicit_invocation: true

@@ -46,6 +46,7 @@ Prepare this dependent group through read-only investigation and design.
 Group and issue URLs: <group and URLs>
 Acceptance requirements and confirmed scope: <requirements and scope>
 Read-only checkout and inspected SHA: <absolute path and SHA>
+Assigned stack ID and integration worktree: <stack ID and absolute path>
 Prerequisite groups and known findings: <dependencies and evidence>
 Applicable repository instructions: <locations>
 Coordinator and nested slot allocation: <handle and slot budget>
@@ -66,6 +67,7 @@ Implement this one Slop Fix Batch group in the assigned worktree.
 Original human request and authorized scope: <request and scope>
 Repository and GitHub host: <repository and host>
 Group ID and assigned issue URLs: <group and URLs>
+Assigned stack ID and integration worktree: <stack ID and absolute path>
 Acceptance requirements for every issue: <requirements>
 Root cause and relevant investigation evidence: <evidence>
 Assigned checkout and branch: <absolute path and branch>
@@ -73,17 +75,18 @@ Exact starting SHA and integrated prerequisites: <SHA and dependencies>
 Applicable repository instructions: <locations>
 Coordinator and nested subagent slot allocation: <handle and slot budget>
 Worker checks and repository-mandated execution times: <commands and policy>
-Whole-repository checks deferred to final tip: <commands and permitted deferrals>
+Whole-repository checks deferred to assigned stack final tip: <commands and permitted deferrals>
 Preparation findings when present: <findings and inspected SHA>
 
-Confirm the assigned checkout, branch, and starting SHA before changing files.
+Confirm the assigned stack ID, checkout, branch, and starting SHA before changing files.
+All prerequisites must be present at that SHA in the assigned stack.
 Preserve unrelated changes and edit only the assigned checkout. Implement all
 group implementation requirements, run assigned change-related checks and checks
 required at this stage by repository policy, and commit each coherent verified unit
 according to repository instructions. Defer only policy-permitted whole-repository
-checks explicitly assigned to final-tip validation. Never bypass Git hooks or
+checks deferred to the assigned stack's final tip. Never bypass Git hooks or
 defer checks with an explicit required execution time. Report deferred checks as
-`deferred to final tip`, never as passed. If preparation findings exist, reconcile
+`deferred to stack final tip`, never as passed. If preparation findings exist, reconcile
 them with relevant prerequisite changes at the assigned starting SHA. Inherit the
 parent's model and reasoning settings. Ask the coordinator before changing the
 assignment or using nested slots. Never modify another worker's refs/checkout,
@@ -92,7 +95,7 @@ $slop-fix-issue or $bulk: this assignment ends at implementation handoff.
 
 Skip direct app launches, manual reproduction, real-environment validation, and
 screenshot capture for validation even when required by an issue. Automated tests,
-builds, and linters follow the assigned worker/final-tip split and may exercise
+builds, and linters follow the assigned worker/stack-final-tip split and may exercise
 app behavior. Skipped real-world validation alone does not make the group partial or blocked and does
 not remove its issues from the coordinator's Closes list. Report it as not
 performed; never claim it passed.
@@ -101,11 +104,14 @@ If a requirement is ambiguous or a prerequisite is missing, explain the blocker
 and preserve work. Do not invent product requirements or claim a partial group
 is complete. Report newly discovered interactions, group overlaps, or dependencies
 promptly and pause affected work until the coordinator reconciles the assignment.
+Never rebase or rewrite existing layers, move work across stacks, or copy
+prerequisite commits from another stack to bypass a dependency blocker.
 
-Return group/issue identities, starting SHA, branch and worktree path, ordered
+Return group/issue identities, assigned stack ID and integration worktree,
+starting SHA, branch and worker worktree path, ordered
 commits belonging only to this group, final SHA, diff summary, acceptance
 coverage for every issue, exact worker checks and results with covered revisions,
-checks deferred to final tip, skipped real-world validation, remaining changes, blockers, and any relevant
+checks deferred to the assigned stack's final tip, skipped real-world validation, remaining changes, blockers, and any relevant
 actual screenshots already available. Earlier
 prerequisite commits are not this group's commit range.
 ```

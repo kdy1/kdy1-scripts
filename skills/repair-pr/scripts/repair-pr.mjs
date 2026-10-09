@@ -34,9 +34,10 @@ function statusCommand(rawArgs) {
 
   const pr = readPullRequest(options.pr);
   const repo = parsePullRequestUrl(pr.url) ?? readCurrentRepo();
-  const reviewThreads = readReviewThreads(repo, pr.number);
+  const { threads: reviewThreads, viewerLogin } = readReviewThreads(repo, pr.number);
+  const reviewAuthors = [REVIEW_AUTHOR, viewerLogin];
   const unresolvedThreads = reviewThreads.filter((thread) =>
-    isRelevantBotThread(thread),
+    isRelevantReviewThread(thread, viewerLogin),
   );
   const checks = readChecks(options.pr ?? String(pr.number));
   const failingChecks = checks.items.filter(isFailingCheck);
@@ -53,8 +54,9 @@ function statusCommand(rawArgs) {
       isDraft: pr.isDraft,
     },
     reviewAuthor: REVIEW_AUTHOR,
+    reviewAuthors,
     unresolvedReviewThreads: unresolvedThreads.map((thread) =>
-      formatThread(thread),
+      formatThread(thread, viewerLogin),
     ),
     checks: {
       error: checks.error,
@@ -331,6 +333,9 @@ function parsePullRequestUrl(url) {
 function readReviewThreads(repo, number) {
   const query = `
 query($owner: String!, $name: String!, $number: Int!, $cursor: String) {
+  viewer {
+    login
+  }
   repository(owner: $owner, name: $name) {
     pullRequest(number: $number) {
       reviewThreads(first: 100, after: $cursor) {
@@ -370,6 +375,7 @@ query($owner: String!, $name: String!, $number: Int!, $cursor: String) {
   }
 }`;
   const threads = [];
+  let viewerLogin = null;
   let cursor = null;
 
   for (;;) {
@@ -393,6 +399,15 @@ query($owner: String!, $name: String!, $number: Int!, $cursor: String) {
     const result = runJson("gh", args);
     failOnGraphQLErrors(result, "read review threads");
 
+    const currentViewerLogin = result?.data?.viewer?.login;
+    if (typeof currentViewerLogin !== "string" || !currentViewerLogin.trim()) {
+      fail("GitHub did not return the authenticated user's login (@me).");
+    }
+    if (viewerLogin && viewerLogin !== currentViewerLogin) {
+      fail("The authenticated GitHub user changed while reading review threads.");
+    }
+    viewerLogin = currentViewerLogin;
+
     const connection = result?.data?.repository?.pullRequest?.reviewThreads;
 
     if (!connection) {
@@ -408,7 +423,7 @@ query($owner: String!, $name: String!, $number: Int!, $cursor: String) {
     cursor = connection.pageInfo.endCursor;
   }
 
-  return threads.map(readAllThreadComments);
+  return { threads: threads.map(readAllThreadComments), viewerLogin };
 }
 
 function readAllThreadComments(thread) {
@@ -508,13 +523,20 @@ function readChecks(prArg) {
   }
 }
 
-function isRelevantBotThread(thread) {
+function isRelevantReviewThread(thread, viewerLogin) {
   if (thread.isResolved || thread.isOutdated) {
     return false;
   }
 
   return (thread.comments?.nodes ?? []).some((comment) =>
-    authorLoginMatches(comment.author?.login, REVIEW_AUTHOR),
+    isReviewAuthor(comment.author?.login, viewerLogin),
+  );
+}
+
+function isReviewAuthor(login, viewerLogin) {
+  return (
+    authorLoginMatches(login, REVIEW_AUTHOR) ||
+    (typeof login === "string" && login.toLowerCase() === viewerLogin.toLowerCase())
   );
 }
 
@@ -545,10 +567,10 @@ function isFailingCheck(check) {
   );
 }
 
-function formatThread(thread) {
+function formatThread(thread, viewerLogin) {
   const comments = thread.comments?.nodes ?? [];
   const selectedComment = comments.find((comment) =>
-    authorLoginMatches(comment.author?.login, REVIEW_AUTHOR),
+    isReviewAuthor(comment.author?.login, viewerLogin),
   );
 
   return {
@@ -593,7 +615,7 @@ function printStatusReport(report) {
   process.stdout.write(`Draft: ${pr.isDraft ? "yes" : "no"}\n\n`);
 
   process.stdout.write(
-    `Unresolved ${report.reviewAuthor} review threads: ${report.unresolvedReviewThreads.length}\n`,
+    `Unresolved ${report.reviewAuthors.join(" and ")} review threads: ${report.unresolvedReviewThreads.length}\n`,
   );
   for (const thread of report.unresolvedReviewThreads) {
     const location = thread.line ? `${thread.path}:${thread.line}` : thread.path;
@@ -630,7 +652,7 @@ function printGlobalHelp() {
   process.stdout.write(`Usage: repair-pr.mjs <command> [options]
 
 Commands:
-  status          Show PR merge state, unresolved bot review threads, and failing checks.
+  status          Show PR merge state, unresolved Codex bot and @me review threads, and failing checks.
   reply-thread    Reply to a GitHub review thread by node id.
   resolve-thread  Resolve a GitHub review thread by node id.
 
@@ -658,6 +680,9 @@ Options:
   --pr <number-or-url>           PR to inspect. Defaults to the current branch's PR.
   --json                         Print machine-readable JSON.
   -h, --help                     Show this help.
+
+Includes unresolved, non-outdated inline threads from the Codex bot and the
+authenticated GitHub user (@me).
 `);
 }
 

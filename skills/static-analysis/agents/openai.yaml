@@ -1,0 +1,4 @@
+interface:
+  display_name: "Static Analysis"
+  short_description: "Analyze code and record each confirmed bug immediately"
+  default_prompt: "Use $static-analysis. <Scope>에 대한 모든 코드를 정적 분석하고 모든 버그를 찾아 각각 $add-issue로 등록해. 이슈를 모으지 말고 확인되는 대로 바로바로 등록해. <Scope>는 사용자가 지정하며, 생략하면 코드 전체를 대상으로 해."

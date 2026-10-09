@@ -1,6 +1,6 @@
 interface:
   display_name: "Slop Fix Batch"
-  short_description: "Fix issues, publish stacks, and delegate ongoing repairs"
+  short_description: "Fix issues, publish stacks, delegate repairs and merging"
 
 policy:
   allow_implicit_invocation: false

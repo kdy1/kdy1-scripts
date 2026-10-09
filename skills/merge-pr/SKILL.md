@@ -26,15 +26,17 @@ Use the requested PR URLs, numbers, or selection criteria with the repository co
 
 Only when the request and conversation context do not identify targets, resolve the current branch's PR with `gh pr view --json url`. Ask for a target only when neither source identifies the intended PRs or when the requested scope is genuinely ambiguous. Do not ask for merge authorization again after an explicit invocation.
 
-Once the target is identified, attempt the merge immediately. Do not preflight authentication, CI, reviews, draft status, conflicts, squash support, merge queues, or head SHAs. Let GitHub enforce its merge requirements. Do not announce plans to check readiness.
+For an explicitly authorized workflow handoff with merge gates, honor its narrower constraints: let the caller own readiness checks, use its verified head with `--match-head-commit`, omit `--auto` when forbidden, and return after the single requested layer. A dependent stack stops on failure or a queued/unverified result instead of advancing to an upper PR. These constraints do not change the default direct-invocation behavior below.
+
+Once the target is identified for a direct invocation, attempt the merge immediately. Do not preflight authentication, CI, reviews, draft status, conflicts, squash support, merge queues, or head SHAs. Let GitHub enforce its merge requirements. Do not announce plans to check readiness.
 
 ```sh
 gh pr merge <PR_URL> --squash --auto
 ```
 
-An explicit PR number can replace `<PR_URL>`. Use `--auto` by default: `gh` merges immediately when possible and enables auto-merge when requirements remain unmet. Omit `--admin` and `--delete-branch` by default. Do not fix source, change PR metadata, submit approvals, or bypass rules to make the merge succeed. Additional actions require applicable human instructions. The two core rules still apply.
+An explicit PR number can replace `<PR_URL>`. Use `--auto` by default unless the authorized handoff forbids it: `gh` merges immediately when possible and enables auto-merge when requirements remain unmet. Omit `--admin` and `--delete-branch` by default. Do not fix source, change PR metadata, submit approvals, or bypass rules to make the merge succeed. Additional actions require applicable human instructions. The two core rules still apply.
 
-For multiple authorized PRs, attempt them sequentially in the requested order, or the supplied list order when no separate order is specified. Continue to the remaining PRs after an individual failure.
+For multiple directly requested PRs without dependent-stack handoff constraints, attempt them sequentially in the requested order, or the supplied list order when no separate order is specified. Continue to the remaining PRs after an individual failure.
 
 ## Verify and Report
 

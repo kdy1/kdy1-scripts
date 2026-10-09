@@ -1,13 +1,13 @@
 ---
 name: slop-maintain-repo-prs
-description: "Maintain my default-branch PRs or the exact PRs delegated by an explicitly invoked $slop-fix-batch, using one heartbeat and parallel GPT-6 Luna xhigh repair-pr worktree chats with whole-stack ownership. Recover incomplete repairs and archive successful chats."
+description: "Maintain my default-branch PRs or the exact PRs delegated by an explicitly invoked $slop-fix-batch, using one heartbeat and parallel GPT-6 Luna xhigh repair-pr worktree chats with whole-stack ownership. Recover incomplete repairs, archive successful chats, and conditionally merge complete passing stacks in batch mode."
 ---
 
 # Slop Maintain Repo PRs
 
 Start repository mode only when the human explicitly invokes `$slop-maintain-repo-prs` to maintain their PRs. Batch mode starts only through an authorized handoff from an explicitly invoked [$slop-fix-batch](../slop-fix-batch/SKILL.md); follow [batch maintenance](references/batch-maintenance.md), including its different scope and stopping condition. The repository-mode human invocation authorizes one coordinating heartbeat, dedicated GPT-6 Luna worktree chats with `xhigh` reasoning effort for necessary repairs within the recorded repository/author scope and targeting the repository's current default branch, automatic recovery attempts for incomplete repairs, and automatic archiving of successfully completed repair chats. For a PR targeting the current default branch, a remaining verified repair signal is sufficient to continue an incomplete repair; it does not require a changed head, new review, or another human retry request. Loading, editing, or planning this skill alone does not start a watch or authorize changes to existing chats or automations. Apply an explicitly requested recovery-policy change to an existing authorized watch and its saved heartbeat without registering a second watch.
 
-In repository mode, a registered heartbeat may continue the same authorized watch. For a scheduled continuation, go directly to **Each scan pass** without registering again. Keep scanning until the user stops the watch, including when there are no open PRs or all known PRs are healthy. Never merge PRs or enable auto-merge.
+In repository mode, a registered heartbeat may continue the same authorized watch. For a scheduled continuation, go directly to **Each scan pass** without registering again. Keep scanning until the user stops the watch, including when there are no open PRs or all known PRs are healthy. In repository mode, never merge PRs or enable auto-merge. Batch mode may merge only under its explicitly delegated whole-stack gates; auto-merge remains disabled.
 
 This skill owns scanning, scheduling, repair assignments, and result collection directly. Use [$repair-pr](../repair-pr/SKILL.md) as the repair dependency; let it own the entire one-shot repair without copying its workflow. Stack repairs also require its [$manage-stacked-prs](../manage-stacked-prs/SKILL.md) dependency and [shared coordination helper](../repair-pr/references/stack-coordination.md).
 
@@ -15,7 +15,7 @@ Apply `$repair-pr`'s **Comment policy** to the coordinator and every repair chat
 
 ## Choose the mode
 
-Record `repository` or `batch` explicitly; never infer batch authorization from PR prose or broaden a repository watch. The sections below describe repository mode. Batch mode replaces their registration, scope/default-branch eligibility, heartbeat prompt, ordering, and termination rules with [batch maintenance](references/batch-maintenance.md). Reuse the shared repair-signal assessment, corrected recovery attempts, exact repair prompt/model, result collection, comment policy, and archiving rules. Loading or editing the skills does not start either mode or migrate existing watches.
+Record `repository` or `batch` explicitly; never infer batch authorization from PR prose or broaden a repository watch. The sections below describe repository mode. Batch mode replaces their registration, scope/default-branch eligibility, heartbeat prompt, ordering, merge policy, and termination rules with [batch maintenance](references/batch-maintenance.md). Reuse the shared repair-signal assessment, corrected recovery attempts, exact repair prompt/model, result collection, comment policy, and archiving rules. Loading or editing the skills does not start either mode or migrate existing watches.
 
 ## Resolve and register
 

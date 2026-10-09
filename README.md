@@ -13,6 +13,7 @@ A collection of standalone [Codex skills](https://learn.chatgpt.com/docs/build-s
 | `create-pr` | Publish changes through a shared PR workflow with verified Closes references for resolved issues and Refs for partial or related work. |
 | `list-good-prs` | List clean or unstable pull requests that were approved by the Codex connector. |
 | `main-qa` | Explicitly run parallel functional and usability QA with GPT-5.6 Luna `xhigh` subagents and report discovered problems through `$add-issue`. |
+| `manage-stacked-prs` | Modify existing stacked PRs, fix necessary lower-layer causes, and restack and verify only affected upper layers. |
 | `merge-pr` | Squash merge authorized GitHub PRs without overriding the commit subject, then verify the result. |
 | `redesign-ui` | Automatically plan and visualize UI changes only in Plan Mode, then implement the approved design in the same chat. |
 | `repair-pr` | Repair merge conflicts, actionable bot feedback, and failing CI on a pull request. |
@@ -62,6 +63,8 @@ It prompts for the installation method when necessary. Add `--copy` to use indep
 When installing selected skills, include their skill dependencies. `create-pr` requires `write-ste`. `write-comment` requires `write-ste` for technical comments. `create-human-reviewed-pr`, `slop-fix-issue`, and `slop-fix-batch` require both `create-pr` and its `write-ste` dependency. `slop-fix-repo-issues` requires `bulk`, `slop-fix-issue`, `create-pr`, and `write-ste`. Installing every skill includes these dependencies. The same rule applies when copying individual skill directories manually.
 
 `slop-fix-batch` also requires subagent controls, isolated Git worktrees, authenticated `gh` access, and the [`github/gh-stack` extension](https://github.com/github/gh-stack). Install the extension separately with `gh extension install github/gh-stack`; the skill checks installed command support and does not silently install or upgrade tools.
+
+`manage-stacked-prs` uses authenticated `gh` access and prefers the same `github/gh-stack` extension for existing-stack inspection and scoped restacking. It checks installed command behavior and uses scoped Git replay when the extension cannot preserve the required range or commit boundaries. It does not silently install or upgrade tools.
 
 ### Manual option: Copy one skill into a repository
 
@@ -198,6 +201,8 @@ Concurrency: 6
 Natural-language conditions and an explicit request for all open issues are also accepted. A bare invocation asks for selection conditions. The skill collects a complete fixed list once, investigates it with subagents, and groups issues that share a root cause or need one inseparable implementation. Independent groups run in separate worktrees; dependent groups start from integrated prerequisite fixes. Workers inherit the parent's model and reasoning settings, with a default ceiling of six active subagents across the descendant tree, further bounded by available capacity.
 
 The coordinator closes already-resolved issues only after confirming target-branch evidence and posting a verified evidence comment. Issues covered by an existing fixing PR are reported without duplicate implementation. Blocked groups and their dependents remain available, while independent verified groups continue to publication. Each completed group becomes one non-draft PR through `create-pr`; `gh stack` connects the PRs in dependency order. The bottom PR targets the selected base, and later PRs target the preceding layer. Closing references on upper layers do not guarantee automatic issue closure. A single completed group is reported as one PR. The batch records its state for continuation and ends after publication without merging, monitoring, or waiting for CI or reviews.
+
+`manage-stacked-prs` applies automatically to edits and alignment repairs in existing stacks, and can also be invoked as `$manage-stacked-prs <PR_URL>`. Completion includes restacking and verifying affected upper PRs. Unrelated lower PRs remain unchanged; a confirmed lower-layer cause that blocks the task is fixed minimally in its own PR, then propagated upward. Explicit local-only or narrower scope instructions take precedence. It records original boundaries and remote SHAs, pushes only changed branches, and reports partial failures without claiming alignment is complete. Stack creation and merging remain separate workflows.
 
 ## Notes
 

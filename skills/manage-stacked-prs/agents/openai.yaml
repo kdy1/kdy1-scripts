@@ -1,0 +1,6 @@
+interface:
+  display_name: "Manage Stacked PRs"
+  short_description: "Edit stacked PRs and restack affected upper layers"
+
+policy:
+  allow_implicit_invocation: true

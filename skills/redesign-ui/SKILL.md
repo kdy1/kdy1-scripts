@@ -97,8 +97,8 @@ conversation when implementation is within the authorized task.
   image as supporting evidence.
 - Keep the approved previews in the image-generation default storage. Use their
   saved paths, descriptions, and final prompts from the conversation as local
-  implementation references. Do not upload, copy into the target repository, or
-  commit the previews merely to preserve or share the design record.
+  implementation references. Do not copy into the target repository or commit
+  the previews merely to preserve or share the design record.
 - If an approved image is unavailable, continue from the self-contained text
   specification, description, and final prompt. Report the missing reference;
   do not silently regenerate or substitute the approved preview.

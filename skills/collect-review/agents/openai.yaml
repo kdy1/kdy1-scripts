@@ -1,0 +1,4 @@
+interface:
+  display_name: "Collect Review"
+  short_description: "Collect Codex PR findings and hand off bugs immediately"
+  default_prompt: "Use $collect-review. <Scope>의 PR에 달린 Codex 자동 리뷰에서 버그 후보를 수집하고 각각 $add-issue로 등록해. 후보를 모아두지 말고 발견하는 대로 전달해. <Scope>를 생략하면 대상 저장소의 열린 PR 전체를 대상으로 해. 현재 PR head에서 해결된 지적은 등록하지 마."

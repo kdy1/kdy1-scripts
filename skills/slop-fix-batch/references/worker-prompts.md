@@ -25,13 +25,38 @@ Do not launch the app, manually reproduce an issue, validate in a real environme
 or capture screenshots for validation. Distinguish implementation requirements
 from skipped real-world validation and report the latter as not performed.
 
-Return an assessment for every assigned issue with immutable evidence links,
+Report each issue assessment as it becomes available without waiting for the
+whole partition. Include immutable evidence links,
 inspection versus executed checks, requirements still unmet, existing PR URLs,
 proposed grouping and dependency reasons, and blockers. Identify the exact
-revision inspected. The coordinator decides grouping and performs closures.
+revision inspected and flag possible relationships with uninvestigated fixed-list
+issues. Finish with coverage of every assigned issue. The coordinator confirms
+groups and may dispatch them while unrelated investigation continues; it owns closures.
 ```
 
 Investigators can read other fixed-list issues to understand dependencies, but cannot add work outside the fixed list. If they need writable test resources, assign an isolated checkout and record any generated artifacts; do not use the user's dirty checkout.
+
+## Dependent-group preparation
+
+Use a read-only assignment while prerequisites are still being implemented. These workers count toward the same six-subagent ceiling; reuse an investigator when practical.
+
+```text
+Prepare this dependent group through read-only investigation and design.
+
+Group and issue URLs: <group and URLs>
+Acceptance requirements and confirmed scope: <requirements and scope>
+Read-only checkout and inspected SHA: <absolute path and SHA>
+Prerequisite groups and known findings: <dependencies and evidence>
+Applicable repository instructions: <locations>
+Coordinator and nested slot allocation: <handle and slot budget>
+
+Do not edit source, refs, GitHub state, or stack metadata. Identify relevant code,
+planned changes, regression coverage, and assumptions that depend on prerequisite
+implementation. Apply the parent validation policy. Report findings and the
+inspected SHA to the coordinator. Source changes require a later implementation
+assignment with an exact SHA containing all prerequisites. Reconcile this design
+with relevant prerequisite changes at that assigned SHA before implementing.
+```
 
 ## Implementation assignment
 
@@ -47,11 +72,19 @@ Assigned checkout and branch: <absolute path and branch>
 Exact starting SHA and integrated prerequisites: <SHA and dependencies>
 Applicable repository instructions: <locations>
 Coordinator and nested subagent slot allocation: <handle and slot budget>
+Worker checks and repository-mandated execution times: <commands and policy>
+Whole-repository checks deferred to final tip: <commands and permitted deferrals>
+Preparation findings when present: <findings and inspected SHA>
 
 Confirm the assigned checkout, branch, and starting SHA before changing files.
 Preserve unrelated changes and edit only the assigned checkout. Implement all
-group implementation requirements, run required and relevant automated checks, and commit
-each coherent verified unit according to repository instructions. Inherit the
+group implementation requirements, run assigned change-related checks and checks
+required at this stage by repository policy, and commit each coherent verified unit
+according to repository instructions. Defer only policy-permitted whole-repository
+checks explicitly assigned to final-tip validation. Never bypass Git hooks or
+defer checks with an explicit required execution time. Report deferred checks as
+`deferred to final tip`, never as passed. If preparation findings exist, reconcile
+them with relevant prerequisite changes at the assigned starting SHA. Inherit the
 parent's model and reasoning settings. Ask the coordinator before changing the
 assignment or using nested slots. Never modify another worker's refs/checkout,
 publish a PR, change GitHub issues/comments, or run gh stack. Do not invoke
@@ -59,19 +92,20 @@ $slop-fix-issue or $bulk: this assignment ends at implementation handoff.
 
 Skip direct app launches, manual reproduction, real-environment validation, and
 screenshot capture for validation even when required by an issue. Automated tests,
-builds, and linters remain required and may exercise app behavior. Skipped
-real-world validation alone does not make the group partial or blocked and does
+builds, and linters follow the assigned worker/final-tip split and may exercise
+app behavior. Skipped real-world validation alone does not make the group partial or blocked and does
 not remove its issues from the coordinator's Closes list. Report it as not
 performed; never claim it passed.
 
 If a requirement is ambiguous or a prerequisite is missing, explain the blocker
 and preserve work. Do not invent product requirements or claim a partial group
-is complete. Report newly discovered interactions to the coordinator.
+is complete. Report newly discovered interactions, group overlaps, or dependencies
+promptly and pause affected work until the coordinator reconciles the assignment.
 
 Return group/issue identities, starting SHA, branch and worktree path, ordered
 commits belonging only to this group, final SHA, diff summary, acceptance
-coverage for every issue, exact checks and results with covered revisions,
-skipped real-world validation, remaining changes, blockers, and any relevant
+coverage for every issue, exact worker checks and results with covered revisions,
+checks deferred to final tip, skipped real-world validation, remaining changes, blockers, and any relevant
 actual screenshots already available. Earlier
 prerequisite commits are not this group's commit range.
 ```

@@ -2,7 +2,7 @@
 
 Use these handoffs with the available subagent controls. Substitute the coordinator's recorded facts; do not send unresolved placeholders. These are scoped assignments under the human's `$slop-fix-batch` invocation, not fresh skill runs. Keep GitHub issue and PR writes and all `gh stack` operations with the coordinator.
 
-Apply the parent skill's validation policy to every handoff: skip direct app launches, manual reproduction, validation in a real environment, and screenshot capture for validation, including when requested by an issue. Keep automated tests, builds, linters, code inspection, independent integration inspection, and Git/GitHub state checks. Automated tests may launch the app or exercise reproduction scenarios. The policy does not relax evidence requirements for direct closure of already-resolved issues.
+Apply the parent skill's validation policy to every handoff: skip direct app launches, manual reproduction, validation in a real environment, and screenshot capture for validation, including when requested by an issue. Keep automated tests, builds, linters, code inspection during investigation and implementation, and Git/GitHub state checks. Automated tests may launch the app or exercise reproduction scenarios. The policy does not relax evidence requirements for direct closure of already-resolved issues.
 
 ## Investigation assignment
 
@@ -74,30 +74,4 @@ coverage for every issue, exact checks and results with covered revisions,
 skipped real-world validation, remaining changes, blockers, and any relevant
 actual screenshots already available. Earlier
 prerequisite commits are not this group's commit range.
-```
-
-## Independent integration inspection
-
-Assign a reviewer who did not implement the inspected group. Give it a read-only checkout or a separate detached checkout at the integrated SHA; do not let it switch the coordinator's branch.
-
-```text
-Inspect this integrated Slop Fix Batch independently. Do not modify source,
-refs, issues, PRs, or stack state.
-
-Human-authorized scope and issue requirements: <request and requirements>
-Repository instructions: <locations>
-Read-only checkout: <absolute path>
-Selected base and exact integrated layer/tip SHAs: <SHAs>
-Group boundaries and predecessor SHAs: <groups and SHAs>
-
-Inspect each group's implementation coverage and the combined diff for regressions,
-duplicate prerequisite commits, dependency mistakes, and unrelated changes.
-Do not launch the app, manually reproduce issues, validate in a real environment,
-or capture screenshots for validation. Report skipped real-world validation as
-not performed; do not classify it alone as incomplete implementation or a
-publication blocker, even when an issue requests it. Direct closure of an
-already-resolved issue still requires the parent's completion evidence.
-Return actionable findings with exact locations and evidence, plus inspection
-coverage and limits. Do not treat code inspection as tests that ran. Send
-findings to the coordinator; do not post a GitHub review or comment.
 ```

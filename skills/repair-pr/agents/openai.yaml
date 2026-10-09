@@ -1,6 +1,6 @@
 interface:
   display_name: "Repair PR"
-  short_description: "Repair PR conflicts, bot reviews, and CI"
+  short_description: "Repair PR conflicts, reviews, and CI with stack ownership"
   default_prompt: "Use $repair-pr to repair the current or specified GitHub PR once, then push the finished fixes."
 
 policy:

@@ -1,7 +1,7 @@
 interface:
   display_name: "Debug Local"
   short_description: "Read local logs, repair state, and report confirmed bugs"
-  default_prompt: "Use $debug-local to diagnose this local problem, read relevant logs, repair confirmed regenerable state problems, then invoke $add-issue for every confirmed committed-code defect in the same run and complete its permitted workflow before the final report, preserving user restrictions."
+  default_prompt: "Use $debug-local to read relevant logs and diagnose this local problem without changing project source, tests, configuration, manifests, or lockfiles, even temporarily or in isolated copies; repair confirmed regenerable state problems or invoke $add-issue for every confirmed committed-code defect, completing and verifying any applicable local repairs before the handoff and carrying the code-change prohibition through all subagents and recording payloads."
 
 policy:
   allow_implicit_invocation: false

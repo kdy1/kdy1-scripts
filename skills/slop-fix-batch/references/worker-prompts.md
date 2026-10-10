@@ -1,6 +1,6 @@
 # Slop Fix Batch worker handoffs
 
-Use these handoffs with the available subagent controls. Substitute the coordinator's recorded facts; do not send unresolved placeholders. These are scoped assignments under the human's `$slop-fix-batch` invocation, not fresh skill runs. Keep GitHub issue and PR writes and all `gh stack` operations with the coordinator. Implementation workers never claim/release coordination tokens, register maintenance, or run `repair-pr`. Write only the assigned implementation branch; registered integration layer branches remain protected by the coordinator's construction token. Maintenance may repair other fully published ready stacks concurrently. The coordinator records ready handoffs and owns all construction-to-maintenance transitions.
+Use these handoffs with the available subagent controls. Substitute the coordinator's recorded facts; do not send unresolved placeholders. These are scoped assignments under the human's `$slop-fix-batch` invocation, not fresh skill runs. Keep GitHub issue and PR writes and all `gh stack` operations with the coordinator. Implementation workers never claim/release coordination tokens, register maintenance, or run `repair-pr`. Write only the assigned implementation branch; registered integration layer branches remain protected by the coordinator's construction token. Maintenance may repair other fully published ready stacks concurrently. The coordinator records ready handoffs and owns all construction-to-maintenance transitions. There is no default six-worker cap; all worker types share the explicit user limit and runtime capacity. Report results promptly so the coordinator can refill free slots. A verified group may be published while later groups in its stack continue; the stack remains construction-protected until every assigned group is complete.
 
 Apply the parent skill's validation policy to every handoff: skip direct app launches, manual reproduction, validation in a real environment, and screenshot capture for validation, including when requested by an issue. Keep automated tests, builds, linters, code inspection during investigation and implementation, and Git/GitHub state checks. Automated tests may launch the app or exercise reproduction scenarios. The policy does not relax evidence requirements for direct closure of already-resolved issues.
 
@@ -38,7 +38,7 @@ Investigators can read other fixed-list issues to understand dependencies, but c
 
 ## Dependent-group preparation
 
-Use a read-only assignment while prerequisites are still being implemented. These workers count toward the same six-subagent ceiling; reuse an investigator when practical.
+Use a read-only assignment while prerequisites are still being implemented. These workers share the user/runtime slot budget with investigation, implementation, and maintenance repairs; reuse an investigator when practical.
 
 ```text
 Prepare this dependent group through read-only investigation and design.
@@ -75,18 +75,20 @@ Exact starting SHA and integrated prerequisites: <SHA and dependencies>
 Applicable repository instructions: <locations>
 Coordinator and nested subagent slot allocation: <handle and slot budget>
 Worker checks and repository-mandated execution times: <commands and policy>
-Whole-repository checks deferred to assigned stack final tip: <commands and permitted deferrals>
+Whole-repository checks deferred to cumulative publication tip: <commands and permitted deferrals>
 Preparation findings when present: <findings and inspected SHA>
 
 Confirm the assigned stack ID, checkout, branch, and starting SHA before changing files.
-All prerequisites must be present at that SHA in the assigned stack.
+All prerequisites must be present at that SHA in the assigned stack, and the
+coordinator must confirm their required cumulative-tip checks passed before
+authorizing source changes.
 Preserve unrelated changes and edit only the assigned checkout. Implement all
 group implementation requirements, run assigned change-related checks and checks
 required at this stage by repository policy, and commit each coherent verified unit
 according to repository instructions. Defer only policy-permitted whole-repository
-checks deferred to the assigned stack's final tip. Never bypass Git hooks or
+checks deferred to the group's cumulative publication tip in its assigned stack. Never bypass Git hooks or
 defer checks with an explicit required execution time. Report deferred checks as
-`deferred to stack final tip`, never as passed. If preparation findings exist, reconcile
+`deferred to cumulative publication tip`, never as passed. If preparation findings exist, reconcile
 them with relevant prerequisite changes at the assigned starting SHA. Inherit the
 parent's model and reasoning settings. Ask the coordinator before changing the
 assignment or using nested slots. Never modify another worker's refs/checkout,
@@ -95,7 +97,7 @@ $slop-fix-issue or $bulk: this assignment ends at implementation handoff.
 
 Skip direct app launches, manual reproduction, real-environment validation, and
 screenshot capture for validation even when required by an issue. Automated tests,
-builds, and linters follow the assigned worker/stack-final-tip split and may exercise
+builds, and linters follow the assigned worker/cumulative-publication-tip split and may exercise
 app behavior. Skipped real-world validation alone does not make the group partial or blocked and does
 not remove its issues from the coordinator's Closes list. Report it as not
 performed; never claim it passed.
@@ -111,7 +113,7 @@ Return group/issue identities, assigned stack ID and integration worktree,
 starting SHA, branch and worker worktree path, ordered
 commits belonging only to this group, final SHA, diff summary, acceptance
 coverage for every issue, exact worker checks and results with covered revisions,
-checks deferred to the assigned stack's final tip, skipped real-world validation, remaining changes, blockers, and any relevant
+checks deferred to the cumulative publication tip, skipped real-world validation, remaining changes, blockers, and any relevant
 actual screenshots already available. Earlier
 prerequisite commits are not this group's commit range.
 ```

@@ -1,7 +1,0 @@
-interface:
-  display_name: "Add Local QA Issue"
-  short_description: "Investigate local QA and record Bugs, Features, and Tasks"
-  default_prompt: "Use $add-local-qa-issue to investigate this local QA request without changing project code, repair confirmed regenerable state problems when needed, and invoke $add-issue for in-scope confirmed Bugs or decision-complete Features and Tasks, preserving the code-change prohibition through every handoff."
-
-policy:
-  allow_implicit_invocation: false

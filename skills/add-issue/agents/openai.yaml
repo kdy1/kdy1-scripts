@@ -1,7 +1,7 @@
 interface:
   display_name: "Add Issue"
-  short_description: "Create evidence-backed GitHub issues"
-  default_prompt: "Use $add-issue to finalize the exact issue title, body, and recording decisions in Plan Mode, then record the approved payload without repeating investigation or drafting; for a fresh invocation outside Plan Mode, investigate before recording."
+  short_description: "Debug local issues and record confirmed work"
+  default_prompt: "Use $add-issue to investigate this request locally by default without editing project code, inspect relevant logs, repair confirmed regenerable state outside Plan Mode, and record confirmed Bugs or decision-complete Features and Tasks; finalized Plan Mode payloads resume directly at recording."
 
 policy:
   allow_implicit_invocation: false

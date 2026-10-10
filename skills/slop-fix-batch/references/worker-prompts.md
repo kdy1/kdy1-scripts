@@ -13,9 +13,12 @@ issue state, comments, PRs, or stack metadata.
 Original human request and selection conditions: <request and conditions>
 Repository and GitHub host: <repository and host>
 Assigned canonical issue URLs: <fixed-list partition>
+Investigation order and scheduling reasons: <ordered assigned issues and reasons>
 Checkout and pinned target SHA: <absolute path and SHA>
 Applicable repository instructions: <locations>
 
+Follow the assigned investigation order; accept coordinator updates for unstarted
+issues without restarting completed assessments.
 Read each issue's current state, full requirements and discussion, relevant
 code/history, and existing fixing PRs. Identify acceptance criteria, completion
 evidence at the pinned target, actionable work, missing material decisions,
@@ -28,7 +31,12 @@ from skipped real-world validation and report the latter as not performed.
 Report each issue assessment as it becomes available without waiting for the
 whole partition. Include immutable evidence links,
 inspection versus executed checks, requirements still unmet, existing PR URLs,
-proposed grouping and dependency reasons, and blockers. Identify the exact
+proposed grouping, directed prerequisite/downstream relationships with evidence,
+and blockers. Estimate implementation and required automated validation costs
+as short/medium/long, stating the basis and uncertainty. Identify likely long
+remaining dependency paths and related issues whose investigation could unblock
+group confirmation. Use medium for unknown costs and mark them uncertain;
+do not invent dependencies or treat estimates as completion evidence. Identify the exact
 revision inspected and flag possible relationships with uninvestigated fixed-list
 issues. Finish with coverage of every assigned issue. The coordinator confirms
 groups and may dispatch them while unrelated investigation continues; it owns closures.
@@ -54,7 +62,9 @@ Coordinator and nested slot allocation: <handle and slot budget>
 Do not edit source, refs, GitHub state, or stack metadata. Identify relevant code,
 planned changes, regression coverage, and assumptions that depend on prerequisite
 implementation. Apply the parent validation policy. Report findings and the
-inspected SHA to the coordinator. Source changes require a later implementation
+inspected SHA to the coordinator, including updated implementation/validation
+cost estimates, their evidence and uncertainty, and prerequisite/downstream
+relationships that affect the remaining dependency path. Source changes require a later implementation
 assignment with an exact SHA containing all prerequisites. Reconcile this design
 with relevant prerequisite changes at that assigned SHA before implementing.
 ```
@@ -104,7 +114,8 @@ performed; never claim it passed.
 
 If a requirement is ambiguous or a prerequisite is missing, explain the blocker
 and preserve work. Do not invent product requirements or claim a partial group
-is complete. Report newly discovered interactions, group overlaps, or dependencies
+is complete. Report changed implementation/validation cost estimates with their basis and
+uncertainty. Report newly discovered interactions, group overlaps, or dependencies
 promptly and pause affected work until the coordinator reconciles the assignment.
 Never rebase or rewrite existing layers, move work across stacks, or copy
 prerequisite commits from another stack to bypass a dependency blocker.

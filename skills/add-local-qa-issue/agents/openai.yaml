@@ -1,0 +1,7 @@
+interface:
+  display_name: "Add Local QA Issue"
+  short_description: "Read local logs, repair state, and report confirmed bugs"
+  default_prompt: "Use $add-local-qa-issue to read relevant logs and diagnose this local problem without changing project source, tests, configuration, manifests, or lockfiles, even temporarily or in isolated copies; repair confirmed regenerable state problems or invoke $add-issue for every confirmed committed-code defect, completing and verifying any applicable local repairs before the handoff and carrying the code-change prohibition through all subagents and recording payloads."
+
+policy:
+  allow_implicit_invocation: false

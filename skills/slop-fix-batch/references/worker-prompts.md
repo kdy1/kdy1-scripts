@@ -1,6 +1,6 @@
 # Slop Fix Batch worker handoffs
 
-Use these handoffs with the available subagent controls. Substitute the coordinator's recorded facts; do not send unresolved placeholders. These are scoped assignments under the human's `$slop-fix-batch` invocation, not fresh skill runs. Keep GitHub issue and PR writes and all `gh stack` operations with the coordinator. Implementation workers never claim/release coordination tokens, register maintenance, or run `repair-pr`. Write only the assigned implementation branch; registered integration layer branches remain protected by the coordinator's construction token. Maintenance may repair other fully published ready stacks concurrently. The coordinator records ready handoffs and owns all construction-to-maintenance transitions. There is no default six-worker cap; all worker types share the explicit user limit and runtime capacity. Report results promptly so the coordinator can refill free slots. A verified group may be published while later groups in its stack continue; the stack remains construction-protected until every assigned group is complete.
+Use these handoffs with the available subagent controls. Substitute the coordinator's recorded facts; do not send unresolved placeholders. These are scoped assignments under the human's `$slop-fix-batch` invocation, not fresh skill runs. Keep GitHub issue writes, batch-ledger writes, construction registrations, and all `gh stack` operations with the coordinator. Only a scoped publication worker may perform the assigned PR writes through `$create-pr`. Implementation workers never claim/release coordination tokens, register maintenance, or run `repair-pr`. Write only the assigned implementation branch; registered integration layer branches remain protected by the coordinator's construction token. Maintenance may repair other fully published ready stacks concurrently. The coordinator records ready handoffs and owns all construction-to-maintenance transitions. There is no default six-worker cap; all worker types, including publishers, share the explicit user limit and runtime capacity. Publication has a separate default limit of three distinct stacks, configurable from two to four without reserving idle slots. Report results promptly so the coordinator can refill free implementation slots even while publishers run. A verified group may be published while later groups in its stack continue implementation in their separate worktrees; its next integration waits for prefix publication and remote verification, and the stack remains construction-protected until every assigned group is complete.
 
 Apply the parent skill's validation policy to every handoff: skip direct app launches, manual reproduction, validation in a real environment, and screenshot capture for validation, including when requested by an issue. Keep automated tests, builds, linters, code inspection during investigation and implementation, and Git/GitHub state checks. Automated tests may launch the app or exercise reproduction scenarios. The policy does not relax evidence requirements for direct closure of already-resolved issues.
 
@@ -46,7 +46,7 @@ Investigators can read other fixed-list issues to understand dependencies, but c
 
 ## Dependent-group preparation
 
-Use a read-only assignment while prerequisites are still being implemented. These workers share the user/runtime slot budget with investigation, implementation, and maintenance repairs; reuse an investigator when practical.
+Use a read-only assignment while prerequisites are still being implemented. These workers share the user/runtime slot budget with investigation, implementation, publication, and maintenance repairs; reuse an investigator when practical.
 
 ```text
 Prepare this dependent group through read-only investigation and design.
@@ -128,3 +128,58 @@ checks deferred to the cumulative publication tip, skipped real-world validation
 actual screenshots already available. Earlier
 prerequisite commits are not this group's commit range.
 ```
+
+## Publication assignment
+
+Use one publisher per frozen stack checkout, inheriting the parent's model and reasoning settings. Spawn with read-only preparation permission. The coordinator records its actual identity and assignment before sending the start authorization; use `followup_task` if preparation has finished. An uncertain start retains its shared slot and construction protection. This worker does not own the build token or write the ledger.
+
+```text
+Publish only this verified Slop Fix Batch layer through
+[$create-pr](<absolute-installed-create-pr-path>).
+
+Original human authorization and delegated publication scope: <request and scope>
+Repository, GitHub host, push remote, and head repository: <resolved values>
+Publication job, stack ID, group, and layer position: <identities>
+Coordinator, absolute batch-ledger path, and assignment record: <identity and pointer>
+Frozen clean integration checkout and branch: <absolute path and branch>
+Exact validated head SHA and intended PR base branch/SHA: <head and base>
+Participating prefix branches, PR URLs, and expected head SHAs: <ordered prefix>
+Layer diff and fully resolved/related issue URLs: <diff and issue classifications>
+Existing PR URL when present: <recorded URL or none>
+Worker checks with covered revisions: <actual commands, results, and SHAs>
+Cumulative-publication-tip checks: <actual commands, results, and exact tip SHA>
+Skipped real-world validation and required disclosures: <not-performed details>
+PR template, draft setting, and relevant existing screenshots: <non-draft and facts>
+
+Until the coordinator records your actual identity and sends the start handoff,
+perform read-only preparation only. Before publication, verify your identity,
+assignment, stack's building phase and construction owner, clean checkout,
+exact head SHA, intended base, and lower-prefix publication against the handoff.
+Do not claim, release, or transfer the coordinator's build token.
+Stop and report mismatches rather than retargeting or changing branches.
+
+After that start authorization, invoke $create-pr with this original delegation
+and its $write-ste dependency. Use the supplied committed changes and validation;
+do not commit, edit source, switch branches, change local layer refs, run tests,
+or rewrite history. Push only the assigned head branch without force. Reuse an
+exact matching PR, verify non-draft state, title/body/references, exact remote
+head SHA and intended base, and perform the required Codex PR attachment.
+The batch policy requires disclosure of skipped manual/environment/screenshot
+validation and standalone Closes lines for every fully implemented issue;
+do not downgrade them to Refs solely for skipped validation.
+
+Do not write the batch ledger, register branches/PRs, run gh stack, change issues,
+start maintenance, merge, or enable auto-merge. Report each push/PR/attachment
+outcome promptly to the coordinator. If a write is uncertain, reconcile exact
+remote refs and matching PR state through $create-pr before retrying. Never
+blindly create a duplicate PR or treat a failed attachment as failed PR creation.
+
+Return job/stack/group/layer identities, checkout, expected and observed remote
+head/base SHAs, exact PR URL and state, verified title/body/issue references,
+attachment outcome, actual validation coverage and skipped validation,
+stage outcomes, and any blockers or unresolved effects. Do not claim that CI
+or reviews passed, gh-stack submission finished, or the stack is ready;
+the coordinator owns prefix submission, final verification, and ready handoff.
+```
+
+The start handoff names the recorded publisher identity, job and ledger assignment, frozen checkout, head/base SHAs, and original scoped authorization. Only that worker may publish that job. After its result and remote effects are reconciled, the coordinator records the PR URL with the helper, serializes prefix submission under the catalog token, and verifies the published prefix before unfreezing that stack. It collects and refills other slots without waiting for all publication jobs.

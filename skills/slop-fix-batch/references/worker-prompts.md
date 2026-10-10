@@ -1,6 +1,6 @@
 # Slop Fix Batch worker handoffs
 
-Use these handoffs with the available subagent controls. Substitute the coordinator's recorded facts; do not send unresolved placeholders. These are scoped assignments under the human's `$slop-fix-batch` invocation, not fresh skill runs. Keep GitHub issue writes, batch-ledger writes, construction registrations, and all `gh stack` operations with the coordinator. Only a scoped publication worker may perform the assigned PR writes through `$create-pr`. Implementation workers never claim/release coordination tokens, register maintenance, or run `repair-pr`. Write only the assigned implementation branch; registered integration layer branches remain protected by the coordinator's construction token. Maintenance may repair other fully published ready stacks concurrently. The coordinator records ready handoffs and owns all construction-to-maintenance transitions. There is no default six-worker cap; all worker types, including publishers, share the explicit user limit and runtime capacity. Publication has a separate default limit of three distinct stacks, configurable from two to four without reserving idle slots. Report results promptly so the coordinator can refill free implementation slots even while publishers run. A verified group may be published while later groups in its stack continue implementation in their separate worktrees; its next integration waits for prefix publication and remote verification, and the stack remains construction-protected until every assigned group is complete.
+Use these handoffs with the available subagent controls. Substitute the coordinator's recorded facts; do not send unresolved placeholders. These are scoped assignments under the human's `$slop-fix-batch` invocation, not fresh skill runs. Keep GitHub issue writes, batch-ledger writes, construction registrations, and all `gh stack` operations with the coordinator. Only a scoped publication worker may perform the assigned PR writes through `$create-pr`. Implementation workers never claim/release coordination tokens, register maintenance, or run `repair-pr`. Write only the assigned implementation branch; registered integration layer branches remain protected by the coordinator's construction token. Maintenance may repair other fully published ready stacks concurrently. The coordinator records ready handoffs and owns all construction-to-maintenance transitions. There is no default six-worker cap; all worker types, including publishers, share the explicit user limit and runtime capacity. Publication has a separate default concurrency ceiling of three distinct stacks, configurable from two to four. Follow the parent skill's shared slot allocation: target three publication and three repair slots when eligible work exists, lend unused capacity, and reclaim it only at completion boundaries. These allocations share the total budget. Report results promptly so the coordinator can fill eligible publication/repair lanes before the remaining implementation work. A verified group may be published while later groups in its stack continue implementation in their separate worktrees; its next integration waits for prefix publication and remote verification, and the stack remains construction-protected until every assigned group is complete.
 
 Apply the parent skill's validation policy to every handoff: skip direct app launches, manual reproduction, validation in a real environment, and screenshot capture for validation, including when requested by an issue. Keep automated tests, builds, linters, code inspection during investigation and implementation, and Git/GitHub state checks. Automated tests may launch the app or exercise reproduction scenarios. The policy does not relax evidence requirements for direct closure of already-resolved issues.
 
@@ -17,6 +17,7 @@ issue state, comments, PRs, or stack metadata.
 Original human request and selection conditions: <request and conditions>
 Repository and GitHub host: <repository and host>
 Assigned canonical issue URLs: <fixed-list partition>
+Shared change areas and related fixed-list issues: <overlap map and inspected boundaries>
 Investigation order and scheduling reasons: <ordered assigned issues and reasons>
 Checkout and pinned target SHA: <absolute path and SHA>
 Applicable repository instructions: <locations>
@@ -35,7 +36,9 @@ from skipped real-world validation and report the latter as not performed.
 Report each issue assessment as it becomes available without waiting for the
 whole partition. Include immutable evidence links,
 inspection versus executed checks, requirements still unmet, existing PR URLs,
-proposed grouping, directed prerequisite/downstream relationships with evidence,
+proposed grouping, affected functions/state/schemas/contracts and consumers,
+classification as inseparable, ordered shared implementation, or independent,
+and directed prerequisite/downstream relationships with evidence,
 and blockers. Estimate implementation and required automated validation costs
 as short/medium/long, stating the basis and uncertainty. Identify likely long
 remaining dependency paths and related issues whose investigation could unblock
@@ -84,6 +87,7 @@ Group ID and assigned issue URLs: <group and URLs>
 Assigned stack ID and integration worktree: <stack ID and absolute path>
 Acceptance requirements for every issue: <requirements>
 Root cause and relevant investigation evidence: <evidence>
+Shared change boundaries and dependency/order decision: <evidence and related groups>
 Assigned checkout and branch: <absolute path and branch>
 Exact starting SHA and integrated prerequisites: <SHA and dependencies>
 Applicable repository instructions: <locations>

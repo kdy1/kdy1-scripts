@@ -10,10 +10,13 @@ Supply the batch's absolute request-queue/cache/cooldown path, request entry poi
 
 ## Investigation assignment
 
+Pass the current mode explicitly. In Plan Mode, use only investigation handoffs and follow the parent skill's **Plan Mode investigation and handoff** rules; construction and publication instructions in this reference apply only in execution mode.
+
 ```text
 Investigate this partition of a Slop Fix Batch. Do not modify source, refs,
 issue state, comments, PRs, or stack metadata.
 
+Current mode: <Plan Mode or execution mode>
 Original human request and selection conditions: <request and conditions>
 Repository and GitHub host: <repository and host>
 Assigned canonical issue URLs: <fixed-list partition>
@@ -45,8 +48,14 @@ remaining dependency paths and related issues whose investigation could unblock
 group confirmation. Use medium for unknown costs and mark them uncertain;
 do not invent dependencies or treat estimates as completion evidence. Identify the exact
 revision inspected and flag possible relationships with uninvestigated fixed-list
-issues. Finish with coverage of every assigned issue. The coordinator confirms
-groups and may dispatch them while unrelated investigation continues; it owns closures.
+issues. Include proposed implementation changes and concrete automated validation
+commands for actionable work, with acceptance coverage and any missing evidence.
+Finish with coverage of every assigned issue. In Plan Mode, the coordinator collects
+all investigation results and reconciles the entire fixed list before finalizing
+the plan; neither workers nor the coordinator implement or close issues. Report
+incomplete reads and unresolved decisions as blockers, not completed investigation.
+In execution mode, the coordinator confirms groups and may dispatch implementation
+while unrelated investigation continues; it owns closures.
 ```
 
 Investigators can read other fixed-list issues to understand dependencies, but cannot add work outside the fixed list. If they need writable test resources, assign an isolated checkout and record any generated artifacts; do not use the user's dirty checkout.

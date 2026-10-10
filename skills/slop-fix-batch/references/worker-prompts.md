@@ -4,6 +4,10 @@ Use these handoffs with the available subagent controls. Substitute the coordina
 
 Apply the parent skill's validation policy to every handoff: skip direct app launches, manual reproduction, validation in a real environment, and screenshot capture for validation, including when requested by an issue. Keep automated tests, builds, linters, code inspection during investigation and implementation, and Git/GitHub state checks. Automated tests may launch the app or exercise reproduction scenarios. The policy does not relax evidence requirements for direct closure of already-resolved issues.
 
+## Shared API policy for every handoff
+
+Supply the batch's absolute request-queue/cache/cooldown path, request entry point, and reusable coordinator observation paths with their read times and completeness. All workers use this entry point for remote requests and honor its shared cooldown. Reuse applicable complete observations instead of duplicate polling; refresh exact assignment identities and affected remote state when required. Authenticated REST reads use page-specific conditional revalidation. Cache TTL hits are scheduling evidence only, never fresh merge authorization. Do not retry rate-limited or uncertain mutations independently, change authentication to bypass the limit, or claim incomplete reviews/CI passed. Send newly observed limits and unknown effects to the coordinator. Git/stack ownership and existing authorization boundaries still apply.
+
 ## Investigation assignment
 
 ```text

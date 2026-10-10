@@ -42,13 +42,15 @@ For an already published, unregistered stack, verify its full membership with au
 
 ## Reserve, claim, and release repairs
 
-Before creating a repair chat, reserve its entire ready stack and record the attempt, PR, reservation token, and intended child in the coordinator ledger:
+Before spawning a repair subagent, reserve its entire ready stack and record the attempt, PR, reservation token, and intended child in the coordinator ledger:
 
 ```sh
 node "<helper>" acquire --stack <id> --owner <attempt-owner> --mode reserved --pr <url>
 ```
 
-Keep `create_thread.prompt` exactly `$repair-pr <url>`. The child discovers the reservation through `lookup` and the recorded ledger. In repository mode, store the coordinator chat ID, authorization pointer, attempt/reservation, and actual child creation result in the registered stack snapshot while retaining the full watch record in the coordinator chat. Only that assigned child may claim it: verify the original human delegation and the child identity/worktree against the coordinator's actual creation result. The helper's token check is not independent evidence of assignment. If creation identity is not yet reconciled, stop before mutation and let the coordinator reconcile; do not claim a matching reservation merely because its PR URL matches. Never create a second child to work around a still-preparing or uncertain first creation.
+For maintenance subagents, the coordinator prepares a clean linked worktree and calls `collaboration.spawn_agent` with `model: "gpt-6-luna"`, `reasoning_effort: "xhigh"`, and `fork_turns: "none"`. The initial handoff supplies the absolute repair skill path, PR/worktree, human authorization, signals/recovery evidence, scoped comment/validation constraints, and reservation/ledger information, but permits only read-only preparation. Record the returned actual agent ID/canonical task name and assigned worktree before recording start authorization and sending the start message. If preparation has already ended, `collaboration.followup_task` delivers the start handoff and triggers the idle agent. Record delivery outcomes immediately. In repository mode, retain the full watch record in the coordinator chat and store the coordinator identity, authorization pointer, attempt/reservation, actual spawn result, and start-handoff state in the registered stack snapshot.
+
+Only that assigned child may claim the reservation after the explicit start message: verify original delegation and actual agent identity/worktree against the recorded spawn result. The token alone is not assignment evidence. If identity or start authorization is not recorded, stop before mutation and let the coordinator reconcile. Never create a second child to bypass a preparing or uncertain spawn/start delivery. Existing legacy repair-chat reservations remain protected until their actual owners and effects are reconciled; no new sidebar chat is needed.
 
 ```sh
 node "<helper>" claim --stack <id> --token <reservation-token> --pr <url> --owner <child-attempt-owner>
@@ -61,7 +63,7 @@ Hold the stack token from before checkout/ref changes through code changes, vali
 
 ## Shared catalog
 
-Hold a stack token first. Acquire the short catalog token around each gh-stack metadata/ref operation (`init`, `add`, `submit`, scoped `rebase`, and recovery), verify the selected stack, then release it. Never hold it while waiting for tests, CI, review, or a child chat. Git replay in another stack can proceed without it when it does not mutate catalog state. Keep the affected stack's workers idle during its stack operations; do not suspend unrelated implementation workers merely because a different stack owns the catalog.
+Hold a stack token first. Acquire the short catalog token around each gh-stack metadata/ref operation (`init`, `add`, `submit`, scoped `rebase`, and recovery), verify the selected stack, then release it. Never hold it while waiting for tests, CI, review, or a child agent. Git replay in another stack can proceed without it when it does not mutate catalog state. Keep the affected stack's workers idle during its stack operations; do not suspend unrelated implementation workers merely because a different stack owns the catalog.
 
 ```sh
 node "<helper>" catalog-acquire --stack <id> --owner <stack-owner> --token <stack-token>
@@ -72,7 +74,7 @@ If a command is interrupted or its outcome is uncertain, keep its catalog token 
 
 ## Reconcile interrupted ownership
 
-First inspect the ledger, actual chat/process ownership, worktree status and pending Git/gh-stack operations, and authenticated remote outcomes. Stop all prior owners before transfer. Recovery never proves these facts itself. Save the evidence outside tracked source:
+First inspect the ledger, actual agent/legacy-chat/process ownership, worktree status and pending Git/gh-stack operations, and authenticated remote outcomes. Stop all prior owners before transfer. Recovery never proves these facts itself. An unavailable agent handle on a later heartbeat is not proof that the owner stopped. Require positive stopped-owner evidence and reconcile worktree/Git operations and remote effects before recovery; otherwise retain the lock and defer replacement work. Save the evidence outside tracked source:
 
 ```json
 {

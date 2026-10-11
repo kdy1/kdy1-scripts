@@ -7,6 +7,8 @@ export function loadSession(file) {
   const s = readJSON(outsideSource(file));
   assert(s.version === 1 && s.id && Array.isArray(s.problems) && Array.isArray(s.finalValidation) && s.pr?.url && s.startSha && s.root && s.commonDir, 'Unsupported or corrupt repair session');
   assert(s.root === canonicalPath(git('rev-parse', '--show-toplevel')) && s.commonDir === canonicalPath(git('rev-parse', '--path-format=absolute', '--git-common-dir')), 'Session belongs to another checkout or Git common directory');
+  assert(s.threadOutcomes && typeof s.threadOutcomes === 'object' && !Array.isArray(s.threadOutcomes), 'Invalid thread outcomes');
+  s.threadOutcomes = Object.assign(Object.create(null), s.threadOutcomes);
   return s;
 }
 export function saveSession(file, s) { s.updatedAt = new Date().toISOString(); saveJSON(file, s); }
@@ -46,7 +48,7 @@ export function initSession(file, pr, stackFile) {
   } else assert(!ownership, 'Stack ownership supplied for an ordinary PR');
   const s = { version: 1, id: randomUUID(), root: check.root, commonDir: check.commonDir, pr: check.pr,
     startSha: check.headSha, branch: check.branch, baseRemote: check.baseRemote, pushRemote: check.pushRemote,
-    mode: check.mode, stack, problems: [], finalValidation: [], publication: null, threadOutcomes: {}, createdAt: new Date().toISOString() };
+    mode: check.mode, stack, problems: [], finalValidation: [], validationHistory: [], publication: null, threadOutcomes: {}, createdAt: new Date().toISOString() };
   saveSession(file, s); return s;
 }
 export function verifySession(s, final = false) {
@@ -67,9 +69,10 @@ export function verifySession(s, final = false) {
       validations(p.validation, p.commit);
     } else assert(p.kind === 'review', 'Merge/CI repairs require a commit');
     for (const t of p.threads) {
-      assert(typeof t.id === 'string' && t.id.startsWith('PRRT_') && !threads.has(t.id), 'Duplicate or invalid thread id'); threads.add(t.id);
+      assert(typeof t.id === 'string' && t.id.trim() && !threads.has(t.id), 'Duplicate or invalid thread id'); threads.add(t.id);
       assert(['fixed', 'incorrect', 'blocked'].includes(t.disposition) && typeof t.evidence === 'string' && t.evidence.trim(), 'Thread requires disposition and evidence');
       if (t.disposition === 'fixed') assert(p.commit, 'Fixed thread requires a repair commit');
+      if (t.findingCommentId) assert(typeof t.findingCommentId === 'string' && t.findingCommentId.trim(), 'Invalid finding comment id');
       if (t.replyBodyFile) assert(t.disposition === 'incorrect' && typeof t.replyBodyFile === 'string', 'Only incorrect findings may have optional reply files');
     }
     if (p.commit) {
@@ -93,10 +96,14 @@ export function verifySession(s, final = false) {
     const ownCount = git('rev-list', '--first-parent', `${original}..${s.startSha}`).split('\n').filter(Boolean).length;
     const actual = git('rev-list', '--first-parent', `${boundary}..${current}`).split('\n').filter(Boolean);
     assert(actual.length === ownCount + commits.size, 'Restack dropped or added target commits; reconcile ranges');
+    for (const p of s.problems.filter(p => p.commit)) {
+      const mapped = replay.find(x => x.problemId === p.id)?.commit ?? p.commit;
+      assert(actual.includes(mapped), 'Mapped repair is outside the target layer');
+    }
     if (boundary !== original) assert(replay.length === commits.size, 'Restacked target requires a mapping for every repair commit');
     assert(new Set(replay.map(x => x.commit)).size === replay.length, 'Independent repairs share a replayed commit');
   }
-  for (const v of s.finalValidation) validations([v]);
+  for (const v of s.finalValidation) { validations([v]); assert(v.revision === current, 'Final validation revision differs from current head'); }
   if (final) { assert(!git('status', '--porcelain'), 'Worktree is not clean'); validations(s.finalValidation, current); }
   return { valid: true, headSha: current, problems: ids.size, commits: commits.size, threads: threads.size };
 }
@@ -105,8 +112,12 @@ export function recordSession(file, input) {
   assert(!s.publication && !Object.keys(s.threadOutcomes).length, 'Reconcile pending publication/thread writes before changing records');
   assert(Object.keys(input).length === 1, 'Record exactly one problem, validation, or stackPublication');
   if (input.problem) { s.problems.push(input.problem); s.finalValidation = []; }
-  else if (input.validation) { s.finalValidation.push(input.validation); }
-  else if (input.stackPublication) { assert(s.mode === 'stack', 'Stack results require a stack session'); s.stackPublication = input.stackPublication; }
+  else if (input.validation) {
+    s.validationHistory ??= []; s.validationHistory.push(input.validation);
+    s.finalValidation = s.finalValidation.filter(v => v.command !== input.validation.command);
+    s.finalValidation.push(input.validation);
+  }
+  else if (input.stackPublication) { assert(s.mode === 'stack', 'Stack results require a stack session'); s.stackPublication = input.stackPublication; s.finalValidation = []; }
   else throw new Error('Expected problem, validation, or stackPublication');
   // Recording one problem must not demand that later unrecorded repairs already
   // have entries, but all recorded data is validated before accepting it.

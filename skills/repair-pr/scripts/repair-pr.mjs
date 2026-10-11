@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import { exit } from "node:process";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
-import { readChecks as collectChecks } from "./lib/common.mjs";
+import { readChecks as collectChecks, isFailingCheck } from "./lib/common.mjs";
 
 const REVIEW_AUTHOR = "chatgpt-codex-connector[bot]";
 
@@ -385,6 +385,7 @@ query($owner: String!, $name: String!, $number: Int!, $cursor: String) {
   const threads = [];
   let viewerLogin = null;
   let cursor = null;
+  const seen = new Set();
 
   for (;;) {
     const args = [
@@ -419,7 +420,7 @@ query($owner: String!, $name: String!, $number: Int!, $cursor: String) {
 
     const connection = result?.data?.repository?.pullRequest?.reviewThreads;
 
-    if (!connection) {
+    if (!connection || !Array.isArray(connection.nodes) || typeof connection.pageInfo?.hasNextPage !== "boolean") {
       fail("GitHub did not return review thread data for this PR.");
     }
 
@@ -430,6 +431,8 @@ query($owner: String!, $name: String!, $number: Int!, $cursor: String) {
     }
 
     cursor = connection.pageInfo.endCursor;
+    if (!cursor || seen.has(cursor)) fail("Invalid or repeated review-thread cursor.");
+    seen.add(cursor);
   }
 
   return { threads: threads.map(thread => readAllThreadComments(thread, repo.host)), viewerLogin };
@@ -438,8 +441,12 @@ query($owner: String!, $name: String!, $number: Int!, $cursor: String) {
 function readAllThreadComments(thread, host) {
   const comments = thread.comments?.nodes ?? [];
   let pageInfo = thread.comments?.pageInfo;
+  if (!Array.isArray(thread.comments?.nodes) || typeof pageInfo?.hasNextPage !== "boolean") fail("Incomplete thread comments.");
+  const seen = new Set();
 
   while (pageInfo?.hasNextPage) {
+    if (!pageInfo.endCursor || seen.has(pageInfo.endCursor)) fail("Invalid or repeated comment cursor.");
+    seen.add(pageInfo.endCursor);
     const page = readThreadCommentsPage(thread.id, pageInfo.endCursor, host);
     comments.push(...(page.nodes ?? []));
     pageInfo = page.pageInfo;
@@ -493,7 +500,7 @@ query($threadId: ID!, $cursor: String) {
 
   const comments = result?.data?.node?.comments;
 
-  if (!comments) {
+  if (!comments || !Array.isArray(comments.nodes) || typeof comments.pageInfo?.hasNextPage !== "boolean") {
     fail(`GitHub did not return comments for review thread ${threadId}.`);
   }
 
@@ -531,20 +538,6 @@ function stripBotSuffix(login) {
   return String(login ?? "").replace(/\[bot\]$/, "");
 }
 
-function isFailingCheck(check) {
-  const bucket = String(check.bucket ?? "").toLowerCase();
-  const state = String(check.state ?? "").toLowerCase();
-
-  return (
-    bucket === "fail" ||
-    bucket === "failing" ||
-    state === "failure" ||
-    state === "failed" ||
-    state === "error" ||
-    state === "cancelled" ||
-    state === "timed_out"
-  );
-}
 
 function formatThread(thread, viewerLogin) {
   const comments = thread.comments?.nodes ?? [];
@@ -559,6 +552,7 @@ function formatThread(thread, viewerLogin) {
     startLine: thread.startLine ?? thread.originalStartLine ?? null,
     url: selectedComment?.url ?? comments[0]?.url ?? null,
     comments: comments.map((comment) => ({
+      id: comment.id,
       author: comment.author?.login ?? null,
       body: comment.body,
       createdAt: comment.createdAt,
@@ -702,6 +696,7 @@ function failOnGraphQLErrors(result, operation) {
 function run(commandName, commandArgs, options = {}) {
   const result = spawnSync(commandName, commandArgs, {
     encoding: "utf8",
+    maxBuffer: 64 * 1024 * 1024,
     stdio: ["ignore", "pipe", "pipe"],
   });
 

@@ -29,10 +29,10 @@ const d = JSON.parse(fs.readFileSync(file, 'utf8'));
 const a = process.argv.slice(2); d.calls.push(a); fs.writeFileSync(file, JSON.stringify(d));
 const emit = v => process.stdout.write(JSON.stringify(v));
 const fail = msg => { process.stderr.write(msg); process.exit(1); };
-const pr = (number = 1) => ({number, html_url:'https://github.com/owner/repo/pull/'+number, state:'open', head:{ref:number===1?'fix':'upper', sha:number===1?d.remote:d.upperSha, repo:{full_name:d.headRepo}}, base:{ref:number===1?(d.base||'main'):'fix', sha:d.start, repo:{full_name:'owner/repo'}}});
+const pr = (number = 1) => d.prs?.[number] || ({number, html_url:d.prURL||'https://github.com/owner/repo/pull/'+number, state:'open', head:{ref:number===1?'fix':'upper', sha:number===1?d.remote:d.upperSha, repo:{full_name:d.headRepo}}, base:{ref:number===1?(d.base||'main'):'fix', sha:d.start, repo:{full_name:'owner/repo'}}});
 if (a[0] === '--version' || a[0] === 'auth') process.exit(0);
 if (a[0] === 'stack') { if (d.catalog) emit(d.catalog); else fail('unknown command "stack" for "gh"'); }
-else if (a[0] === 'pr' && a[1] === 'view') emit({url:a[2]?.startsWith('https:')?a[2]:'https://github.com/owner/repo/pull/1'});
+else if (a[0] === 'pr' && a[1] === 'view') emit({url:a[2]?.startsWith('https:')?a[2]:(d.prURL||'https://github.com/owner/repo/pull/1')});
 else if (a[0] === 'pr' && a[1] === 'checks') { if(d.checksRaw!==undefined) process.stdout.write(d.checksRaw); else emit(d.checks); if(d.checksError) process.stderr.write(d.checksError); process.exit(d.checksExit||0); }
 else if (a[0] === 'run') { if(d.logError) fail('logs unavailable'); process.stdout.write('failed step log'); }
 else if (a[0] === 'api') {
@@ -47,7 +47,7 @@ else if (a[0] === 'api') {
        const body=a.find(x=>x.startsWith('body='))?.slice(5);
        th.comments.nodes.push({id:'new-reply',author:{login:'Alice'},body});
        emit({data:{addPullRequestReviewThreadReply:{comment:{id:'new-reply'}}}});
-     } else { if(d.resolveError) fail('resolve transport failure'); th.isResolved=true; emit({data:{resolveReviewThread:{thread:{id,isResolved:true}}}}); }
+     } else { if(d.resolveError || d.resolveErrorIDs?.includes(id)) fail('resolve transport failure'); th.isResolved=true; emit({data:{resolveReviewThread:{thread:{id,isResolved:true}}}}); }
      fs.writeFileSync(file,JSON.stringify(d));
    } else emit({data:{viewer:{login:'Alice'},repository:{pullRequest:{reviewThreads:{nodes:d.threads,pageInfo:{hasNextPage:false}}}}}});
  } else if(/pulls\\/\\d+$/.test(endpoint)) emit(pr(Number(endpoint.split('/').at(-1))));
@@ -170,7 +170,7 @@ test('reply failure still resolves and repeated runs do not retry the reply', t 
 test('@me findings reject optional replies and uncertain resolution never retries', t => {
   const f=fixture(t);f.update({threads:[f.thread('PRRT_me','Alice')]});f.init();const body=join(f.root,'reply.txt');writeFileSync(body,'Explanation.');
   assert.equal(f.record({problem:{id:'wrong',kind:'review',evidence:'invariant',threads:[{id:'PRRT_me',disposition:'incorrect',evidence:'invariant',replyBodyFile:body}]}}).status,0);assert.equal(f.record({validation:f.validation(f.start)}).status,0);
-  assert.match(f.run('finish-threads','--session',f.session).stderr,/incorrect bot/);assert(!f.read().calls.some(a=>a.some(x=>x.includes('mutation'))));
+  assert.match(f.run('finish-threads','--session',f.session).stderr,/findingCommentId|incorrect bot/);assert(!f.read().calls.some(a=>a.some(x=>x.includes('mutation'))));
   const s=JSON.parse(readFileSync(f.session));delete s.problems[0].threads[0].replyBodyFile;writeFileSync(f.session,JSON.stringify(s));f.update({resolveError:true});
   assert.equal(f.run('finish-threads','--session',f.session).status,1);const count=f.read().calls.filter(a=>a.some(x=>x.includes('mutation'))).length;
   assert.equal(f.run('finish-threads','--session',f.session).status,1);assert.equal(f.read().calls.filter(a=>a.some(x=>x.includes('mutation'))).length,count);
@@ -218,6 +218,7 @@ test('stack sessions reuse ownership and independently verify all published head
   assert.match(f.run('publish','--session',f.session).stderr,/manage-stacked-prs/);
   assert.equal(f.run('finish-threads','--session',f.session).status,1);
   assert.equal(f.record({stackPublication:{complete:true,targetBoundary:f.start,repairCommits:[],layers,validation:[]}}).status,0);
+  assert.equal(f.record({validation:f.validation(f.start)}).status,0);
   assert.equal(f.ok('finish-threads','--session',f.session).complete,true);
   f.update({upperSha:'c'.repeat(40)});assert.match(f.run('finish-threads','--session',f.session).stderr,/remote head or base chain/);f.update({upperSha:upper});
   state.stacks[0].lock.token='changed';writeFileSync(join(dir,'state.json'),JSON.stringify(state));assert.match(f.run('finish-threads','--session',f.session).stderr,/another owner/);
@@ -230,4 +231,67 @@ test('stack initialization rejects stale remote snapshots and unclaimed reservat
   assert.match(f.run('session','init','--file',f.session,'--stack-file',ownership).stderr,/unclaimed reservation/);
   state.stacks[0].lock.mode='repair';writeFileSync(join(dir,'state.json'),JSON.stringify(state));layer.headSha=f.commit('stale');f.git('reset','--hard',f.start);writeFileSync(snapshot,JSON.stringify({layers:[layer]}));
   assert.match(f.run('session','init','--file',f.session,'--stack-file',ownership).stderr,/Snapshot remote/);
+});
+
+test('PR URL case is normalized to the shared registry identity', t => {
+  const f=fixture(t,{prURL:'https://github.com/Owner/Repo/pull/1',headRepo:'Owner/Repo'});
+  const result=f.ok('preflight','--pr','1');assert.equal(result.pr.url,'https://github.com/owner/repo/pull/1');assert.equal(result.pr.headRepository,'github.com/owner/repo');
+});
+test('rerun validation replaces its failed final result and retains validation history', t => {
+  const f=fixture(t);f.init();const revision=f.repair();
+  assert.equal(f.record({validation:{command:'node --test',revision,result:'failed'}}).status,0);
+  assert.equal(f.run('publish','--session',f.session).status,1);
+  assert.equal(f.record({validation:f.validation(revision)}).status,0);assert.equal(f.ok('publish','--session',f.session).state,'verified');
+  const s=JSON.parse(readFileSync(f.session));assert.equal(s.finalValidation.length,1);assert(s.validationHistory.some(v=>v.result==='failed'));
+});
+test('session help is available without an action and rejects irrelevant options', t => {
+  const f=fixture(t);const help=f.run('session','--help');assert.equal(help.status,0,help.stderr);assert.match(help.stdout,/session init/);
+  assert.match(f.run('session','verify','--file',f.session,'--pr','1').stderr,/Unknown/);
+});
+
+test('partial resolution failures preserve independent successful thread outcomes', t => {
+  const f=fixture(t);f.update({threads:[f.thread('PRRT_fail'),f.thread('PRRT_ok')],resolveErrorIDs:['PRRT_fail']});f.init();
+  assert.equal(f.record({problem:{id:'wrong',kind:'review',evidence:'same incorrect premise',threads:['PRRT_fail','PRRT_ok'].map(id=>({id,disposition:'incorrect',evidence:'invariant'}))}}).status,0);assert.equal(f.record({validation:f.validation(f.start)}).status,0);
+  const r=f.run('finish-threads','--session',f.session);assert.equal(r.status,1,r.stderr);const outcomes=JSON.parse(r.stdout).outcomes;
+  assert.equal(outcomes.PRRT_fail.resolve.state,'uncertain');assert.equal(outcomes.PRRT_ok.resolve.state,'verified');
+});
+test('mixed-author replies require the exact eligible bot finding comment', t => {
+  const f=fixture(t);const thread=f.thread('PRRT_mixed');thread.comments.nodes.push({id:'human',author:{login:'Alice'},body:'human finding'});f.update({threads:[thread]});f.init();const body=join(f.root,'reply.txt');writeFileSync(body,'The bot premise contradicts the test.');
+  assert.equal(f.record({problem:{id:'wrong',kind:'review',evidence:'invariant',threads:[{id:'PRRT_mixed',disposition:'incorrect',evidence:'invariant',replyBodyFile:body}]}}).status,0);assert.equal(f.record({validation:f.validation(f.start)}).status,0);
+  assert.match(f.run('finish-threads','--session',f.session).stderr,/findingCommentId/);
+  const s=JSON.parse(readFileSync(f.session));s.problems[0].threads[0].findingCommentId='human';writeFileSync(f.session,JSON.stringify(s));assert.match(f.run('finish-threads','--session',f.session).stderr,/incorrect bot/);
+  s.problems[0].threads[0].findingCommentId='comment-PRRT_mixed';writeFileSync(f.session,JSON.stringify(s));assert.equal(f.ok('finish-threads','--session',f.session).complete,true);
+});
+test('replayed target repairs use original boundaries and mapped layer commits', t => {
+  const f=fixture(t);f.git('branch','parent');const original=f.commit('target own');
+  const url=n=>'https://github.com/owner/repo/pull/'+n;
+  const pr=(n,branch,sha,base)=>({number:n,html_url:url(n),state:'open',head:{ref:branch,sha,repo:{full_name:'owner/repo'}},base:{ref:base,sha:f.start,repo:{full_name:'owner/repo'}}});
+  const prs={1:pr(1,'fix',original,'parent'),2:pr(2,'parent',f.start,'main')};f.update({remote:original,prs});
+  const layers=[{pr:url(2),branch:'parent',headRepository:'github.com/owner/repo',headSha:f.start,baseBranch:'main'},
+    {pr:url(1),branch:'fix',headRepository:'github.com/owner/repo',headSha:original,baseBranch:'parent',inheritedBoundary:f.start}];
+  const dir=join(f.repo,'.git','codex-stack-coordination');mkdirSync(dir);writeFileSync(join(dir,'state.json'),JSON.stringify({version:1,recoveries:[],stacks:[{id:'stack',phase:'ready',layers,lock:{owner:'attempt',token:'held',mode:'repair'}}]}));
+  const snapshot=join(f.root,'snapshot.json');writeFileSync(snapshot,JSON.stringify({layers}));const ownership=join(f.root,'owner.json');writeFileSync(ownership,JSON.stringify({owner:'attempt',token:'held',snapshotPath:snapshot}));f.ok('session','init','--file',f.session,'--pr','1','--stack-file',ownership);
+  const beforeRepair=f.repair();f.git('checkout','parent');writeFileSync(join(f.repo,'parent.txt'),'necessary lower repair\n');f.git('add','parent.txt');f.git('commit','-m','necessary lower repair');const parent=f.git('rev-parse','HEAD');
+  f.git('checkout','fix');f.git('rebase','--onto',parent,f.start,'fix');const final=f.git('rev-parse','HEAD');assert.notEqual(final,beforeRepair);
+  prs[1]=pr(1,'fix',final,'parent');prs[2]=pr(2,'parent',parent,'main');f.update({remote:final,prs});
+  const published=[{...layers[0],headSha:parent},{...layers[1],headSha:final}];
+  const publication={complete:true,targetBoundary:parent,repairCommits:[{problemId:'repair',commit:parent}],layers:published,validation:[f.validation(parent),f.validation(final)]};
+  assert.match(f.record({stackPublication:publication}).stderr,/outside the target layer/);
+  publication.repairCommits[0].commit=final;assert.equal(f.record({stackPublication:publication}).status,0);assert.equal(f.record({validation:f.validation(final)}).status,0);
+  assert.equal(f.ok('finish-threads','--session',f.session).complete,true);
+  const s=JSON.parse(readFileSync(f.session));assert.equal(s.problems[0].commit,beforeRepair);assert.equal(s.stack.initialLayers[1].inheritedBoundary,f.start);
+});
+
+test('a merge repair inventories its merge commit without adopting incoming base commits', t => {
+  const f=fixture(t);f.init();f.git('branch','base');f.git('checkout','base');writeFileSync(join(f.repo,'base.txt'),'base change\n');f.git('add','base.txt');f.git('commit','-m','base change');
+  f.git('checkout','fix');f.git('merge','--no-ff','base','-m','merge base');const merge=f.git('rev-parse','HEAD');
+  assert.equal(f.record({problem:{id:'merge',kind:'merge',commit:merge,evidence:'base integration resolves conflicts',threads:[],validation:[f.validation(merge)]}}).status,0);
+  assert.equal(f.record({validation:f.validation(merge)}).status,0);assert.equal(f.ok('session','verify','--file',f.session).commits,1);
+  assert.equal(f.ok('publish','--session',f.session).state,'verified');assert.equal(f.read().pushCount,1);
+});
+
+test('review thread inventory accepts opaque legacy GitHub node IDs', t => {
+  const f=fixture(t),id='opaque-legacy-node';f.update({threads:[f.thread(id)]});f.init();
+  assert.equal(f.record({problem:{id:'wrong',kind:'review',evidence:'invariant',threads:[{id,disposition:'incorrect',evidence:'invariant'}]}}).status,0);assert.equal(f.record({validation:f.validation(f.start)}).status,0);
+  assert.equal(f.ok('finish-threads','--session',f.session).outcomes[id].resolve.state,'verified');
 });

@@ -20,12 +20,14 @@ export function finishThreads(file) {
   const prepared = work.map(t => {
     const actual = threads.find(x => x.id === t.id);
     assert(actual, `Thread ${t.id} is not in this PR`);
-    const finding = actual.comments.nodes.find(c => isReviewAuthor(c.author?.login, viewerLogin));
+    const eligible = actual.comments.nodes.filter(c => isReviewAuthor(c.author?.login, viewerLogin));
+    const finding = t.findingCommentId ? eligible.find(c => c.id === t.findingCommentId) : eligible[0];
     assert(finding, `Thread ${t.id} has no eligible author`);
     assert(actual.isResolved || !actual.isOutdated, `Thread ${t.id} is now outdated; reassess it`);
     let body = null, bodyError = null;
     if (t.replyBodyFile && !actual.isResolved) {
       assert(t.disposition === 'incorrect' && bot(finding.author?.login), `Optional replies are allowed only for incorrect bot findings: ${t.id}`);
+      assert(t.findingCommentId || eligible.every(c => bot(c.author?.login)), `Select a bot findingCommentId for a mixed-author thread: ${t.id}`);
       try { body = readFileSync(t.replyBodyFile, 'utf8'); assert(body.trim(), `Empty reply for ${t.id}`); }
       catch (error) { body = null; bodyError = error.message; }
     }

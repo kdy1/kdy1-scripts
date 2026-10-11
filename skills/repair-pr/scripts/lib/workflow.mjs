@@ -6,9 +6,9 @@ import { finishThreads } from './threads.mjs';
 import { ciLogs } from './ci-logs.mjs';
 
 export function workflowCommand(command, args) {
-  const action = command === 'session' ? args.shift() : null;
+  const action = command === 'session' && args[0] && !args[0].startsWith('-') ? args.shift() : null;
   const allowed = {
-    preflight: ['pr', 'json', 'help', 'stack-file'], session: ['file', 'pr', 'input', 'stack-file', 'json', 'help'],
+    preflight: ['pr', 'json', 'help', 'stack-file'], session: action === 'init' ? ['file', 'pr', 'stack-file', 'json', 'help'] : action === 'record' ? ['file', 'input', 'json', 'help'] : ['file', 'json', 'help'],
     publish: ['session', 'json', 'help'], 'finish-threads': ['session', 'json', 'help'], 'ci-logs': ['session', 'output-dir', 'json', 'help'],
   };
   const o = parseOptions(args, allowed[command]);

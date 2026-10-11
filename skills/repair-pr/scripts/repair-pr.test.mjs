@@ -101,3 +101,16 @@ test("status fails without an authenticated login even when there are no threads
     assert.equal(result.stdout, "");
   }
 });
+
+test("status rejects incomplete connections and repeated pagination cursors", (t) => {
+  for (const pages of [
+    { first: { nodes: [] } },
+    { first: connection([], "repeat"), repeat: connection([], "repeat") },
+    { first: connection([thread("incomplete", [bot], { comments: { nodes: [] } })]) },
+  ]) {
+    const run = fixture(t, { viewer: { login: "Alice" }, pages });
+    const result = run("--json");
+    assert.equal(result.status, 1);
+    assert.equal(result.stdout, "");
+  }
+});

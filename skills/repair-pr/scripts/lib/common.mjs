@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, realpathSync, readFileSync, mkdirSync, writeFileSync, renameSync, rmSync } from 'node:fs';
 import { dirname, resolve, relative, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { canonicalPr } from '../stack-coordination.mjs';
 
 export function assert(condition, message) { if (!condition) throw new Error(message); }
 export function run(command, args, allowFailure = false) {
@@ -24,16 +25,18 @@ export function repoFromUrl(value) {
   return m ? `${m[1]}/${m[2]}/${m[3]}`.toLowerCase() : null;
 }
 export function prIdentity(url) {
+  url = canonicalPr(url);
   const m = String(url).match(/^https:\/\/([^/]+)\/([^/]+)\/([^/]+)\/pull\/(\d+)$/);
   assert(m, 'Expected an exact GitHub PR URL');
-  return { host: m[1].toLowerCase(), repository: `${m[1]}/${m[2]}/${m[3]}`.toLowerCase(), slug: `${m[2]}/${m[3]}`, number: Number(m[4]) };
+  return { url, host: m[1].toLowerCase(), repository: `${m[1]}/${m[2]}/${m[3]}`.toLowerCase(), slug: `${m[2]}/${m[3]}`, number: Number(m[4]) };
 }
 export const api = (host, endpoint) => json('gh', ['api', '--hostname', host, endpoint]);
 export function readPR(pr) {
-  const { url } = json('gh', ['pr', 'view', ...(pr ? [String(pr)] : []), '--json', 'url']);
-  const identity = prIdentity(url);
+  const resolved = json('gh', ['pr', 'view', ...(pr ? [String(pr)] : []), '--json', 'url']);
+  const identity = prIdentity(resolved.url);
+  const url = identity.url;
   const data = api(identity.host, `repos/${identity.slug}/pulls/${identity.number}`);
-  assert(data.html_url === url && data.head?.repo?.full_name && data.base?.repo?.full_name && data.head.sha && data.base.sha, 'Incomplete or mismatched PR identity');
+  assert(prIdentity(data.html_url).url === url && data.head?.repo?.full_name && data.base?.repo?.full_name && /^[a-f0-9]{40,64}$/.test(data.head.sha ?? '') && /^[a-f0-9]{40,64}$/.test(data.base.sha ?? '') && typeof data.head.ref === 'string' && typeof data.base.ref === 'string' && ['open', 'closed'].includes(data.state), 'Incomplete or mismatched PR identity');
   assert(`${identity.host}/${data.base.repo.full_name}`.toLowerCase() === identity.repository, 'PR base repository mismatch');
   return { url, ...identity, state: data.state.toUpperCase(), headBranch: data.head.ref, headSha: data.head.sha,
     headRepository: `${identity.host}/${data.head.repo.full_name}`.toLowerCase(), baseBranch: data.base.ref,

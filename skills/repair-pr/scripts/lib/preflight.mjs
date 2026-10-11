@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { CoordinationStore } from '../stack-coordination.mjs';
+import { CoordinationStore, canonicalPr } from '../stack-coordination.mjs';
 import { assert, api, git, json, run, readPR, repoFromUrl, canonicalPath } from './common.mjs';
 
 function remotes(repository, push) {
@@ -65,7 +65,7 @@ export function preflight(prArg, ownership = null) {
     }
     const repo = api(pr.host, `repos/${pr.slug}`);
     assert(typeof repo.default_branch === 'string', 'Missing repository default branch');
-    report.relationships = relationships.map(x => x.html_url);
+    report.relationships = relationships.map(x => canonicalPr(x.html_url));
     const help = run('gh', ['stack', '--help'], true);
     if (help.status === 0) report.catalog = json('gh', ['stack', 'view', '--json']);
     else assert(/unknown command ["']?stack/i.test(help.stderr + help.stdout), 'Cannot determine gh-stack availability');
@@ -75,7 +75,7 @@ export function preflight(prArg, ownership = null) {
       const index = report.stack.layers.findIndex(l => l.pr === pr.url);
       const parent = report.stack.layers[index - 1];
       if (parent && (pr.baseBranch !== parent.branch || parent.headRepository !== pr.repository)) report.blockers.push('Registered stack base relationship mismatch');
-      if (relationships.some(item => !report.stack.layers.some(l => l.pr === item.html_url))) report.blockers.push('GitHub stack relationship missing from registry');
+      if (relationships.some(item => !report.stack.layers.some(l => l.pr === canonicalPr(item.html_url)))) report.blockers.push('GitHub stack relationship missing from registry');
     }
   } catch (error) { report.blockers.push(error.message); }
   report.ready = report.blockers.length === 0;

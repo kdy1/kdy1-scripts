@@ -1,12 +1,12 @@
 # Slop Fix Batch worker handoffs
 
-Use these handoffs with the available subagent controls. Substitute the coordinator's recorded facts; do not send unresolved placeholders. These are scoped assignments under the human's `$slop-fix-batch` invocation, not fresh skill runs. Keep GitHub issue writes, batch-ledger writes, construction registrations, and all `gh stack` operations with the coordinator. Only a scoped publication worker may perform the assigned PR writes through `$create-pr`. Implementation workers never claim/release coordination tokens, register maintenance, or run `repair-pr`. Write only the assigned implementation branch; registered integration layer branches remain protected by the coordinator's construction token. Maintenance may repair other fully published ready stacks concurrently. The coordinator records ready handoffs and owns all construction-to-maintenance transitions. There is no default six-worker cap; all worker types, including publishers, share the explicit user limit and runtime capacity. Publication has a separate default concurrency ceiling of three distinct stacks, configurable from two to four. Follow the parent skill's priority: the coordinator processes eligible merges and auto-merge outcomes first, assigns eligible repairs next, publication next, and implementation/investigation/preparation last. Apply the parent skill’s single-slot progress exception when eligible publication or critical-path implementation was displaced by repair dispatches at two consecutive allocation boundaries. All allocations share the total budget; active workers are not interrupted and waiting gates reserve no idle slot. Report results promptly so the coordinator can apply that order at each safe boundary. A verified group may be published while later groups in its stack continue implementation in their separate worktrees; its next integration waits for prefix publication and remote verification, and the stack remains construction-protected until every assigned group is complete.
+Use these handoffs with the available subagent controls. Substitute the coordinator's recorded facts; do not send unresolved placeholders. These are scoped assignments under the human's `$slop-fix-batch` invocation, not fresh skill runs. Keep GitHub issue writes, batch-ledger writes, construction registrations, and all `gh stack` operations with the coordinator. Only a scoped publication worker may perform the assigned PR writes through `$create-pr`. Implementation workers never claim/release coordination tokens, register maintenance, or run `repair-pr`. Write only the assigned implementation branch; registered integration layer branches remain protected by the coordinator's construction token. Maintenance may repair other fully published ready stacks concurrently. The coordinator records ready handoffs and owns all construction-to-maintenance transitions. There is no default six-worker cap; all worker types, including publishers, share the explicit user limit and runtime capacity. Publication uses the parent skill’s measured adaptive ceiling, starting at three unless the human sets a positive limit; it adds no worker capacity. Use [scheduling and timing](scheduling.md) for queue calculation and timing transitions rather than copying those procedures into worker assignments. Follow the parent skill's priority: the coordinator processes eligible merges and auto-merge outcomes first, assigns eligible repairs next, publication next, and implementation/investigation/preparation last. Apply the parent skill’s single-slot progress exception when eligible publication or critical-path implementation was displaced by repair dispatches at two consecutive allocation boundaries. All allocations share the total budget; active workers are not interrupted and waiting gates reserve no idle slot. Report results promptly so the coordinator can apply that order at each safe boundary. A verified group may be published while later groups in its stack continue implementation in their separate worktrees; its next integration waits for prefix publication and remote verification, and the stack remains construction-protected until every assigned group is complete.
 
 Apply the parent skill's validation policy to every handoff: skip direct app launches, manual reproduction, validation in a real environment, and screenshot capture for validation, including when requested by an issue. Keep automated tests, builds, linters, code inspection during investigation and implementation, and Git/GitHub state checks. Automated tests may launch the app or exercise reproduction scenarios. The policy does not relax evidence requirements for direct closure of already-resolved issues.
 
 ## Shared API policy for every handoff
 
-Supply the batch's absolute request-queue/cache/cooldown path, request entry point, and reusable coordinator observation paths with their read times and completeness. All workers use this entry point for remote requests and honor its shared cooldown. Reuse applicable complete observations instead of duplicate polling; refresh exact assignment identities and affected remote state when required. Authenticated REST reads use page-specific conditional revalidation. Cache TTL hits are scheduling evidence only, never fresh merge authorization. Do not retry rate-limited or uncertain mutations independently, change authentication to bypass the limit, or claim incomplete reviews/CI passed. Send newly observed limits and unknown effects to the coordinator. Queue contention and cooldown responses are incomplete evidence, not empty successful results. Invalidate affected read observations and REST representations after any authorized write attempt, even when it fails or its result is unknown; cache eviction never permits a retry. Report direct `gh` or extension-internal requests that the shared entry point cannot intercept, and retain their observed limit/ownership state. Adopt the entry point at a safe boundary without restarting a loaded worker or interrupting an active Git/PR operation. Git/stack ownership and existing authorization boundaries still apply.
+Supply the batch's absolute request-queue/cache/cooldown path, request entry point, and reusable coordinator observation paths with their read times and completeness. Pass the scheduler helper and timing-state paths as context; workers report stage timestamps and wait reasons to the coordinator and do not write them. All workers use this entry point for remote requests and honor its shared cooldown. Reuse applicable complete observations instead of duplicate polling; refresh exact assignment identities and affected remote state when required. Authenticated REST reads use page-specific conditional revalidation. Cache TTL hits are scheduling evidence only, never fresh merge authorization. Do not retry rate-limited or uncertain mutations independently, change authentication to bypass the limit, or claim incomplete reviews/CI passed. Send newly observed limits and unknown effects to the coordinator. Queue contention and cooldown responses are incomplete evidence, not empty successful results. Invalidate affected read observations and REST representations after any authorized write attempt, even when it fails or its result is unknown; cache eviction never permits a retry. Report direct `gh` or extension-internal requests that the shared entry point cannot intercept, and retain their observed limit/ownership state. Adopt the entry point at a safe boundary without restarting a loaded worker or interrupting an active Git/PR operation. Git/stack ownership and existing authorization boundaries still apply.
 
 ## Investigation assignment
 
@@ -48,7 +48,8 @@ remaining dependency paths and related issues whose investigation could unblock
 group confirmation. Use medium for unknown costs and mark them uncertain;
 do not invent dependencies or treat estimates as completion evidence. Identify the exact
 revision inspected and flag possible relationships with uninvestigated fixed-list
-issues. Include proposed implementation changes and concrete automated validation
+issues. Include proposed implementation changes, estimated publication/CI/review/repair/merge
+latency with evidence and uncertainty, and concrete worker automated validation
 commands for actionable work, with acceptance coverage and any missing evidence.
 Finish with coverage of every assigned issue. In Plan Mode, the coordinator collects
 all investigation results and reconciles the entire fixed list before finalizing
@@ -103,24 +104,24 @@ Exact starting SHA and integrated prerequisites: <SHA and dependencies>
 Applicable repository instructions: <locations>
 Coordinator and nested subagent slot allocation: <handle and slot budget>
 Worker checks and repository-mandated execution times: <commands and policy>
-Whole-repository checks deferred to cumulative publication tip: <commands and permitted deferrals>
+Required whole-repository checks to run in this worker: <commands>
+Scheduling helper/timing state paths and estimate evidence: <absolute paths and evidence>
 Preparation findings when present: <findings and inspected SHA>
 
 Confirm the assigned stack ID, checkout, branch, and starting SHA before changing files.
 For a new independent stack, use the coordinator's freshly fetched and revalidated
 stack base shared with its integration worktree. For an existing dependent stack,
-use its exact validated prerequisite SHA. Never independently update the base,
+use its exact integration SHA containing the checked prerequisites. Never independently update the base,
 restart active work after another PR merges, or rewrite protected stack ancestry.
 All prerequisites must be present at that SHA in the assigned stack, and the
-coordinator must confirm their required cumulative-tip checks passed before
-authorizing source changes.
+coordinator must confirm passing prerequisite worker checks and any checks for
+integration changes before authorizing source changes; no cumulative-tip checks are required.
 Preserve unrelated changes and edit only the assigned checkout. Implement all
 group implementation requirements, run assigned change-related checks and checks
 required at this stage by repository policy, and commit each coherent verified unit
-according to repository instructions. Defer only policy-permitted whole-repository
-checks deferred to the group's cumulative publication tip in its assigned stack. Never bypass Git hooks or
-defer checks with an explicit required execution time. Report deferred checks as
-`deferred to cumulative publication tip`, never as passed. If preparation findings exist, reconcile
+according to repository instructions. Run required whole-repository checks in this
+worker before handoff. Never bypass Git hooks or defer checks to integration
+or a final tip. Preserve required execution times. If preparation findings exist, reconcile
 them with relevant prerequisite changes at the assigned starting SHA. Inherit the
 parent's model and reasoning settings. Ask the coordinator before changing the
 assignment or using nested slots. Never modify another worker's refs/checkout,
@@ -129,7 +130,7 @@ $slop-fix-issue or $bulk: this assignment ends at implementation handoff.
 
 Skip direct app launches, manual reproduction, real-environment validation, and
 screenshot capture for validation even when required by an issue. Automated tests,
-builds, and linters follow the assigned worker/cumulative-publication-tip split and may exercise
+builds, and linters run in this worker and may exercise
 app behavior. Skipped real-world validation alone does not make the group partial or blocked and does
 not remove its issues from the coordinator's Closes list. Report it as not
 performed; never claim it passed.
@@ -146,7 +147,7 @@ Return group/issue identities, assigned stack ID and integration worktree,
 starting SHA, branch and worker worktree path, ordered
 commits belonging only to this group, final SHA, diff summary, acceptance
 coverage for every issue, exact worker checks and results with covered revisions,
-checks deferred to the cumulative publication tip, skipped real-world validation, remaining changes, blockers, and any relevant
+stage timing, wait reasons and estimate evidence, skipped real-world validation, remaining changes, blockers, and any relevant
 actual screenshots already available. Earlier
 prerequisite commits are not this group's commit range.
 ```
@@ -164,12 +165,13 @@ Repository, GitHub host, push remote, and head repository: <resolved values>
 Publication job, stack ID, group, and layer position: <identities>
 Coordinator, absolute batch-ledger path, and assignment record: <identity and pointer>
 Frozen clean integration checkout and branch: <absolute path and branch>
-Exact validated head SHA and intended PR base branch/SHA: <head and base>
+Exact publication head SHA and intended PR base branch/SHA: <head and base>
 Participating prefix branches, PR URLs, and expected head SHAs: <ordered prefix>
 Layer diff and fully resolved/related issue URLs: <diff and issue classifications>
 Existing PR URL when present: <recorded URL or none>
 Worker checks with covered revisions: <actual commands, results, and SHAs>
-Cumulative-publication-tip checks: <actual commands, results, and exact tip SHA>
+Integration-change checks when needed: <actual commands/results/covered SHA or unchanged integration>
+Publication head: <exact SHA; no separate cumulative-tip validation>
 Skipped real-world validation and required disclosures: <not-performed details>
 PR template, draft setting, and relevant existing screenshots: <non-draft and facts>
 

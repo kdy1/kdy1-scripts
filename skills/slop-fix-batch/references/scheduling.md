@@ -4,6 +4,10 @@ Read this reference before the first execution allocation and reuse it in batch 
 
 Use `scripts/batch-scheduler.mjs` with Node.js. The coordinator supplies normalized facts, calls the helper at safe boundaries, and persists its output in the external batch ledger before dispatch. The helper has no GitHub, Git, agent or automation access. Its queue order and timing state never authorize mutations, prove passing gates, or replace `stack-coordination.mjs` locks. Keep fresh identity, scope, validation, whole-stack ownership and merge gates in their existing workflows. Workers return facts to the coordinator; they do not write the timing state or ledger.
 
+## Ledger connection
+
+Use the [procedure helper contract](helpers.md). Persist normalized scheduling observations with a coordinator `scheduler` ledger event, then run `batch-ledger.mjs snapshot` and pass its JSON to this helper's unchanged `plan` command. Snapshot generation accounts for ledger-recorded active/reserved/uncertain workers and nested slots, including assignments absent from the graph. Record only non-ledger occupancy in the stored `otherOccupiedSlots` field. Persist plan results, policy windows, displaced counters and reasons before dispatch; neither helper output replaces ownership or fresh gate observations.
+
 ## Estimate the path to the last merge
 
 Optimize the time until every intended PR is verified merged. Record blocked or closed-unmerged PRs honestly; do not count them as merged to meet the objective. Model remaining investigation, implementation with worker checks, integration/publication, external CI/review, verified repair/alignment when needed, and merge/result verification as separate graph tasks. There is no cumulative-tip validation stage. Use confirmed edges only. Preserve group dependencies and the requirement that all assigned groups finish before a stack's ready handoff. A stack merge/result task must depend on all necessary publications and external gates. Do not add a repair task without an observed repair signal; an uncertain repair allowance belongs in estimate evidence, not an invented dependency.

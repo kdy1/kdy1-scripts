@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { isDeepStrictEqual } from 'node:util';
 import { check, version, nonempty, sha, absolute, readJson, load, save, lock, cli } from './helper-common.mjs';
-import { emptyCheckpoints, checkpoint } from './batch-checkpoints.mjs';
+import { emptyCheckpoints, checkpoint, validateCheckpoints } from './batch-checkpoints.mjs';
 import { verifyPublication } from './verify-publication.mjs';
 import { rankTasks } from './batch-scheduler.mjs';
 const safeId = value => { nonempty(value, 'id'); check(!['__proto__', 'constructor', 'prototype'].includes(value), 'Unsafe id'); return value; };
@@ -14,7 +14,7 @@ export function initialize(input) {
   nonempty(input.baseBranch, 'base branch'); nonempty(input.remote, 'remote'); nonempty(input.authorization, 'original authorization');
   const ledger = { version: 1, revision: 0, batchId: input.batchId, coordinator: input.coordinator, query: input.query,
     repository: input.repository, baseBranch: input.baseBranch, remote: input.remote, authorization: input.authorization,
-    inspectedSha: input.inspectedSha, fixedIssues: structuredClone(input.selection.issues), groups: {}, stacks: {}, assignments: {}, assessments: {},
+    inspectedSha: input.inspectedSha, context: structuredClone(input.context ?? {}), fixedIssues: structuredClone(input.selection.issues), groups: {}, stacks: {}, assignments: {}, assessments: {},
     events: [], checkpoints: emptyCheckpoints(), scheduler: null, maintenance: null, implementationEnded: false };
   validateLedger(ledger); return ledger;
 }
@@ -26,9 +26,10 @@ export function validateLedger(ledger) {
   ledger.fixedIssues.forEach((issue, i) => { nonempty(issue.key, 'issue identity'); nonempty(issue.url, 'issue URL'); check(issue.canonicalOrder === i, 'Canonical order changed'); });
   for (const key of ['groups', 'stacks', 'assignments', 'assessments']) check(ledger[key] && typeof ledger[key] === 'object' && !Array.isArray(ledger[key]), `Missing ${key}`);
   check(Array.isArray(ledger.events) && ledger.checkpoints && typeof ledger.implementationEnded === 'boolean', 'Missing ledger recovery state');
+  validateCheckpoints(ledger.checkpoints);
   const assignedIssues = new Set();
   for (const group of Object.values(ledger.groups)) {
-    safeId(group.id); check(Array.isArray(group.issues) && group.issues.length && Array.isArray(group.requires), 'Missing group scope');
+    safeId(group.id); nonempty(group.acceptance, 'group acceptance'); nonempty(group.dependencyEvidence, 'dependency evidence'); check(group.confirmed === true, 'Unconfirmed group'); check(Array.isArray(group.issues) && group.issues.length && Array.isArray(group.requires), 'Missing group scope');
     for (const issue of group.issues) {
       check(ledger.fixedIssues.some(i => i.key === issue) && !assignedIssues.has(issue), 'Issue outside fixed list or assigned twice'); assignedIssues.add(issue);
     }
@@ -44,7 +45,7 @@ export function validateLedger(ledger) {
     for (const id of stack.groups) { check(ledger.groups[id] && !assignedGroups.has(id), 'Missing or duplicated stack group'); assignedGroups.add(id); ledger.groups[id].requires.forEach(parent => check(stack.groups.includes(parent), 'Dependency crosses stacks')); }
     check(new Set(stack.layers.map(l => l.groupId)).size === stack.layers.length, 'Duplicate layer');
     stack.layers.forEach((layer, i) => {
-      check(stack.groups.includes(layer.groupId), 'Layer outside stack scope'); sha(layer.headSha); sha(layer.workerSha);
+      check(stack.groups.includes(layer.groupId), 'Layer outside stack scope'); check(layer.requirementsSatisfied === true, 'Incomplete implementation requirements'); sha(layer.headSha); sha(layer.workerSha);
       check(layer.checks?.length && layer.checks.every(c => c.status === 'passed' && c.sha === layer.workerSha && c.command), 'Missing passing worker checks at original SHA');
       check(layer.realWorldValidation === 'not-performed', 'Missing skipped validation disclosure');
       check(typeof layer.integrationChanged === 'boolean', 'Missing integration-change observation');
@@ -54,9 +55,9 @@ export function validateLedger(ledger) {
     if (stack.phase === 'ready') check(stack.layers.length === stack.groups.length && stack.layers.every(l => l.publication?.complete === true) && stack.readyEvidence && stack.coordination?.phase === 'ready' && stack.detachedSha === stack.layers.at(-1).headSha, 'Incomplete ready handoff');
   }
   for (const a of Object.values(ledger.assignments)) {
-    safeId(a.id); check(['reserved', 'active', 'uncertain', 'finished'].includes(a.status), 'Invalid assignment status');
+    safeId(a.id); nonempty(a.taskId, 'assignment task id'); check(['investigation', 'preparation', 'implementation', 'publication', 'repair'].includes(a.lane), 'Invalid worker lane'); check(['reserved', 'active', 'uncertain', 'finished'].includes(a.status), 'Invalid assignment status');
     check(Number.isSafeInteger(a.slots) && a.slots >= (a.status === 'finished' ? 0 : 1), 'Missing occupied slots');
-    if (a.status === 'finished') check(a.slots === 0 && a.evidence, 'Missing assignment completion evidence');
+    if (a.status === 'finished') check(a.slots === 0 && a.evidence && ['succeeded', 'failed', 'cancelled'].includes(a.outcome), 'Missing assignment completion evidence/outcome');
   }
   check(new Set(ledger.events.map(e => e.id)).size === ledger.events.length && ledger.revision === ledger.events.length, 'Incomplete ledger event history');
   if (ledger.scheduler) { version(ledger.scheduler); rankTasks(ledger.scheduler.tasks); }
@@ -78,7 +79,13 @@ export function applyEvent(ledger, event, owner) {
     case 'groups':
       check(!Object.keys(ledger.stacks).length && !Object.keys(ledger.assignments).length, 'Group replacement requires untouched construction state');
       check(Array.isArray(event.groups), 'Missing groups'); next.groups = {};
-      for (const group of event.groups) { safeId(group.id); check(!next.groups[group.id], 'Duplicate group'); nonempty(group.acceptance, 'acceptance requirements'); nonempty(group.dependencyEvidence, 'dependency/independence evidence'); check(group.confirmed === true, 'Unconfirmed group'); next.groups[group.id] = group; } break;
+      for (const group of event.groups) { safeId(group.id); nonempty(group.acceptance, 'group acceptance'); nonempty(group.dependencyEvidence, 'dependency evidence'); check(group.confirmed === true, 'Unconfirmed group'); check(!next.groups[group.id], 'Duplicate group'); nonempty(group.acceptance, 'acceptance requirements'); nonempty(group.dependencyEvidence, 'dependency/independence evidence'); check(group.confirmed === true, 'Unconfirmed group'); next.groups[group.id] = group; } break;
+    case 'group': {
+      const g = event.value; safeId(g?.id);
+      check(!Object.values(ledger.stacks).some(s => s.groups.includes(g.id)), 'Constructed group scope cannot change');
+      check(g.confirmed === true, 'Unconfirmed group'); nonempty(g.acceptance, 'acceptance requirements'); nonempty(g.dependencyEvidence, 'dependency evidence');
+      next.groups[g.id] = g; break;
+    }
     case 'stack': {
       const s = event.value; safeId(s?.id); check(!next.stacks[s.id], 'Stack already exists');
       check(s.phase === 'building' && Array.isArray(s.layers) && !s.layers.length, 'New stack must start building without layers');
@@ -122,6 +129,7 @@ export function applyEvent(ledger, event, owner) {
       next.stacks[event.stackId].coordination = event.value; break;
     case 'ready': {
       const s = next.stacks[event.stackId]; check(s?.phase === 'building', 'Stack not building');
+      check(!Object.values(next.assignments).some(a => a.stackId === s.id && a.status !== 'finished'), 'Active or uncertain stack assignment remains');
       nonempty(event.evidence, 'clean worktree/detach and ready evidence'); sha(event.detachedSha);
       check(!s.publicationAttempt || s.publicationAttempt.reconciled === true, 'Publication effects not reconciled');
       s.phase = 'ready'; s.readyEvidence = event.evidence; s.detachedSha = event.detachedSha;
@@ -131,6 +139,9 @@ export function applyEvent(ledger, event, owner) {
       const a = event.value; safeId(a?.id); const old = ledger.assignments[a.id];
       if (old) {
         check(old.status !== 'finished', 'Assignment already terminal');
+        check(old.taskId === a.taskId && old.lane === a.lane && old.stackId === a.stackId, 'Assignment scope changed');
+        if (old.startSha) check(old.startSha === a.startSha, 'Assignment starting SHA changed');
+        if (old.worktree) check(old.worktree === a.worktree, 'Assignment checkout changed');
         if (old.status === 'uncertain' && a.status !== 'uncertain') check(event.reconciled === true && event.evidence, 'Uncertain assignment needs reconciliation before transition');
         check(old.slots === a.slots || a.status === 'finished', 'Occupied slots cannot be silently changed');
         check(old.status === a.status || (old.status === 'reserved' && ['active', 'uncertain', 'finished'].includes(a.status)) || (old.status === 'active' && ['uncertain', 'finished'].includes(a.status)) || old.status === 'uncertain', 'Illegal assignment transition');
@@ -172,10 +183,10 @@ export function schedulingSnapshot(ledger) {
   check(Array.isArray(s.tasks), 'Missing scheduling tasks');
   // Assignment state, including uncertain/nested reservations, cannot disappear from accounting.
   let other = 0;
-  for (const a of Object.values(ledger.assignments).filter(a => a.status !== 'finished')) {
+  for (const a of Object.values(ledger.assignments)) {
     const task = s.tasks.find(t => t.id === a.taskId);
-    if (task) { task.status = a.status; task.eligible = false; task.slots = a.slots; }
-    else other += a.slots;
+    if (task) { task.status = a.status === 'finished' ? (a.outcome === 'succeeded' ? 'done' : 'blocked') : a.status; task.eligible = false; task.slots = a.slots; }
+    else if (a.status !== 'finished') other += a.slots;
   }
   s.otherOccupiedSlots = (s.otherOccupiedSlots ?? 0) + other;
   return s;

@@ -18,7 +18,7 @@ const selection = { version: 1, complete: true, query: 'repo:o/r is:issue is:ope
 const init = () => initialize({ version: 1, batchId: 'batch', coordinator: 'root', query: selection.query, repository: 'github.com/o/r', baseBranch: 'main', remote: 'origin', authorization: 'Fix selected issues', inspectedSha: sha, selection });
 const group = { id: 'g', issues: [issue.key], requires: [], confirmed: true, acceptance: 'Fix behavior', dependencyEvidence: 'Independent inspected function' };
 const stack = { id: 's', phase: 'building', groups: ['g'], layers: [], baseSha: sha, worktree: '/tmp/stack', fetchedAt: '2026-10-11T00:00:00Z', revalidationEvidence: 'Fetched base and inspected function' };
-const layer = { groupId: 'g', headSha: head, workerSha: sha, checks: [{ command: 'node --test', status: 'passed', sha }], integrationChanged: false, realWorldValidation: 'not-performed' };
+const layer = { groupId: 'g', requirementsSatisfied: true, headSha: head, workerSha: sha, checks: [{ command: 'node --test', status: 'passed', sha }], integrationChanged: false, realWorldValidation: 'not-performed' };
 function event(ledger, type, fields = {}) { return { id: `e${ledger.revision}`, expectedRevision: ledger.revision, at: '2026-10-11T00:00:00Z', type, ...fields }; }
 function apply(ledger, type, fields) { return applyEvent(ledger, event(ledger, type, fields), 'root'); }
 function building() { let l = apply(init(), 'groups', { groups: [group] }); return apply(l, 'stack', { value: stack }); }
@@ -135,12 +135,12 @@ test('published layers and unknown publication attempts remain protected', () =>
   assert.throws(() => apply(l, 'layer', { stackId: 's', value: layer }), /cannot change/);
 });
 test('uncertain workers retain slots and need reconciliation before completion', () => {
-  let l = apply(init(), 'assignment', { value: { id: 'a', taskId: 't', status: 'reserved', slots: 2 } });
+  let l = apply(init(), 'assignment', { value: { id: 'a', taskId: 't', lane: 'implementation', status: 'reserved', slots: 2 } });
   l = apply(l, 'assignment', { value: { ...l.assignments.a, status: 'uncertain' } });
-  assert.throws(() => apply(l, 'assignment', { value: { ...l.assignments.a, status: 'finished', slots: 0, evidence: 'stopped' } }), /reconciliation/);
+  assert.throws(() => apply(l, 'assignment', { value: { ...l.assignments.a, status: 'finished', slots: 0, outcome: 'succeeded', evidence: 'stopped' } }), /reconciliation/);
   l = apply(l, 'scheduler', { value: { version: 1, capacity: 3, tasks: [] } });
   assert.equal(plan(schedulingSnapshot(l)).accounting.used, 2);
-  l = apply(l, 'assignment', { value: { ...l.assignments.a, status: 'finished', slots: 0, evidence: 'stopped and no writes' }, reconciled: true, evidence: 'Verified terminal agent and remote effects' });
+  l = apply(l, 'assignment', { value: { ...l.assignments.a, status: 'finished', slots: 0, outcome: 'succeeded', evidence: 'stopped and no writes' }, reconciled: true, evidence: 'Verified terminal agent and remote effects' });
   assert.equal(l.assignments.a.slots, 0);
 });
 test('atomic ledger updates never steal interrupted locks or overwrite conflicts', () => scratch(dir => {
@@ -159,14 +159,14 @@ test('publication detects identity, SHA, draft, body, closes, attachment and pre
 test('checkpoint pass captures events and PRs; arrivals remain pending and due immediately', () => {
   let c = checkpoint(emptyCheckpoints(), { type: 'enqueue', id: 'e1', stackId: 's' });
   c = checkpoint(c, { type: 'start', passId: 'p', at: 1000, prs: ['pr1'] });
-  assert.throws(() => checkpoint(c, { type: 'start', passId: 'another', prs: [] }), /active/);
+  assert.throws(() => checkpoint(c, { type: 'start', passId: 'another', at: 1001, prs: [] }), /active/);
   c = checkpoint(c, { type: 'enqueue', id: 'e2', stackId: 's' });
-  c = checkpoint(c, { type: 'finish', passId: 'p', at: 2000, full: true, nextFullAt: 5000, refresh: { s: 9000 }, inventory: { complete: true, prs: [{ url: 'pr1', readComplete: true }] } });
+  c = checkpoint(c, { type: 'finish', passId: 'p', at: 2000, full: true, nextFullAt: 5000, refresh: { s: 9000 }, inventory: { complete: true, prs: [{ url: 'pr1', readComplete: true, state: 'OPEN', headSha: head, baseSha: sha, readAt: 1500 }] } });
   assert.deepEqual(c.pending.map(e => e.id), ['e2']); assert.equal(c.refresh.s, 0); assert.equal(c.nextFullAt, 5000);
 });
 test('partial pass cannot claim full inventory or terminate; changed heads invalidate candidates', () => {
-  let c = checkpoint(emptyCheckpoints(), { type: 'start', passId: 'p', prs: ['pr1', 'pr2'] });
-  c = checkpoint(c, { type: 'finish', passId: 'p', inventory: { complete: true, prs: [{ url: 'pr1', readComplete: true }] } });
+  let c = checkpoint(emptyCheckpoints(), { type: 'start', passId: 'p', at: 1000, prs: ['pr1', 'pr2'] });
+  c = checkpoint(c, { type: 'finish', passId: 'p', at: 2000, inventory: { complete: true, prs: [{ url: 'pr1', readComplete: true, state: 'OPEN', headSha: head, baseSha: sha, readAt: 1500 }] } });
   assert.equal(c.inventory.complete, false);
   c = checkpoint(c, { type: 'candidate', queue: 'merge', stackId: 's', prs: ['pr1'], evidence: 'inventory at time' });
   c = checkpoint(c, { type: 'invalidate', stackId: 's' }); assert.equal(c.candidates.merge[0].stale, true);
@@ -174,7 +174,7 @@ test('partial pass cannot claim full inventory or terminate; changed heads inval
 });
 test('termination requires exact current terminal PR set and no protected or unknown work', () => {
   const l = ready(); l.implementationEnded = true; l.checkpoints.pending = [];
-  l.checkpoints.inventory = { complete: true, prs: [{ url: l.stacks.s.layers[0].url, state: 'MERGED', readComplete: true }] };
+  l.checkpoints.inventory = { complete: true, prs: [{ url: l.stacks.s.layers[0].url, state: 'MERGED', readComplete: true, headSha: head, baseSha: sha, readAt: 1500 }] };
   assert.equal(checkpointPlan(l, 1000).stop, true);
   l.stacks.s.outstandingEffects = true; assert.equal(checkpointPlan(l, 1000).stop, false);
 });
@@ -209,3 +209,83 @@ test('every helper CLI provides help without remote access', () => {
     assert.equal(result.status, 0, result.stderr); assert.match(result.stdout, /\.mjs/);
   }
 });
+
+test('GraphQL read queries are uncached, errors remain incomplete and mutations cannot bypass write rules', () => scratch(async dir => {
+  const gql = { ...input(dir), endpoint: '/graphql', method: 'POST', operation: 'graphql-read', body: { query: 'query { viewer { login } }' } };
+  assert.equal((await request(gql, { auth, transport: async () => response({ data: { viewer: { login: 'user' } } }) })).complete, true);
+  assert.deepEqual(JSON.parse(readFileSync(gql.statePath)).writes, {});
+  assert.deepEqual(JSON.parse(readFileSync(gql.statePath)).cache, {});
+  assert.equal((await request(gql, { auth, transport: async () => response({ data: {}, errors: [{ message: 'incomplete' }] }) })).complete, false);
+  await assert.rejects(request({ ...gql, body: { query: 'mutation { closeIssue { clientMutationId } }' } }, { auth }), /explicit query/);
+}));
+test('enterprise request uses enterprise API paths and malformed pagination is blocked', () => scratch(async dir => {
+  await request({ ...input(dir), host: 'github.enterprise.test' }, { auth, transport: async url => { assert.equal(url, 'https://github.enterprise.test/api/v3/repos/o/r/issues'); return response([]); } });
+  await request({ ...input(dir), host: 'github.enterprise.test', endpoint: '/graphql', method: 'POST', operation: 'graphql-read', body: { query: '{ viewer { login } }' } }, { auth, transport: async url => { assert.equal(url, 'https://github.enterprise.test/api/graphql'); return response({ data: {} }); } });
+  await assert.rejects(request({ ...input(dir), paginate: true }, { auth, transport: async () => response([], { link: 'broken; rel="next"' }) }), /Malformed/);
+}));
+test('5xx and invalid write responses are uncertain, while HTTP rejection is never automatically retried', () => scratch(async dir => {
+  const w = { ...input(dir), method: 'PUT', attempt: 'w1' }; let calls = 0;
+  const result = await request(w, { auth, transport: async () => { calls++; return response({}, {}, 503); } });
+  assert.equal(result.status, 'uncertain'); assert.equal(calls, 1);
+  control({ version: 1, action: 'reconcile-write', statePath: w.statePath, attempt: 'w1', evidence: 'Remote confirmed no effects' });
+  assert.equal((await request({ ...w, attempt: 'w2' }, { auth, transport: async () => ({ status: 200, headers: {}, text: 'invalid' }) })).status, 'uncertain');
+  assert.equal(JSON.parse(readFileSync(w.statePath)).writes.w2.status, 'uncertain');
+}));
+test('legacy import blocks missing evidence without creating a new ledger', () => scratch(dir => {
+  const source = join(dir, 'old.json'), dest = join(dir, 'ledger.json'); save(source, { version: 1 });
+  const result = spawnSync(process.execPath, [new URL('./batch-ledger.mjs', import.meta.url).pathname, 'import', dest, source], { encoding: 'utf8' });
+  assert.equal(result.status, 2); assert.match(result.stdout, /explicit recovery/); assert.throws(() => readFileSync(dest), /ENOENT/);
+}));
+test('new independent groups can be confirmed while another stack is building', () => {
+  const i2 = { ...issue, key: 'github.com/o/r/3', number: 3, url: 'https://github.com/o/r/issues/3', canonicalOrder: 1 };
+  let l = initialize({ ...init(), selection: { ...selection, issues: [issue, i2] } });
+  l = apply(l, 'groups', { groups: [group] }); l = apply(l, 'stack', { value: stack });
+  l = apply(l, 'group', { value: { ...group, id: 'g2', issues: [i2.key] } }); assert.ok(l.groups.g2);
+  assert.throws(() => apply(l, 'group', { value: group }), /Constructed group/);
+});
+test('pass invalidation during network reads cannot be erased by finishing the captured pass', () => {
+  let c = checkpoint(emptyCheckpoints(), { type: 'start', passId: 'p', at: 1000, prs: ['pr'] });
+  c = checkpoint(c, { type: 'invalidate', stackId: 's' });
+  c = checkpoint(c, { type: 'finish', passId: 'p', at: 2000, refresh: { s: 9999 }, inventory: { complete: true, prs: [{ url: 'pr', state: 'OPEN', headSha: head, baseSha: sha, readAt: 1500, readComplete: true }] } });
+  assert.equal(c.inventory.complete, false); assert.equal(c.refresh.s, 0);
+});
+test('stale or missing head/base inventory cannot qualify as current full coverage', () => {
+  const c = checkpoint(emptyCheckpoints(), { type: 'start', passId: 'p', at: 1000, prs: ['pr'] });
+  for (const pr of [{ url: 'pr', readComplete: true }, { url: 'pr', state: 'MERGED', headSha: head, baseSha: sha, readAt: 500, readComplete: true }]) {
+    assert.equal(checkpoint(c, { type: 'finish', passId: 'p', at: 2000, inventory: { complete: true, prs: [pr] } }).inventory.complete, false);
+  }
+});
+test('implementation and publication START validate actual worker, separate/frozen checkout and SHA coverage', () => {
+  let l = building();
+  const recorded = { id: 'a', taskId: 'implement', lane: 'implementation', stackId: 's', status: 'reserved', slots: 1, worker: 'child', worktree: '/tmp/worker', startSha: sha };
+  l = apply(l, 'assignment', { value: recorded });
+  const a = { ...assignment(), assignmentId: 'a', worker: 'child', stackId: 's', groupId: 'g', acceptance: 'Fix behavior', integrationWorktree: '/tmp/stack', dependencyEvidence: 'No prerequisites', startSha: sha, branch: 'kdy1/worker', prerequisiteChecks: 'Independent base revalidated', checkCommands: ['node --test'], repositoryCheckCommands: [], requiredExecutionTimes: 'none' };
+  assert.match(renderHandoff({ version: 1, mode: 'execution', role: 'implementation', phase: 'start', ledger: l, assignment: a }), /START only/);
+  assert.throws(() => renderHandoff({ version: 1, mode: 'execution', role: 'implementation', phase: 'start', ledger: l, assignment: { ...a, worker: 'wrong' } }), /worker identity/);
+  assert.throws(() => renderHandoff({ version: 1, mode: 'execution', role: 'implementation', phase: 'start', ledger: l, assignment: { ...a, startSha: head } }), /SHA differs/);
+  const p = { ...a, checkout: '/tmp/stack', headSha: head, baseSha: sha, headBranch: 'kdy1/fix', baseBranch: 'main', createPrSkill: '/skills/create-pr/SKILL.md', checks: layer.checks, closes: [issue.url], realWorldValidation: 'not-performed', integrationChanged: false };
+  const text = renderHandoff({ version: 1, mode: 'execution', role: 'publication', phase: 'prepare', ledger: l, assignment: p });
+  assert.match(text, /Read-only preparation/); assert.ok(text.includes(sha)); assert.ok(text.includes(head));
+});
+test('coordinator maintenance handoff consumes no child slot and preserves conditional gates', () => {
+  const l = ready(); const a = { ...assignment(), worker: 'root', maintenanceSkill: '/skills/slop-maintain-repo-prs/SKILL.md', batchReference: '/skills/slop-maintain-repo-prs/references/batch-maintenance.md', coordinationRoot: '/repo/.git/coordination', capacityAccounting: 'one free slot' };
+  assert.match(renderHandoff({ version: 1, mode: 'execution', role: 'maintenance', phase: 'start', ledger: l, assignment: a }), /fresh review\/CI\/membership gates/);
+  assert.deepEqual(l.assignments, {});
+});
+
+test('finished ledger assignments cannot leave stale active slots in scheduler snapshots', () => {
+  let l = apply(init(), 'assignment', { value: { id: 'a', taskId: 'implement', lane: 'implementation', status: 'reserved', slots: 1 } });
+  l = apply(l, 'scheduler', { value: { version: 1, capacity: 1, tasks: [{ id: 'implement', stack: 's', lane: 'implementation', status: 'active', eligible: false, slots: 1, requires: [] }] } });
+  l = apply(l, 'assignment', { value: { ...l.assignments.a, status: 'finished', slots: 0, outcome: 'succeeded', evidence: 'Worker verified complete' } });
+  const s = schedulingSnapshot(l); assert.equal(s.tasks[0].status, 'done'); assert.equal(plan(s).accounting.used, 0);
+});
+test('concurrent shared requests return busy immediately instead of duplicating transport', () => scratch(async dir => {
+  let finish; let started;
+  const entered = new Promise(resolve => started = resolve);
+  const waiting = new Promise(resolve => finish = resolve);
+  const a = request(input(dir), { auth, transport: async () => { started(); await waiting; return response([]); } });
+  await entered;
+  try { assert.equal((await request(input(dir), { auth, transport: () => assert.fail('duplicate transport') })).status, 'busy'); }
+  finally { finish(); }
+  assert.equal((await a).complete, true);
+}));

@@ -33,12 +33,14 @@ export function renderHandoff(input) {
     absolute(a.integrationWorktree); nonempty(a.dependencyEvidence, 'prerequisite/independence evidence');
   }
   if (input.role === 'implementation') {
+    check(a.checkout !== a.integrationWorktree, 'Implementation requires separate worker checkout');
     sha(a.startSha); nonempty(a.branch, 'branch'); nonempty(a.prerequisiteChecks, 'prerequisite coverage');
     check(Array.isArray(a.checkCommands) && a.checkCommands.length && a.checkCommands.every(c => typeof c === 'string' && c), 'Missing automated commands');
     check(Array.isArray(a.repositoryCheckCommands), 'Missing repository-check commands (explicit empty allowed)');
     nonempty(a.requiredExecutionTimes, 'required execution times or explicit none');
   }
   if (input.role === 'publication') {
+    check(a.checkout === a.integrationWorktree, 'Publisher must use frozen integration checkout');
     sha(a.headSha); sha(a.baseSha); absolute(a.createPrSkill); nonempty(a.headBranch, 'head branch'); nonempty(a.baseBranch, 'base branch');
     check(Array.isArray(a.checks) && a.checks.length && a.checks.every(c => c.status === 'passed' && c.command && sha(c.sha)), 'Missing original check coverage');
     const requiredCloses = ledger.groups[a.groupId].issues.map(key => ledger.fixedIssues.find(i => i.key === key).url).sort();
@@ -48,7 +50,8 @@ export function renderHandoff(input) {
     if (a.integrationChanged) check(a.integrationChecks?.length && a.integrationChecks.every(c => c.status === 'passed' && c.sha === a.headSha && c.command), 'Missing integration-change coverage');
   }
   if (input.role === 'maintenance') { absolute(a.maintenanceSkill); absolute(a.batchReference); absolute(a.coordinationRoot); nonempty(a.capacityAccounting, 'shared capacity accounting'); }
-  if (input.phase === 'start' && input.mode === 'execution') {
+  if (input.phase === 'start' && input.mode === 'execution' && input.role === 'maintenance') check(a.worker === ledger.coordinator && Object.values(ledger.stacks).some(s => s.phase === 'ready'), 'Maintenance START requires coordinator identity and ready handoff');
+  if (input.phase === 'start' && input.mode === 'execution' && input.role !== 'maintenance') {
     const recorded = ledger.assignments[a.assignmentId];
     check(recorded && ['reserved', 'active'].includes(recorded.status), 'START requires persisted assignment');
     check(recorded.worker === a.worker && recorded.worker, 'Actual worker identity must be recorded before START');
@@ -73,7 +76,7 @@ export function renderReport(ledger) {
     return [issue.url, outcome, group?.id, stack?.id, layer ? stack.layers.indexOf(layer) + 1 : null, layer?.url ?? assessment?.prUrl ?? assessment?.closure?.commentUrl, coverage, stack?.blocker ?? assessment?.blocker].map(cell).join(' | ');
   });
   const stacks = Object.values(ledger.stacks).map(s => `- ${s.id}: ${s.phase}; base ${s.baseSha}; final integration tip ${s.layers.at(-1)?.headSha ?? 'not integrated'}; worktree ${s.worktree}\n  Bottom-to-top: ${s.layers.map(l => l.url ?? 'unpublished').join(' → ') || 'none'}\n  Merge/alignment observations: ${JSON.stringify(s.maintenance ?? { status: 'unverified' })}`);
-  return `# Batch ${ledger.batchId}\n\n| Issue | Actual outcome | Group | Stack | Layer | PR/evidence | Worker coverage | Blocker |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n${rows.map(r => `| ${r} |`).join('\n')}\n\n${stacks.join('\n')}\n\nMaintenance: ${JSON.stringify(ledger.maintenance ?? { status: 'inactive' })}\nImplementation ended: ${ledger.implementationEnded}\nConstruction ledger/checkpoint state is retained in the assigned absolute ledger path; continue via batch-ledger resume.
+  return `# Batch ${ledger.batchId}\n\n| Issue | Actual outcome | Group | Stack | Layer | PR/evidence | Worker coverage | Blocker |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n${rows.map(r => `| ${r} |`).join('\n')}\n\n${stacks.join('\n')}\n\nMaintenance: ${JSON.stringify(ledger.maintenance ?? { status: 'inactive' })}\nImplementation ended: ${ledger.implementationEnded}\nLedger: ${ledger.context?.ledgerPath ?? 'not recorded in context; use the coordinator-retained absolute ledger path'}. Continue via batch-ledger resume.
 Real-world validation: not performed for implementation. Publication heads do not extend worker check coverage. CI/review and merge outcomes require separate current evidence.\n`;
 }
 cli(import.meta.url, 'render-handoff.mjs <handoff|report> input.json', ([command, path]) => {

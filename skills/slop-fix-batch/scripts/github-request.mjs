@@ -105,6 +105,10 @@ export async function request(input, { transport = fetchTransport, auth, now = D
     return { version: 1, complete: true, status: 'complete', pages, mutationResponseOnly: write };
   } finally { release(); }
 }
+export function requestStatus(input) {
+  version(input); absolute(input.statePath); const state = load(input.statePath, initial); version(state);
+  return { version: 1, cooldowns: state.cooldowns, writes: state.writes, observations: state.observations, authenticationNamespace: state.namespace ?? null, cachedRepresentations: Object.keys(state.cache).length };
+}
 export function control(input) {
   version(input); absolute(input.statePath); const release = lock(input.statePath); check(release, 'Request state busy or interrupted; reconcile owner');
   try {
@@ -121,7 +125,7 @@ export function control(input) {
     save(input.statePath, state); return { version: 1, status: 'recorded' };
   } finally { release(); }
 }
-cli(import.meta.url, 'github-request.mjs <request|control> input.json', async ([command, path]) => {
-  check(path && ['request', 'control'].includes(command), 'Usage: github-request.mjs <request|control> input.json');
-  const input = readJson(path); return command === 'request' ? request(input) : control(input);
+cli(import.meta.url, 'github-request.mjs <request|control|status> input.json', async ([command, path]) => {
+  check(path && ['request', 'control', 'status'].includes(command), 'Usage: github-request.mjs <request|control|status> input.json');
+  const input = readJson(path); return command === 'request' ? request(input) : command === 'status' ? requestStatus(input) : control(input);
 });

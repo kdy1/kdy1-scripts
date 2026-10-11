@@ -1,7 +1,0 @@
-interface:
-  display_name: "Slop Maintain Repo PRs"
-  short_description: "Maintain default-branch PRs and recover incomplete repairs"
-  default_prompt: "Use $slop-maintain-repo-prs to maintain my open PRs targeting the repository's current default branch at my chosen interval (default: five minutes), recover incomplete repairs automatically with GPT-6 Luna subagents at xhigh reasoning effort in isolated worktrees, and collect verified repair results without creating sidebar chats."
-
-policy:
-  allow_implicit_invocation: false

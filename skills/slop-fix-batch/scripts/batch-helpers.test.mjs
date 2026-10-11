@@ -268,9 +268,13 @@ test('implementation and publication START validate actual worker, separate/froz
   assert.match(text, /Read-only preparation/); assert.ok(text.includes(sha)); assert.ok(text.includes(head));
 });
 test('coordinator maintenance handoff consumes no child slot and preserves conditional gates', () => {
-  const l = ready(); const a = { ...assignment(), worker: 'root', maintenanceSkill: '/skills/slop-maintain-repo-prs/SKILL.md', batchReference: '/skills/slop-maintain-repo-prs/references/batch-maintenance.md', coordinationRoot: '/repo/.git/coordination', capacityAccounting: 'one free slot' };
+  const l = ready(); const a = { ...assignment(), worker: 'root', batchSkill: '/skills/slop-fix-batch/SKILL.md', batchReference: '/skills/slop-fix-batch/references/batch-maintenance.md', coordinationRoot: '/repo/.git/coordination', capacityAccounting: 'one free slot' };
   assert.match(renderHandoff({ version: 1, mode: 'execution', role: 'maintenance', phase: 'start', ledger: l, assignment: a }), /fresh review\/CI\/membership gates/);
   assert.deepEqual(l.assignments, {});
+  assert.throws(() => renderHandoff({ version: 1, mode: 'plan', role: 'maintenance', phase: 'start', ledger: l, assignment: a }), /Plan Mode permits read-only assignments only/);
+  assert.throws(() => renderHandoff({ version: 1, mode: 'execution', role: 'maintenance', phase: 'start', ledger: building(), assignment: a }), /coordinator identity and ready handoff/);
+  assert.throws(() => renderHandoff({ version: 1, mode: 'execution', role: 'maintenance', phase: 'start', ledger: l, assignment: { ...a, worker: 'child' } }), /coordinator identity and ready handoff/);
+  assert.throws(() => renderHandoff({ version: 1, mode: 'execution', role: 'maintenance', phase: 'start', ledger: l, assignment: { ...a, batchSkill: undefined } }), /absolute path/);
 });
 
 test('finished ledger assignments cannot leave stale active slots in scheduler snapshots', () => {

@@ -14,6 +14,16 @@ function catalogContains(value, pr) {
   if (Array.isArray(value)) return value.some(v => catalogContains(v, pr));
   return value && typeof value === 'object' && Object.values(value).some(v => catalogContains(v, pr));
 }
+function readNativeStack(pr) {
+  const [owner, name] = pr.slug.split('/');
+  const query = 'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){url headRefName headRefOid baseRefName baseRefOid stack{id}}}}';
+  const result = json('gh', ['api', '--hostname', pr.host, 'graphql', '-f', `query=${query}`, '-f', `owner=${owner}`, '-f', `name=${name}`, '-F', `number=${pr.number}`]);
+  const node = result.data?.repository?.pullRequest;
+  assert(node && canonicalPr(node.url) === pr.url && node.headRefName === pr.headBranch
+    && node.headRefOid === pr.headSha && node.baseRefName === pr.baseBranch && node.baseRefOid === pr.baseSha
+    && Object.hasOwn(node, 'stack'), 'Incomplete or changed native stack identity');
+  return node.stack;
+}
 export function preflight(prArg, ownership = null) {
   const report = { ready: false, blockers: [], stack: null };
   try {
@@ -67,8 +77,26 @@ export function preflight(prArg, ownership = null) {
     assert(typeof repo.default_branch === 'string', 'Missing repository default branch');
     report.relationships = relationships.map(x => canonicalPr(x.html_url));
     const help = run('gh', ['stack', '--help'], true);
-    if (help.status === 0) report.catalog = json('gh', ['stack', 'view', '--json']);
-    else assert(/unknown command ["']?stack/i.test(help.stderr + help.stdout), 'Cannot determine gh-stack availability');
+    if (help.status === 0) {
+      const view = run('gh', ['stack', 'view', '--json'], true);
+      if (view.status === 0) {
+        report.catalog = JSON.parse(view.stdout);
+        assert(!report.catalog?.errors?.length, 'Cannot read gh-stack catalog');
+      } else {
+        const error = view.stderr.trim() || view.stdout.trim();
+        const missing = error.match(/\bbranch (["'])(.+?)\1 is not part of a stack\b/);
+        assert(missing?.[2] === pr.headBranch && report.branch === pr.headBranch, `gh stack view failed: ${error || view.signal || view.status}`);
+        // gh-stack stores its catalog per worktree. A new repair checkout can
+        // lack that catalog without losing the common-directory ownership record.
+        // Only positively verified standalone membership permits this fallback.
+        assert(!relationships.length && pr.baseBranch === repo.default_branch
+          && (!report.stack || report.stack.layers.length === 1), 'Missing local catalog for a related or nondefault-base stack; reconcile membership');
+        report.nativeStack = readNativeStack(pr);
+        assert(report.nativeStack === null, 'Native stack membership exists; reconcile the missing local catalog');
+        report.catalogStatus = 'absent-in-worktree';
+        report.catalogError = error;
+      }
+    } else assert(/unknown command ["']?stack/i.test(help.stderr + help.stdout), 'Cannot determine gh-stack availability');
     if (!report.stack && (relationships.length || pr.baseBranch !== repo.default_branch || catalogContains(report.catalog, pr))) report.blockers.push('Unregistered or uncertain stack: verify full membership and register before mutation');
     report.mode = report.stack ? 'stack' : report.blockers.length ? 'unknown' : 'ordinary';
     if (report.stack) {

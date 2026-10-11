@@ -31,7 +31,11 @@ const emit = v => process.stdout.write(JSON.stringify(v));
 const fail = msg => { process.stderr.write(msg); process.exit(1); };
 const pr = (number = 1) => d.prs?.[number] || ({number, html_url:d.prURL||'https://github.com/owner/repo/pull/'+number, state:'open', head:{ref:number===1?'fix':'upper', sha:number===1?d.remote:d.upperSha, repo:{full_name:d.headRepo}}, base:{ref:number===1?(d.base||'main'):'fix', sha:d.start, repo:{full_name:'owner/repo'}}});
 if (a[0] === '--version' || a[0] === 'auth') process.exit(0);
-if (a[0] === 'stack') { if (d.catalog) emit(d.catalog); else fail('unknown command "stack" for "gh"'); }
+if (a[0] === 'stack') {
+ if(a[1]==='--help' && (d.catalog || d.stackInstalled)) process.exit(0);
+ if(a[1]==='view' && d.stackViewError) fail(d.stackViewError);
+ if(d.catalog) emit(d.catalog); else fail('unknown command "stack" for "gh"');
+}
 else if (a[0] === 'pr' && a[1] === 'view') emit({url:a[2]?.startsWith('https:')?a[2]:(d.prURL||'https://github.com/owner/repo/pull/1')});
 else if (a[0] === 'pr' && a[1] === 'checks') { if(d.checksRaw!==undefined) process.stdout.write(d.checksRaw); else emit(d.checks); if(d.checksError) process.stderr.write(d.checksError); process.exit(d.checksExit||0); }
 else if (a[0] === 'run') { if(d.logError) fail('logs unavailable'); process.stdout.write('failed step log'); }
@@ -49,6 +53,14 @@ else if (a[0] === 'api') {
        emit({data:{addPullRequestReviewThreadReply:{comment:{id:'new-reply'}}}});
      } else { if(d.resolveError || d.resolveErrorIDs?.includes(id)) fail('resolve transport failure'); th.isResolved=true; emit({data:{resolveReviewThread:{thread:{id,isResolved:true}}}}); }
      fs.writeFileSync(file,JSON.stringify(d));
+   } else if(q.includes('stack{id}')) {
+     if(d.nativeStackError) fail(d.nativeStackError);
+     if(d.nativeStackGraphQLError) emit({errors:[{message:d.nativeStackGraphQLError}]});
+     else {
+       const node={url:d.prURL||'https://github.com/owner/repo/pull/1',headRefName:'fix',headRefOid:d.remote,baseRefName:d.base||'main',baseRefOid:d.start,stack:d.nativeStack??null,...d.nativeIdentity};
+       if(d.nativeStackMissing) delete node.stack;
+       emit({data:{repository:{pullRequest:node}}});
+     }
    } else emit({data:{viewer:{login:'Alice'},repository:{pullRequest:{reviewThreads:{nodes:d.threads,pageInfo:{hasNextPage:false}}}}}});
  } else if(/pulls\\/\\d+$/.test(endpoint)) emit(pr(Number(endpoint.split('/').at(-1))));
  else if(endpoint.includes('pulls?')) emit(d.relationships||[]);
@@ -72,6 +84,7 @@ else if(a.includes('push') && a.includes('--no-follow-tags')) {
 `, { mode: 0o755 });
   const env = { ...process.env, PATH: `${bin}${delimiter}${process.env.PATH}`, REPAIR_TEST_DATA: dataFile };
   const run = (...args) => exec(process.execPath, [helper, ...args], repo, env);
+  const runAt = (cwd, ...args) => exec(process.execPath, [helper, ...args], cwd, env);
   const ok = (...args) => { const r=run(...args); assert.equal(r.status,0,r.stderr+'\n'+r.stdout); return JSON.parse(r.stdout); };
   const update = patch => { Object.assign(data, JSON.parse(readFileSync(dataFile)), patch); save(); };
   const read = () => JSON.parse(readFileSync(dataFile));
@@ -81,7 +94,7 @@ else if(a.includes('push') && a.includes('--no-follow-tags')) {
   const init = () => ok('session','init','--file',session,'--pr','1');
   const repair = (threads=[]) => { const sha=commit(); const r=record({problem:{id:'repair',kind:'review',commit:sha,evidence:'test confirms defect',threads,validation:[validation(sha)]}}); assert.equal(r.status,0,r.stderr); assert.equal(record({validation:validation(sha)}).status,0); return sha; };
   const thread = (id, author='chatgpt-codex-connector[bot]') => ({id,isResolved:false,isOutdated:false,path:'file.txt',line:1,comments:{nodes:[{id:'comment-'+id,author:{login:author},body:'finding'}],pageInfo:{hasNextPage:false}}});
-  return { root,repo,session,dataFile,git,start,save,run,ok,update,read,record,validation,commit,init,repair,thread };
+  return { root,repo,session,dataFile,git,start,save,run,runAt,ok,update,read,record,validation,commit,init,repair,thread };
 }
 
 test('remote identity accepts HTTPS and SSH without assuming origin', () => {
@@ -104,6 +117,68 @@ test('preflight blocks dirty, detached, pending merge, ambiguous remote, and ano
 test('unregistered stack relationships and nondefault bases are not ordinary PRs', t => {
   const f=fixture(t,{base:'parent'}); assert.match(f.run('preflight').stdout,/Unregistered/);
   f.update({base:'main',catalog:{branches:['fix']}}); assert.match(f.run('preflight').stdout,/Unregistered/);
+});
+test('missing worktree catalog permits only positively verified standalone membership', t => {
+  const f = fixture(t, { stackInstalled: true, stackViewError: 'branch "fix" is not part of a stack' });
+  const result = f.ok('preflight', '--pr', '1');
+  assert.equal(result.ready, true);
+  assert.equal(result.mode, 'ordinary');
+  assert.equal(result.catalogStatus, 'absent-in-worktree');
+  assert.equal(result.nativeStack, null);
+  assert(f.read().calls.some(a => a.some(x => x.includes('stack{id}'))));
+  assert(!f.read().calls.some(a => a.includes('mutation') || a[0] === 'stack' && !['--help', 'view'].includes(a[1])));
+});
+test('fresh linked repair worktree preserves registered singleton token and session boundaries', t => {
+  const f = fixture(t, { stackInstalled: true, stackViewError: 'branch "fix" is not part of a stack' });
+  const layers = [{ pr: 'https://github.com/owner/repo/pull/1', branch: 'fix', headRepository: 'github.com/owner/repo', headSha: f.start, baseBranch: 'main' }];
+  const dir = join(f.repo, '.git', 'codex-stack-coordination'); mkdirSync(dir);
+  writeFileSync(join(dir, 'state.json'), JSON.stringify({ version: 1, recoveries: [], stacks: [{ id: 'singleton', phase: 'ready', layers, lock: { owner: 'attempt', token: 'held', mode: 'repair' } }] }));
+  const snapshotPath = join(f.root, 'snapshot.json'), ownership = join(f.root, 'owner.json');
+  writeFileSync(snapshotPath, JSON.stringify({ layers }));
+  writeFileSync(ownership, JSON.stringify({ owner: 'attempt', token: 'held', snapshotPath }));
+  f.git('switch', '-c', 'main');
+  const linked = join(f.root, 'linked'); f.git('worktree', 'add', linked, 'fix');
+  const check = f.runAt(linked, 'preflight', '--pr', '1', '--stack-file', ownership);
+  assert.equal(check.status, 0, check.stdout + check.stderr);
+  const report = JSON.parse(check.stdout);
+  assert.equal(report.mode, 'stack');
+  assert.equal(report.stack.id, 'singleton');
+  assert.equal(report.stack.lock.token, 'held');
+  const init = f.runAt(linked, 'session', 'init', '--file', f.session, '--pr', '1', '--stack-file', ownership);
+  assert.equal(init.status, 0, init.stdout + init.stderr);
+  const session = JSON.parse(init.stdout);
+  assert.equal(session.stack.token, 'held');
+  assert.deepEqual(session.stack.initialLayers, layers);
+  assert.deepEqual(JSON.parse(readFileSync(join(dir, 'state.json'))).stacks[0].lock, { owner: 'attempt', token: 'held', mode: 'repair' });
+});
+test('missing catalog never excuses unknown native membership, changing identity or other CLI errors', t => {
+  const f = fixture(t, { stackInstalled: true, stackViewError: 'branch "fix" is not part of a stack' });
+  for (const patch of [
+    { nativeStack: { id: 'native-stack' } },
+    { nativeStackError: 'authentication failed' },
+    { nativeStackGraphQLError: 'stack field unavailable' },
+    { nativeStackMissing: true },
+    { nativeIdentity: { headRefOid: 'a'.repeat(40) } },
+    { nativeIdentity: { baseRefOid: 'b'.repeat(40) } },
+    { stackViewError: 'permission denied reading catalog' },
+    { stackViewError: 'branch "another" is not part of a stack' },
+  ]) {
+    f.update({ nativeStack: null, nativeStackError: null, nativeStackGraphQLError: null, nativeStackMissing: false, nativeIdentity: {}, stackViewError: 'branch "fix" is not part of a stack', ...patch });
+    assert.equal(f.run('preflight', '--pr', '1').status, 1, JSON.stringify(patch));
+  }
+});
+test('missing catalog does not turn related PRs or foreign ownership into standalone repair', t => {
+  const f = fixture(t, { stackInstalled: true, stackViewError: 'branch "fix" is not part of a stack', base: 'parent' });
+  assert.match(f.run('preflight').stdout, /nondefault-base stack/);
+  f.update({ base: 'main', relationships: [{ number: 2, html_url: 'https://github.com/owner/repo/pull/2', head: { ref: 'upper', repo: { full_name: 'owner/repo' } }, base: { ref: 'fix' } }] });
+  assert.match(f.run('preflight').stdout, /related or nondefault-base stack/);
+  f.update({ relationships: [] });
+  const dir = join(f.repo, '.git', 'codex-stack-coordination'); mkdirSync(dir);
+  const state = { version: 1, recoveries: [], stacks: [{ id: 's', phase: 'ready', layers: [{ pr: 'https://github.com/owner/repo/pull/1', branch: 'fix', headRepository: 'github.com/owner/repo' }], lock: { owner: 'other', token: 'held', mode: 'repair' } }] };
+  writeFileSync(join(dir, 'state.json'), JSON.stringify(state));
+  assert.match(f.run('preflight').stdout, /another owner/);
+  state.stacks[0].phase = 'building'; writeFileSync(join(dir, 'state.json'), JSON.stringify(state));
+  assert.match(f.run('preflight').stdout, /Stack is building/);
 });
 test('registry transaction, corruption, building, and ownership block preflight', t => {
   const f=fixture(t), dir=join(f.repo,'.git','codex-stack-coordination'); mkdirSync(dir);

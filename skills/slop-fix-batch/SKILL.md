@@ -1,17 +1,24 @@
 ---
 name: slop-fix-batch
-description: "Fix a fixed batch of open repository issues selected by human-supplied conditions using parallel subagents and scoped stack executors, group related fixes, publish each verified group immediately in dependency-based PR stacks without rebasing existing layers during construction, and directly manage ongoing repairs and conditional whole-stack merging after verified publication. Start only when the human explicitly invokes $slop-fix-batch."
+description: "Fix a fixed batch of open repository issues selected by human-supplied conditions using parallel subagents and scoped stack executors, group related fixes, publish each verified group immediately in dependency-based PR stacks without rebasing existing layers during construction, and directly manage ongoing repairs and conditional whole-stack merging after verified publication. Start only when the human explicitly invokes $slop-fix-batch in Codex or /slop-fix-batch in Claude Code."
+disable-model-invocation: true
 ---
 
 # Slop Fix Batch
 
-Start a new batch only on an explicit human `$slop-fix-batch` invocation with issue-selection conditions. Loading, editing, testing or planning this skill does not start a batch. Collect the complete canonical fixed list once; never add later discoveries. Existing `$bulk` and `$slop-fix-issue` workflows publish separately and are not batch workers. Never create implementation or repair sidebar chats.
+Start a new batch only on an explicit human `$slop-fix-batch` (Codex) or `/slop-fix-batch` (Claude Code) invocation with issue-selection conditions. Loading, editing, testing or planning this skill does not start a batch. Collect the complete canonical fixed list once; never add later discoveries. Existing `$bulk` and `$slop-fix-issue` workflows publish separately and are not batch workers. Never create implementation or repair sidebar chats.
 
 The invocation authorizes scoped investigation/implementation, evidence-backed closure of already-resolved issues, verified stacked publication, and direct coordinator management of this batch's ready stacks. Complete multi-PR stacks prefer native whole-stack squash merging after all remaining layers pass current review/CI gates; sequential squash merging is allowed only when native capability is verified unsupported. Originally standalone PRs may enable auto-merge after review passes. Multi-PR stacks never enable auto-merge, even with one open layer left. No review records count as a pass only after complete reads; existing records must have no effective change request or unresolved non-outdated finding. Use [batch maintenance](references/batch-maintenance.md) for full gates and recovery.
 
 The primary objective is to verify that implemented PRs are merged. Before each new assignment at a safe boundary, check ready stacks for due gate, merge and result-verification work. Do not delay that work for more implementation, a full inventory, other worker results or a delayed refresh. If only external CI/review waits remain, continue independent construction with available slots. PR creation or merge-request acceptance is not completion.
 
-New batches run directly in this coordinator chat through construction, repair, conditional merging and verified completion. Do not create, update or schedule Codex automations, heartbeat jobs or background polling processes. At each safe boundary collect results and process due work; when only external waits remain, use interruptible waits of at most 30 seconds while honoring refresh deadlines and shared API cooldowns. Publication or implementation completion does not end management. On interruption, recover the same ledger and reconcile owners/effects before resuming.
+New batches run directly in this coordinator chat through construction, repair, conditional merging and verified completion. Do not create, update or schedule automations, heartbeat jobs or background polling processes. At each safe boundary collect results and process due work; when only external waits remain, use interruptible waits of at most 30 seconds while honoring refresh deadlines and shared API cooldowns. Publication or implementation completion does not end management. On interruption, recover the same ledger and reconcile owners/effects before resuming.
+
+## Runtime
+
+Read [runtime tools and attachment policy](references/runtimes.md) before preflight or dispatch. Support Codex and current Claude Code; do not add older Claude Code fallbacks. Record `context.runtime` as `codex` or `claude-code` when initializing the batch. An absent field in an existing ledger means Codex. Resume with the recorded runtime; do not switch active workers or reinterpret old records. Keep this skill in the coordinator conversation, without `context: fork`.
+
+Throughout the workflow, `$skill-name` denotes the installed dependency: invoke it with Codex's `$` syntax or Claude Code's Skill tool and `/skill-name` syntax. Read dependencies and references by their resolved absolute paths when they are not preloaded. PR chat attachment requirements follow the runtime policy; GitHub verification is always required.
 
 ## Roles and execution routing
 

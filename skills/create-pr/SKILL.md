@@ -32,7 +32,7 @@ Resolve missing facts through the checkout and authenticated GitHub reads. Ask o
 
 Read [references/scripts.md](references/scripts.md) for the manifest schema, commands, output states, and recovery procedure. Use `scripts/create-pr.mjs` for deterministic collection, content checks, publication, reconciliation, and verification. Resolve the script to an absolute path before invocation.
 
-Keep authorization, intended scope, repository guidance, issue completion, prose/language, validation coverage, and screenshot selection in this skill. Scripts do not establish these facts. Commit and push only the agent-selected changes before setting the manifest's exact `headSha`. Codex artifact attachment remains a tool call after GitHub verification.
+Keep authorization, intended scope, repository guidance, issue completion, prose/language, validation coverage, and screenshot selection in this skill. Scripts do not establish these facts. Commit and push only the agent-selected changes before setting the manifest's exact `headSha`. In Codex, artifact attachment remains a tool call after GitHub verification. In Claude Code, report the verified GitHub URL and mark Codex chat attachment not applicable; do not require a Codex tool. GitHub body image handling is unchanged.
 
 ## Prepare the Publication
 

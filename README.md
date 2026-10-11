@@ -64,7 +64,7 @@ When installing selected skills, include their skill dependencies. `create-pr` r
 
 `slop-fix-batch` directly manages its published PRs and requires `repair-pr`, `manage-stacked-prs`, and `merge-pr` for repairs, alignment, and conditional merging. `repair-pr` uses `manage-stacked-prs` for stacked repairs; stack-edit workflows use the shared coordination helper bundled with `repair-pr`. Include both skills when installing either for stack work.
 
-`slop-fix-batch` also requires subagent controls, isolated Git worktrees, authenticated `gh` access, and the [`github/gh-stack` extension](https://github.com/github/gh-stack). Install the extension separately with `gh extension install github/gh-stack`; the skill checks installed command support and does not silently install or upgrade tools. Its delegated maintenance also requires the Codex scheduling/chat tools, an existing Git project, and GPT-6 Luna `xhigh` repair chats.
+`slop-fix-batch` also requires subagent controls, isolated Git worktrees, authenticated `gh` access, and the [`github/gh-stack` extension](https://github.com/github/gh-stack). Install the extension separately with `gh extension install github/gh-stack`; the skill checks installed command support and does not silently install or upgrade tools. It uses subagents in the current coordinator conversation and does not create scheduled jobs or repair sidebar chats. Codex uses the existing role settings; Claude Code uses Sonnet with role-specific effort.
 
 `manage-stacked-prs` uses authenticated `gh` access and prefers the same `github/gh-stack` extension for existing-stack inspection and scoped restacking. It checks installed command behavior and uses scoped Git replay when the extension cannot preserve the required range or commit boundaries. It does not silently install or upgrade tools.
 
@@ -109,6 +109,28 @@ cp -R "$HOME/src/kdy1-scripts/skills/repair-pr" "$HOME/.agents/skills/repair-pr"
 ```
 
 A copied skill is not updated by `git pull`; copy it again when you want a newer version. To scope a copied skill to one project instead, copy it to `.agents/skills/` in that project.
+
+## Use Slop Fix Batch in Claude Code
+
+`slop-fix-batch` supports current Claude Code alongside Codex. Use the latest Claude Code with per-invocation subagent `effort`, resumable Agent/SendMessage controls, background execution and TaskStop. Older Claude Code fallbacks are not provided. See the [runtime requirements](skills/slop-fix-batch/references/runtimes.md).
+
+Copy these six sibling skill directories from this checkout into `.claude/skills/` in the target repository, or into `~/.claude/skills/` for personal use:
+
+```sh
+# Run from the kdy1-scripts checkout; choose the intended destination.
+skill_destination=/path/to/target-repository/.claude/skills
+python3 skills/slop-fix-batch/scripts/prepare-claude-skills.py "$skill_destination"
+```
+
+The helper copies `slop-fix-batch`, `create-pr`, `write-ste`, `repair-pr`, `manage-stacked-prs`, and `merge-pr`, including their scripts and references. It refuses to overwrite any existing destination skill. It does not change Claude settings or install Node.js, authenticated `gh`, or the required `github/gh-stack` extension. Install those prerequisites separately. Claude's [skill locations](https://code.claude.com/docs/en/skills#choose-where-skills-load) support both project and personal scopes.
+
+In Claude Code, explicitly invoke:
+
+```text
+/slop-fix-batch Fix all open issues labeled bug in the current repository.
+```
+
+The skill starts only on explicit invocation with selection conditions. It stays in the current conversation and uses Sonnet workers: `high` effort for investigation, implementation and repair; `medium` for preparation, stack execution, maintenance and publication; `low` for inventory. The coordinator's model is unchanged. Claude reports verified PR URLs and records Codex chat attachment as not applicable. All GitHub verification and conditional merge gates remain required.
 
 ## Verify and invoke a skill
 
@@ -210,7 +232,7 @@ Natural-language conditions and an explicit request for all open issues are also
 
 The coordinator closes already-resolved issues only after confirming target-branch evidence and posting a verified evidence comment. Existing fixing PRs are reported without duplicate implementation. Blocked groups and their dependents remain available while independent verified groups continue to publication. Each completed group becomes one non-draft PR through `create-pr` after its implementation-worker checks and any checks needed for integration changes pass. Unchanged integration reuses worker coverage at its original SHA; there is no cumulative-tip or final-tip validation stage. `gh stack` connects each verified published prefix while preserving construction commits and ancestry. The bottom PR targets the selected base, and later PRs target the preceding layer. Closing references on upper layers do not guarantee automatic issue closure.
 
-`slop-fix-batch` owns construction, PR maintenance, and conditional merging in the same coordinator. A fully verified stack enters its internal maintenance procedure immediately, without waiting for unrelated stacks or implementation to end. One heartbeat continues that procedure for the exact recorded PR set, including upper layers. It uses the adaptive one/five-minute cadence unless an explicit interval is supplied. Implementation ends after publication or accurately reported blockers; maintenance continues until implementation has ended, all recorded PRs are closed/merged, and no active, uncertain, or protected work remains.
+`slop-fix-batch` owns construction, PR maintenance, and conditional merging in the same coordinator. A fully verified stack enters its internal maintenance procedure immediately, without waiting for unrelated stacks or implementation to end. The coordinator continues that procedure directly for the exact recorded PR set, including upper layers, without a heartbeat or background polling process. It uses the adaptive one/five-minute refresh cadence unless an explicit interval is supplied. Implementation ends after publication or accurately reported blockers; maintenance continues until implementation has ended, all recorded PRs are closed/merged, and no active, uncertain, or protected work remains.
 
 Shared stack ownership lives outside tracked source under the repository’s Git common directory. A construction token protects every registered layer until all assigned groups complete implementation, worker checks and necessary integration-change checks, publication, attachment, and remote verification. Building/held prefixes permit status accounting only. A completed standalone PR may enable auto-merge after fresh review gates; complete multi-PR stacks require fresh whole-stack review/CI gates and prefer native whole-stack squash merging. Sequential squash merging is allowed only when native capability is verified unsupported, with descendant alignment and fresh gates after each merge. Ready stacks repair in parallel through GPT-6 Luna `xhigh` subagents, with one reserved/running repair per stack and the same total worker budget as construction. A catalog token serializes gh-stack mutations. Direct `repair-pr` and `manage-stacked-prs` honor the same protection. The cooperative helper does not intercept arbitrary Git commands or synchronize separate clones/hosts. Interrupted ownership requires evidence-backed reconciliation; tokens never expire automatically. See [`stack-coordination.md`](skills/repair-pr/references/stack-coordination.md) and the internal [`batch-maintenance.md`](skills/slop-fix-batch/references/batch-maintenance.md). Editing these skills starts no batch, repair, or heartbeat and does not migrate existing watches.
 

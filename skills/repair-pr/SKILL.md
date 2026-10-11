@@ -11,7 +11,7 @@ Repair the current or specified GitHub PR once, then stop. Handle merge conflict
 
 ## Comment policy
 
-- By default, report repair results, progress, and supporting evidence in the Codex chat. Do not post top-level PR comments, repair summaries, new reviews, or inline replies to actionable findings.
+- By default, report repair results, progress, and supporting evidence in the current chat. Do not post top-level PR comments, repair summaries, new reviews, or inline replies to actionable findings.
 - An objectively incorrect bot finding is the exception: a concise English explanation with concrete evidence may be posted in its original inline thread without a separate human request. This exception does not apply to findings authored by `@me`. This reply is optional; resolving the incorrect-finding thread is required under **Finish once**, even when the reply is omitted or fails.
 - Other PR comments require an explicit human request. Preserve that request and its scope when supplied directly or through an authorized handoff. A repair or maintenance invocation alone is not a request to post comments.
 
@@ -42,7 +42,7 @@ Repair the current or specified GitHub PR once, then stop. Handle merge conflict
    - Handle each distinct actionable finding independently. Do not combine findings merely because they affect the same behavior or file. If multiple threads are duplicate reports of the same root cause, treat them as one problem.
    - Implement the smallest correct fix for one problem, including any documentation or repository-instruction update required by that fix or its public-contract change.
    - Run focused tests for that problem, then commit and record it before starting the next problem. Record its commit, validation, evidence, and `fixed` thread IDs with `session record`. One commit may handle multiple review threads only when they are duplicate reports of the same root cause.
-   - When a finding is objectively incorrect, do not change correct code to appease it. Record the thread id and report the review's incorrect assumption with concrete evidence in the Codex chat, such as the relevant behavior, invariant, or test. For an incorrect bot finding only, optionally prepare a concise English reply with that evidence for the same inline thread under **Comment policy**; do not merely state that the finding is wrong.
+   - When a finding is objectively incorrect, do not change correct code to appease it. Record the thread id and report the review's incorrect assumption with concrete evidence in the current chat, such as the relevant behavior, invariant, or test. For an incorrect bot finding only, optionally prepare a concise English reply with that evidence for the same inline thread under **Comment policy**; do not merely state that the finding is wrong.
    - Record `fixed`, `incorrect`, and `blocked` dispositions with concrete evidence in the session. An optional incorrect-bot explanation uses `replyBodyFile` containing the English explanation. Do not resolve handled threads until publication is verified, if a push is required.
    - Treat uncertain or ambiguous findings as blockers, not as incorrect findings. Leave their threads unresolved and report what evidence or decision is missing. Also leave a thread unresolved when applying its suggestion would cause a regression but the review's premise cannot be conclusively disproved.
 

@@ -1,0 +1,34 @@
+# Runtime tools and attachment policy
+
+Use one runtime for the entire batch. Record `context.runtime: "codex"` or `"claude-code"` at initialization; helpers default only an absent runtime to Codex. An unknown value is an error. Resume the same ledger in its recorded runtime. Do not relabel a ledger or move live actors between runtimes. The runtime selects tools and worker settings, not issue scope, grants, merge authority, checks, or review gates.
+
+Before dispatch, verify the tools needed to create, message/resume, observe completion, stop, and wait for workers in the current session. Verify the selected model and effort are available. Read capabilities without launching a batch or test merge. Record actual runtime capacity and nesting restrictions; do not impose another concurrency cap or alter the user's configuration. If a required capability is missing, report the blocker before writes. If only nested delegation is unavailable, return the maintenance repair signal and slot so the coordinator can dispatch that repair directly under the existing ownership rules.
+
+Run `node /installed/slop-fix-batch/scripts/worker-settings.mjs <role> --runtime <runtime>` before creation. Resolve the installed absolute path. The renderer derives settings from `ledger.context.runtime`; an optional top-level handoff `runtime` must match. Repair handoffs use the same helper directly. Do not put settings only in prompt text or silently replace a rejected model/effort. Respect the host's permissions and report conflicting model/effort overrides without changing them.
+
+## Codex
+
+- Create with `collaboration.spawn_agent`, passing the helper's `model`, `reasoning_effort`, and `fork_turns`, plus `task_name` and the scoped `message`.
+- Send START to an active prepared worker with `collaboration.send_message`; use `collaboration.followup_task` for an idle worker. Preserve the actual agent identity through both phases.
+- Read delivered results and bounded `collaboration.list_agents` snapshots. Use `collaboration.wait_agent` for updates and `clock.sleep` for external waits, each at most 30 seconds and capped at the next deadline.
+- Stop with `collaboration.interrupt_agent`, then reconcile actual process, Git and remote effects before releasing a slot or replacing the actor. An unavailable handle is not proof of termination.
+- Attach every published PR to the Codex chat through `attach_artifact`. Observe the attachments independently; publication input uses `attachmentComplete: true` and the attached PR URLs in `attachments`.
+
+Existing role models and reasoning efforts remain unchanged. `fork_turns: "none"` requires a complete first-message handoff.
+
+## Claude Code
+
+Target current Claude Code as described in the official [subagent documentation](https://code.claude.com/docs/en/sub-agents) and [skill documentation](https://code.claude.com/docs/en/skills). Use per-invocation `effort` (documented for v2.1.292 and later); no older-version agent definitions are provided.
+
+- Create with `Agent`, passing the helper's `subagent_type: "general-purpose"`, `model: "sonnet"`, and `effort`, plus the scoped `prompt`, a short `description`, and a unique `name` when exposed by the session. Do not select the `fork`, Explore or Plan type. Preserve isolated context and a resumable actual identity. Keep the parent skill in the main conversation.
+- Workers must run concurrently. In current interactive fork mode, non-fork agents already run in the background and `run_in_background` is absent. When the tool exposes that parameter, set it to `true`. If the session disables background execution, report the capability blocker; do not change settings or invent an unsupported parameter.
+- Save the returned agent ID and any separate task ID. Give the worker its recorded identity with START. Use `SendMessage` with that exact agent ID as `to` for START, updates, and resuming completed preparation. A completed worker resumes under the same ID; do not call `Agent` again to deliver START. A user-cancelled agent that refuses messages stays cancelled; reconcile it before any authorized replacement.
+- Collect completion notifications and worker messages as they arrive. Track every reserved, running, nested and uncertain actor in the ledger. Use status tools only if exposed; `ListAgents` is not a prerequisite and is not universally available. A task's disappearance or a notification without reconciled effects does not free its slot. Use `TaskStop` with the recorded task identity when stopping work, then verify termination and outstanding effects.
+- For waits, use an available interruptible runtime wait capped at 30 seconds and the earliest deadline. If only Bash is available, use one foreground `sleep` command of at most 30 seconds with a bounded timeout, then collect notifications and due work. Never start a background polling loop, schedule a wakeup, or keep a worker alive only to wait for CI/review. A sleep does not authorize another API read.
+- Use `batch-stack.mjs worktree` for execution checkouts at the exact assigned SHA and common Git directory. Pass their absolute paths to workers; perform file and Git operations explicitly in those paths. Do not request automatic `isolation: "worktree"`, which could create a second checkout from another base. Plan Mode remains read-only and does not run worktree creation.
+- Invoke installed dependencies with Claude's Skill tool by skill name, or read their resolved `SKILL.md` when Skill is unavailable. `$skill-name` in shared references means the dependency, not a requirement for Codex tooling. Pass original human authorization and scope explicitly; dependency loading does not start a new batch.
+- Codex chat attachment does not apply. Report the authenticated, verified PR URLs. Publication input must set `runtime: "claude-code"`, `observed.attachmentStatus: "not-applicable"`, and `observed.attachments: []`, and omit `attachmentComplete`. Do not fabricate successful attachments. This affects only Codex chat artifacts, not GitHub body images or PR identity/content/head/base/stack checks.
+
+All Claude roles use Sonnet. Effort is `high` for investigation, implementation and repair; `medium` for preparation, stack-execution, maintenance and publication; `low` for inventory. The settings helper is authoritative. Coordinator settings are unchanged. A resumed worker keeps its creation settings; changing roles with different settings requires a new actor after reconciliation.
+
+The two-phase preparation/START protocol, exact worker/grant/worktree checks, nested-slot reservations, shared API cooldown, construction locks, ready-stack priority and merge-result verification apply identically in both runtimes. A nested maintenance actor may use only coordinator-reserved repair slots. If it cannot obtain reliable completion evidence for its children, retain their accounting and return that uncertainty to the coordinator.

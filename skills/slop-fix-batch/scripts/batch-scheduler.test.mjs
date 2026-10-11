@@ -86,6 +86,60 @@ test('two consecutive repair displacements earn exactly one construction slot', 
   assert.deepEqual(result.displaced, {});
 });
 
+test('ready gate/merge work precedes implementation even with an earned progress exception', () => {
+  const result = plan(snapshot([
+    task('impl', 'implementation', { priority: 100, estimate: 'long' }),
+    task('merge-check', 'maintenance'),
+  ], { capacity: 1, displaced: { impl: { count: 2, sinceBoundary: 1 } }, boundary: 3 }));
+  assert.deepEqual(result.allocations.map(t => t.id), ['merge-check']);
+  assert.equal(result.progressException, null);
+});
+
+test('confirmed merge-blocking repairs precede earned publication and implementation exceptions', () => {
+  for (const lane of ['publication', 'implementation']) {
+    const result = plan(snapshot([
+      task('construction', lane, { priority: 100 }),
+      task('merge-repair', 'repair', { unblocksMerge: true }),
+      task('other-repair', 'repair', { priority: 200 }),
+    ], { capacity: 1, displaced: { construction: { count: 2, sinceBoundary: 1 } }, boundary: 3 }));
+    assert.deepEqual(result.allocations.map(t => t.id), ['merge-repair']);
+    assert.equal(result.progressException, null);
+    assert.equal(result.displaced.construction.count, 3);
+  }
+});
+
+test('ordinary repairs still yield to an earned implementation progress exception', () => {
+  const result = plan(snapshot([task('impl'), task('repair', 'repair')], {
+    capacity: 1, displaced: { impl: { count: 2, sinceBoundary: 1 } }, boundary: 3,
+  }));
+  assert.deepEqual(result.allocations.map(t => t.id), ['impl']);
+  assert.equal(result.progressException, 'impl');
+});
+
+test('external CI and review waits leave capacity for independent implementation', () => {
+  const result = plan(snapshot([
+    task('ci', 'external', { status: 'waiting', eligible: false }),
+    task('review', 'external', { status: 'waiting', eligible: false }),
+    task('merge-check', 'maintenance', { eligible: false, requires: ['ci', 'review'] }),
+    task('impl'),
+  ], { capacity: 1 }));
+  assert.deepEqual(result.allocations.map(t => t.id), ['impl']);
+  assert.equal(result.accounting.used, 0);
+});
+
+test('merge priority fills spare slots while preserving stack exclusion and uncertain occupancy', () => {
+  const result = plan(snapshot([
+    task('unknown', 'maintenance', { stack: 'uncertain-stack', status: 'uncertain', eligible: false, slots: 1 }),
+    task('blocked-repair', 'repair', { stack: 'uncertain-stack', unblocksMerge: true }),
+    task('merge-check', 'maintenance', { stack: 'ready-stack' }),
+    task('same-stack-repair', 'repair', { stack: 'ready-stack', unblocksMerge: true }),
+    task('merge-repair', 'repair', { unblocksMerge: true }),
+    task('impl'),
+  ], { capacity: 4 }));
+  assert.deepEqual(result.allocations.map(t => t.id), ['merge-check', 'merge-repair', 'impl']);
+  assert.deepEqual(result.accounting, { capacity: 4, used: 1, allocated: 3, unused: 0 });
+});
+
 test('adaptive limit can exceed four; explicit limits and API cooldown remain binding', () => {
   assert.equal(publicationCeiling({ previousCeiling: 4, healthy: true, completedSinceAdjustment: 3 }, 8, 8).ceiling, 5);
   assert.equal(publicationCeiling({ previousCeiling: 4, healthy: false, completedSinceAdjustment: 3 }, 8, 8).ceiling, 4);

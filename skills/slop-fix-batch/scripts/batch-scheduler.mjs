@@ -121,11 +121,13 @@ export function plan(snapshot) {
     (prior[a.id].sinceBoundary ?? 0) - (prior[b.id].sinceBoundary ?? 0) || pubSort(a, b));
   // Delegated gate/merge work is real runtime work; dispatch it before repair allocations.
   for (const task of ready.filter(t => t.lane === 'maintenance')) pick(task);
-  const exception = earned.find(pick)?.id ?? null;
   const repairs = ready.filter(t => t.lane === 'repair').sort((a, b) =>
     (b.priority ?? 0) - (a.priority ?? 0) || Number(!!b.unblocksMerge) - Number(!!a.unblocksMerge) ||
     (a.layer ?? 0) - (b.layer ?? 0) || compare(a, b));
-  for (const task of repairs) pick(task);
+  // Confirmed merge blockers in complete published stacks outrank construction progress.
+  for (const task of repairs.filter(t => t.unblocksMerge === true)) pick(task);
+  const exception = earned.find(pick)?.id ?? null;
+  for (const task of repairs.filter(t => t.unblocksMerge !== true)) pick(task);
   for (const task of pubQueue) pick(task);
   for (const lane of ['implementation', 'inventory', 'investigation', 'preparation']) for (const task of ready.filter(t => t.lane === lane)) pick(task);
   const repairAllocated = allocations.some(t => t.lane === 'repair');

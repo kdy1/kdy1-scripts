@@ -60,7 +60,7 @@ export function checkpointPlan(ledger, at) {
   const inventory = c.inventory;
   const complete = inventory?.complete === true && inventory.prs.every(pr => pr.readComplete === true && /^[a-f0-9]{40}$/i.test(pr.headSha ?? '') && /^[a-f0-9]{40}$/i.test(pr.baseSha ?? '') && Number.isFinite(pr.readAt)) && JSON.stringify([...urls].sort()) === JSON.stringify(inventory.prs.map(p => p.url).sort());
   const active = Object.values(ledger.assignments).some(a => ['active', 'reserved', 'uncertain'].includes(a.status));
-  const protectedStacks = Object.values(ledger.stacks).some(s => s.phase !== 'ready' || s.outstandingEffects || s.alignmentPending || s.ownershipActive);
+  const protectedStacks = Object.values(ledger.stacks).some(s => s.phase !== 'ready' || s.outstandingEffects || s.alignmentPending || s.ownershipActive || Object.values(s.operations ?? {}).some(o => o.status === 'uncertain'));
   const terminal = complete && inventory.prs.every(p => ['CLOSED', 'MERGED'].includes(p.state));
   return { version: 1, schedulingOnly: true, activePass: c.active, fullDue: at >= c.nextFullAt,
     dueStacks: Object.entries(c.refresh).filter(([, due]) => due <= at).map(([stack]) => stack), candidates: c.candidates,

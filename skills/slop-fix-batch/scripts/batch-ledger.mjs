@@ -4,6 +4,7 @@ import { check, version, nonempty, sha, absolute, readJson, load, save, lock, cl
 import { emptyCheckpoints, checkpoint, validateCheckpoints } from './batch-checkpoints.mjs';
 import { verifyPublication } from './verify-publication.mjs';
 import { rankTasks } from './batch-scheduler.mjs';
+import { delegationSafeBoundary, validateDelegation, grantDelegation, authorizeSubmission, authorizeEvent, closeGrants, unresolvedOperations } from './batch-delegation.mjs';
 const safeId = value => { nonempty(value, 'id'); check(!['__proto__', 'constructor', 'prototype'].includes(value), 'Unsafe id'); return value; };
 export function initialize(input) {
   version(input); nonempty(input.batchId, 'batch id'); nonempty(input.coordinator, 'coordinator'); nonempty(input.query, 'exact query');
@@ -55,12 +56,13 @@ export function validateLedger(ledger) {
     if (stack.phase === 'ready') check(stack.layers.length === stack.groups.length && stack.layers.every(l => l.publication?.complete === true) && stack.readyEvidence && stack.coordination?.phase === 'ready' && stack.detachedSha === stack.layers.at(-1).headSha, 'Incomplete ready handoff');
   }
   for (const a of Object.values(ledger.assignments)) {
-    safeId(a.id); nonempty(a.taskId, 'assignment task id'); check(['investigation', 'preparation', 'implementation', 'publication', 'repair'].includes(a.lane), 'Invalid worker lane'); check(['reserved', 'active', 'uncertain', 'finished'].includes(a.status), 'Invalid assignment status');
+    safeId(a.id); nonempty(a.taskId, 'assignment task id'); check(['investigation', 'preparation', 'implementation', 'publication', 'repair', 'maintenance', 'inventory'].includes(a.lane), 'Invalid worker lane'); check(['reserved', 'active', 'uncertain', 'finished'].includes(a.status), 'Invalid assignment status');
     check(Number.isSafeInteger(a.slots) && a.slots >= (a.status === 'finished' ? 0 : 1), 'Missing occupied slots');
     if (a.status === 'finished') check(a.slots === 0 && a.evidence && ['succeeded', 'failed', 'cancelled'].includes(a.outcome), 'Missing assignment completion evidence/outcome');
   }
   check(new Set(ledger.events.map(e => e.id)).size === ledger.events.length && ledger.revision === ledger.events.length, 'Incomplete ledger event history');
   if (ledger.scheduler) { version(ledger.scheduler); rankTasks(ledger.scheduler.tasks); }
+  validateDelegation(ledger);
   return ledger;
 }
 export function applyEvent(ledger, event, owner) {
@@ -72,6 +74,39 @@ export function applyEvent(ledger, event, owner) {
   check(!ledger.events.length || Date.parse(event.at) >= Date.parse(ledger.events.at(-1).at), 'Event time moved backwards');
   const next = structuredClone(ledger);
   switch (event.type) {
+    case 'delegation-enable':
+      check(!ledger.delegation, 'Delegation is already enabled'); delegationSafeBoundary(ledger, event.evidence);
+      check(Number.isSafeInteger(event.capacity) && event.capacity > 0, 'Missing actual runtime capacity');
+      check(!ledger.scheduler || ledger.scheduler.capacity === event.capacity, 'Capacity differs from scheduler');
+      next.delegation = { version: 1, capacity: event.capacity, grants: {}, receipts: {}, activationEvidence: event.evidence }; break;
+    case 'delegation-grant':
+      safeId(event.value?.id); grantDelegation(next, event.value); break;
+    case 'delegation-children': {
+      const g = next.delegation?.grants[event.grantId]; check(g?.status === 'active' && g.role === 'maintenance', 'Active maintenance grant required');
+      check(Array.isArray(event.childAssignmentIds) && g.childAssignmentIds.every(id => event.childAssignmentIds.includes(id)), 'Cannot drop allocated child accounting');
+      g.childAssignmentIds = event.childAssignmentIds; validateDelegation(next); break;
+    }
+    case 'delegation-revoke': {
+      const g = next.delegation?.grants[event.grantId]; check(g && g.status === 'active', 'No active grant');
+      check(event.ownerStopped === true && event.operationsClear === true && event.remoteReconciled === true, 'Revoke requires stopped-owner and reconciliation proof');
+      nonempty(event.evidence, 'revocation evidence');
+      check(!g.stackIds.some(id => unresolvedOperations(next.stacks[id]) || next.stacks[id].outstandingEffects || next.stacks[id].alignmentPending || next.stacks[id].ownershipActive), 'Reconcile operation attempts and stack effects before revocation');
+      check(!g.childAssignmentIds.some(id => next.assignments[id].status !== 'finished'), 'Reconcile allocated children before revocation');
+      const a = next.assignments[g.assignmentId]; a.status = 'finished'; a.slots = 0; a.outcome = 'cancelled'; a.evidence = event.evidence;
+      if (next.checkpoints.active?.ownerGrant === g.id) check(false, 'Finish/reconcile inventory pass before revocation');
+      g.status = 'revoked'; g.revocationEvidence = event.evidence; break;
+    }
+    case 'operation': {
+      const s = next.stacks[event.stackId]; check(s, 'Unknown operation stack');
+      const op = event.value; safeId(op?.id); sha(op.headSha); nonempty(op.kind, 'operation kind'); nonempty(op.owner, 'operation owner');
+      check(['uncertain', 'verified', 'rejected'].includes(op.status), 'Invalid operation status');
+      s.operations ??= {}; const previous = s.operations[op.id];
+      if (!previous) { check(op.status === 'uncertain', 'Record attempt before effects'); check(!unresolvedOperations(s), 'Reconcile previous operation before another attempt'); }
+      else { check(previous.status === 'uncertain' && previous.kind === op.kind && previous.owner === op.owner && previous.headSha === op.headSha, 'Operation identity changed or already reconciled'); check((event.progress === true && op.status === 'uncertain' && event.evidence) || (op.status !== 'uncertain' && event.reconciled === true && event.evidence), 'Operation outcome requires reconciliation');
+        if (previous.catalogToken) check(op.catalogToken === previous.catalogToken, 'Catalog token changed');
+        if (previous.commandStarted) check(op.commandStarted === true, 'Command-start evidence cannot disappear'); }
+      s.operations[op.id] = { ...op, evidence: event.evidence }; break;
+    }
     case 'assessment':
       check(ledger.fixedIssues.some(i => i.key === event.issueKey), 'Issue outside fixed list');
       check(['already-closed', 'already-resolved', 'existing-pr', 'actionable', 'blocked'].includes(event.value?.classification), 'Invalid issue assessment');
@@ -94,6 +129,7 @@ export function applyEvent(ledger, event, owner) {
     }
     case 'layer': {
       const s = next.stacks[event.stackId]; check(s?.phase === 'building', 'Stack is protected or handed off');
+      check(!unresolvedOperations(s), 'Uncertain operation blocks integration');
       check(!s.publicationAttempt || s.publicationAttempt.reconciled === true, 'Uncertain or active publication blocks integration');
       check(!s.layers.some(l => l.publication && !l.publication.complete), 'Uncertain publication blocks integration');
       const old = s.layers.findIndex(l => l.groupId === event.value.groupId);
@@ -129,7 +165,8 @@ export function applyEvent(ledger, event, owner) {
       next.stacks[event.stackId].coordination = event.value; break;
     case 'ready': {
       const s = next.stacks[event.stackId]; check(s?.phase === 'building', 'Stack not building');
-      check(!Object.values(next.assignments).some(a => a.stackId === s.id && a.status !== 'finished'), 'Active or uncertain stack assignment remains');
+      check(!unresolvedOperations(s), 'Uncertain operation blocks ready');
+      check(!Object.values(next.assignments).some(a => a.stackId === s.id && a.status !== 'finished' && a.id !== event.delegated?.assignmentId), 'Active or uncertain stack assignment remains');
       nonempty(event.evidence, 'clean worktree/detach and ready evidence'); sha(event.detachedSha);
       check(!s.publicationAttempt || s.publicationAttempt.reconciled === true, 'Publication effects not reconciled');
       s.phase = 'ready'; s.readyEvidence = event.evidence; s.detachedSha = event.detachedSha;
@@ -150,13 +187,18 @@ export function applyEvent(ledger, event, owner) {
       if (a.status === 'active') { nonempty(a.worker, 'actual worker identity'); absolute(a.worktree); sha(a.startSha); }
       next.assignments[a.id] = a; break;
     }
-    case 'scheduler': next.scheduler = event.value; rankTasks(schedulingSnapshot(next).tasks); break;
-    case 'checkpoint': next.checkpoints = checkpoint(next.checkpoints, event.value); break;
+    case 'scheduler':
+      check(!next.delegation || event.value.capacity === next.delegation.capacity, 'Delegation capacity differs from scheduler');
+      next.scheduler = event.value; rankTasks(schedulingSnapshot(next).tasks); break;
+    case 'checkpoint':
+      next.checkpoints = checkpoint(next.checkpoints, event.value);
+      if (event.value.type === 'start' && event.delegated) next.checkpoints.active.ownerGrant = event.delegated.grantId;
+      break;
     case 'maintenance':
       if (ledger.maintenance?.automationId) check(event.value?.automationId === ledger.maintenance.automationId, 'Do not replace heartbeat blindly');
       next.maintenance = event.value; break;
     case 'implementation-ended':
-      check(!Object.values(next.assignments).some(a => a.lane !== 'repair' && a.status !== 'finished'), 'Construction assignments remain active or uncertain');
+      check(!Object.values(next.assignments).some(a => !['repair', 'maintenance', 'inventory'].includes(a.lane) && a.status !== 'finished'), 'Construction assignments remain active or uncertain');
       check(Object.values(next.stacks).every(s => ['ready', 'held'].includes(s.phase)), 'Construction stacks still building');
       next.implementationEnded = true;
       next.checkpoints = checkpoint(next.checkpoints, { type: 'enqueue', id: event.id, reason: 'final', at: Date.parse(event.at) }); break;
@@ -176,6 +218,7 @@ export function applyEvent(ledger, event, owner) {
     case 'hold': check(next.stacks[event.stackId]?.phase === 'building', 'Cannot hold maintenance-owned stack from construction'); nonempty(event.evidence, 'blocker'); next.stacks[event.stackId].phase = 'held'; next.stacks[event.stackId].blocker = event.evidence; break;
     default: throw new Error('Unknown ledger event');
   }
+  closeGrants(next);
   next.events.push(event); next.revision++; return validateLedger(next);
 }
 export function schedulingSnapshot(ledger) {
@@ -194,14 +237,36 @@ export function schedulingSnapshot(ledger) {
 export function resumeSummary(ledger) {
   validateLedger(ledger);
   return { version: 1, revision: ledger.revision, fixedIssues: ledger.fixedIssues, stacks: ledger.stacks,
+    delegation: ledger.delegation ?? { status: 'legacy-coordinator-only' },
     assignments: Object.values(ledger.assignments).filter(a => a.status !== 'finished'), checkpoints: ledger.checkpoints, maintenance: ledger.maintenance,
     blockers: Object.values(ledger.stacks).filter(s => s.phase === 'held' || s.outstandingEffects).map(s => ({ stackId: s.id, reason: s.blocker ?? 'Unreconciled effects' })), mergeEvidenceReusable: false };
+}
+export function submitEvents(ledger, input) {
+  version(input); validateLedger(ledger); const { grant, duplicate } = authorizeSubmission(ledger, input);
+  if (duplicate) return ledger;
+  let next = structuredClone(ledger);
+  const at = new Date(Math.max(Date.parse(input.at), Date.parse(ledger.events.at(-1)?.at ?? input.at))).toISOString();
+  input.events.forEach((payload, index) => {
+    authorizeEvent(next, grant, payload);
+    check(next.delegation.grants[grant.id].status === 'active', 'Terminal assignment must be last in submission');
+    const e = { ...payload, id: `delegate:${grant.id}:${grant.generation}:${input.sequence}:${index}`, expectedRevision: next.revision, at,
+      delegated: { grantId: grant.id, assignmentId: grant.assignmentId, worker: input.worker, generation: input.generation, sequence: input.sequence } };
+    next = applyEvent(next, e, next.coordinator);
+  });
+  next.delegation.grants[grant.id].sequence = input.sequence;
+  next.delegation.receipts[`${grant.id}:${input.sequence}`] = { input: structuredClone(input), revision: next.revision };
+  return validateLedger(next);
+}
+export function submitLedger(path, input) {
+  absolute(path); const release = lock(path);
+  if (!release) return { version: 1, complete: false, status: 'busy', reason: 'Ledger busy or interrupted; no network operation started' };
+  try { const next = submitEvents(readJson(path), input); save(path, next); return next; } finally { release(); }
 }
 export function updateLedger(path, owner, event) {
   absolute(path); const release = lock(path); check(release, 'Ledger busy or interrupted; reconcile owner before retry');
   try { const next = applyEvent(readJson(path), event, owner); save(path, next); return next; } finally { release(); }
 }
-cli(import.meta.url, 'batch-ledger.mjs <init|import|validate|status|resume|snapshot|apply> ledger.json [input.json] [owner]', ([command, path, inputPath, owner]) => {
+cli(import.meta.url, 'batch-ledger.mjs <init|import|validate|status|resume|snapshot|apply|submit> ledger.json [input.json] [owner]', ([command, path, inputPath, owner]) => {
   absolute(path);
   if (command === 'init' || command === 'import') {
     check(inputPath, 'Missing input file'); const release = lock(path); check(release, 'Ledger busy or interrupted');
@@ -213,6 +278,7 @@ cli(import.meta.url, 'batch-ledger.mjs <init|import|validate|status|resume|snaps
       save(path, ledger); return ledger;
     } finally { release(); }
   }
+  if (command === 'submit') { check(inputPath, 'Missing submission file'); return submitLedger(path, readJson(inputPath)); }
   if (command === 'apply') { check(inputPath && owner, 'Missing event or coordinator'); return updateLedger(path, owner, readJson(inputPath)); }
   const ledger = validateLedger(readJson(path));
   if (command === 'snapshot') return schedulingSnapshot(ledger);

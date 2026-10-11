@@ -6,7 +6,7 @@ import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 
 const statuses = new Set(['pending', 'waiting', 'active', 'reserved', 'uncertain', 'done', 'blocked']);
-const lanes = new Set(['merge', 'repair', 'publication', 'implementation', 'investigation', 'preparation', 'external']);
+const lanes = new Set(['merge', 'repair', 'publication', 'implementation', 'investigation', 'preparation', 'maintenance', 'inventory', 'external']);
 const occupied = new Set(['active', 'reserved', 'uncertain']);
 const costs = { short: 1, medium: 3, long: 9 };
 function check(condition, message) { if (!condition) throw new Error(message); }
@@ -95,8 +95,9 @@ export function plan(snapshot) {
   const byId = new Map(rows.map(t => [t.id, t]));
   const ready = rows.filter(t => t.eligible && t.status === 'pending' && t.requires.every(id => byId.get(id).status === 'done'));
   const busyPublication = new Set(rows.filter(t => occupied.has(t.status) && t.lane === 'publication').map(t => t.stack));
+  const busyMaintenance = new Set(rows.filter(t => occupied.has(t.status) && t.lane === 'maintenance').map(t => t.stack));
   const busyRepair = new Set(rows.filter(t => occupied.has(t.status) && t.lane === 'repair').map(t => t.stack));
-  const pubQueue = ready.filter(t => t.lane === 'publication' && !busyPublication.has(t.stack) && !busyRepair.has(t.stack));
+  const pubQueue = ready.filter(t => t.lane === 'publication' && !busyPublication.has(t.stack) && !busyRepair.has(t.stack) && !busyMaintenance.has(t.stack));
   const pubPolicy = publicationCeiling(snapshot.publicationPolicy, capacity, new Set([...busyPublication, ...pubQueue.map(t => t.stack)]).size);
   let pubRoom = pubPolicy.paused ? 0 : Math.max(0, pubPolicy.ceiling - busyPublication.size);
   let free = capacity - used;
@@ -104,11 +105,12 @@ export function plan(snapshot) {
   const prior = snapshot.displaced ?? {};
   function pick(task) {
     if (!task || !free || selected.has(task.id)) return false;
-    if (task.lane === 'publication' && (!pubRoom || busyPublication.has(task.stack) || busyRepair.has(task.stack))) return false;
-    if (task.lane === 'repair' && (busyRepair.has(task.stack) || busyPublication.has(task.stack))) return false;
+    if (task.lane === 'publication' && (!pubRoom || busyPublication.has(task.stack) || busyRepair.has(task.stack) || busyMaintenance.has(task.stack))) return false;
+    if (['repair', 'maintenance'].includes(task.lane) && (busyRepair.has(task.stack) || busyPublication.has(task.stack) || busyMaintenance.has(task.stack))) return false;
     allocations.push({ id: task.id, lane: task.lane, stack: task.stack, slots: 1 }); selected.add(task.id); free--;
     if (task.lane === 'publication') { pubRoom--; busyPublication.add(task.stack); }
     if (task.lane === 'repair') busyRepair.add(task.stack);
+    if (task.lane === 'maintenance') busyMaintenance.add(task.stack);
     return true;
   }
   const pubSort = (a, b) => (b.priority ?? 0) - (a.priority ?? 0) || Number(!!b.finishesStack) - Number(!!a.finishesStack) || compare(a, b);
@@ -117,13 +119,15 @@ export function plan(snapshot) {
   const tracked = [pubQueue.find(t => pubRoom > 0), implementation[0]].filter(Boolean);
   const earned = tracked.filter(t => (prior[t.id]?.count ?? 0) >= 2).sort((a, b) =>
     (prior[a.id].sinceBoundary ?? 0) - (prior[b.id].sinceBoundary ?? 0) || pubSort(a, b));
+  // Delegated gate/merge work is real runtime work; dispatch it before repair allocations.
+  for (const task of ready.filter(t => t.lane === 'maintenance')) pick(task);
   const exception = earned.find(pick)?.id ?? null;
   const repairs = ready.filter(t => t.lane === 'repair').sort((a, b) =>
     (b.priority ?? 0) - (a.priority ?? 0) || Number(!!b.unblocksMerge) - Number(!!a.unblocksMerge) ||
     (a.layer ?? 0) - (b.layer ?? 0) || compare(a, b));
   for (const task of repairs) pick(task);
   for (const task of pubQueue) pick(task);
-  for (const lane of ['implementation', 'investigation', 'preparation']) for (const task of ready.filter(t => t.lane === lane)) pick(task);
+  for (const lane of ['implementation', 'inventory', 'investigation', 'preparation']) for (const task of ready.filter(t => t.lane === lane)) pick(task);
   const repairAllocated = allocations.some(t => t.lane === 'repair');
   const boundary = integer(snapshot.boundary ?? 0, 'boundary');
   for (const task of tracked) {

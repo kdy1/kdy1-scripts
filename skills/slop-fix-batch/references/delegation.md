@@ -1,0 +1,70 @@
+# Scoped execution delegation
+
+Read with [helpers](helpers.md), [scheduling](scheduling.md) and [worker handoffs](worker-prompts.md). This procedure applies only after an explicit execution-time activation. A legacy ledger without `delegation` remains coordinator-only. Plan Mode never activates grants, records execution events, creates worktrees or sends execution START.
+
+## Activate, allocate and START
+
+The coordinator initializes the normal version-1 ledger, then applies `delegation-enable` with actual positive `capacity` and `evidence: {operationsClear: true, ownersReconciled: true, summary}` at an idle boundary. No active/reserved/uncertain assignment, active inventory pass, unreconciled publication/operation, pending alignment or maintenance ownership may remain. An existing building token can stay protected after its Git/catalog operations are verified idle. Keep capacity equal to the scheduler and the human/runtime limit. Activation does not migrate a heartbeat prompt or authorize a different batch.
+
+For each job:
+
+1. Persist its reserved assignment and slot before agent creation. Inherit the parent model/reasoning for stack, maintenance and inventory actors. Unknown creations retain their reservation. Initial permission is read-only preparation.
+2. Persist the actual worker identity, role, checkout, starting SHA and resolved execution facts. Make the assignment active before START. Implementation/repair worktrees are separate from integration checkouts.
+3. Apply `delegation-grant`. Its fields are `id`, `assignmentId`, `worker`, `role`, `stackIds`, positive `generation`, `allowedEvents` and optional `childAssignmentIds`. IDs are never reused; each replacement advances the generation for overlapping role/scope. `allowedEvents` must be a subset of the helper's role permissions.
+4. Render the exact `start` handoff with grant ID/generation and actual worker. Send it to that agent; use followup_task for an idle prepared agent. Record delivery outcome; uncertainty never authorizes a second actor. START covers the entire bounded job, not separate approvals for each command.
+
+`stack-execution` covers exactly one building stack/group in the publication lane. `maintenance` covers exactly one ready stack in the maintenance lane. `inventory` covers a captured stack/PR set in the inventory lane, and only one such actor may be active. Executors and maintenance actors cannot overlap on one stack. Inventory observes without taking a whole-stack edit token and never supplies final merge authority.
+
+Stack grants require a recorded group ID; the actor can append only that group's layer. Its assignment also records `branch`, `commits`, `workerStartSha`, original passing `checks`, `requirementsSatisfied`, `baseRef`, `remote`, `coordinationId`, `stackOwner`, absolute `coordinationRoot` (Git common directory), `coordinationHelper`, `requestState` and `worktree`. Handoffs additionally include the installed batch-stack/create-pr paths, full issue acceptance, prerequisite evidence, explicit integration-change check commands and skipped-validation disclosure. The stable logical `stackOwner` and actual build token stay with the stack between bounded jobs; an idle agent does not own continuing runtime capacity. A replacement agent needs a fresh coordinator grant and positive reconciliation of any previous actor/effects before using that logical owner's protection. The coordination helper is cooperative; grants do not intercept arbitrary Git commands.
+
+The coordinator alone reserves new assignments, changes graph/membership, writes scheduler policy, closes issues and manages the heartbeat. Use `delegation-children` to append already-reserved repair assignment IDs to an active maintenance grant. Each child must name `parentAssignmentId`, the same stack, lane repair and its own allocated slot. The maintenance actor can record the returned child identity, preparing/start delivery and results for those IDs only. It cannot allocate another child or increase slots. With one available slot, finish the maintenance observation job and return its verified repair signal; the coordinator reserves/spawns repair directly using the normal two-phase repair START. Do not hold the only slot while requesting a child.
+
+## Direct scoped events
+
+```sh
+node /installed/slop-fix-batch/scripts/batch-ledger.mjs submit /batch/ledger.json /batch/submission.json
+```
+
+```json
+{
+  "version": 1,
+  "grantId": "stack-job-1",
+  "worker": "actual-agent-id",
+  "generation": 1,
+  "sequence": 1,
+  "at": "2026-10-11T00:00:00Z",
+  "events": [
+    {"type":"checkpoint","value":{"type":"enqueue","id":"job-1-integrated","stackId":"stack-1","reason":"integration","at":1791676800000}}
+  ]
+}
+```
+
+Resolve values from the actual assignment. Payload events omit global ID/revision/timestamp metadata; the helper supplies those under a short ledger lock after loading the latest ledger. Submission sequence advances per grant; concurrent unrelated stacks do not cause global expectedRevision failures. An identical retry returns the recorded receipt without replay; a conflicting duplicate or missing sequence fails. Events in one submission are atomic, and job completion must be last. Caller timestamps remain in receipts; committed timestamps do not move backward behind intervening events. No network operation runs under the ledger lock.
+
+Stack executors may submit layer/publication-attempt/publication/coordination/ready/hold/operation, their own assignment progress and scoped checkpoint enqueue/invalidate/candidate events. Maintenance actors may submit stack-observation/coordination/operation, their own or preallocated children's assignment progress and scoped checkpoints. Inventory actors may only start/finish their captured checkpoint pass and complete their own assignment. The helper enforces current role, worker, generation, stack, group and assignment scope as well as the existing ledger's validation/publication/ready invariants. Legacy `apply` still requires the recorded coordinator and strict global expectedRevision.
+
+Busy local writes return incomplete without starting network work. Retry the same local submission after ordinary contention clears; interrupted locks require stopped-owner evidence and explicit recovery, never deletion or timeout stealing. An uncertain actor/assignment cannot silently return its slot. The coordinator must reconcile before reactivating that assignment or revoking its grant. `delegation-revoke` requires positive ownerStopped/operationsClear/remoteReconciled evidence, known operation/stack effects and reconciled children; it records cancellation and releases only that assignment's slot. Historical grants/receipts remain for recovery.
+
+## Stack execution job
+
+Use `batch-stack.mjs worktree` for ordinary isolated worktree creation or managed worktree tools where repository conventions require them. Worktree inputs contain execution mode, original authorization/owner, source checkout, new absolute path, exact available startSha and commonRoot. The helper uses detached worktree add, verifies the common directory/SHA/clean state and never resets an existing checkout. The coordinator reserves implementation worktrees; stack executors prepare only their assigned integration checkout. Failed/partial creation requires inspection before reuse.
+
+Use `batch-stack.mjs run input.json` for one step at a time. Inputs contain version, absolute ledgerPath, grantId, actual worker, generation, unique operationId, kind and expectedHead. The helper reads the recorded assignment, checks the active grant/building phase, common directory, clean checkout and exact head. It records an uncertain operation before effects; a recorded attempt can never be rerun. Supported steps:
+
+- `register`: register the current ordered layer branches/verified PRs plus this job's assigned branch before creation. Retain stable build ownership. Registration JSON is saved beside the external ledger.
+- `init` / `add`: initialize the pinned first layer or append one layer from the verified current top. Acquire the shared catalog token, record its token and command boundary before running the whole gh-stack command, then capture view JSON. Preserve pinned ancestry and selected repository PR base. Unsupported rewriting behavior remains a blocker discovered in preflight.
+- `integrate`: verify the returned worker's exact commit range and original checks, require its starting SHA to be an ancestor of the current tip with all prerequisites integrated, and cherry-pick only those commits on the assigned registered branch. Record the resulting layer through scoped submission with original worker coverage. Conflicts remain protected for agent judgment and necessary changed-integration checks; the helper does not solve them.
+- Invoke `$create-pr` directly for this committed layer. Freeze its checkout during publication. Record publication attempt before push/PR/attachment writes and use create-pr's exact identity/recovery procedure. The executor supplies all group Closes lines and validation disclosure; create-pr owns prose and PR reuse/attachment. No extra publisher is spawned.
+- Verify all participating PR identities/content/head/base/attachments, and record `publication-attempt.value.preparedPrefix` using verify-publication's expected/observed shape. This proves matching prepared PRs, not native stack submission. Previous recorded layers must be unchanged; future groups are not members.
+- `submit`: verify preparedPrefix against integrated heads and known lower publication, then run the complete `gh stack submit --auto --open --remote` under catalog ownership. Capture view JSON and authenticated remote membership/order while still protected. Run verify-publication for the final prefix; reconcile the catalog operation, submit publication and update registration with verified PR URLs. Never let gh-stack create an absent PR.
+- If every assigned group is verified, `detach` at the final tip, update registration and `ready` through the coordination helper. Submit coordination-ready, ledger-ready and own assignment-finished atomically. If groups remain, complete this prefix job and return the slot without releasing build protection.
+
+Network/catalog steps return `needs-verification`, retaining their uncertain operation and catalog token. The actor inspects the captured selected catalog view, local refs and required remote state, then invokes `batch-stack.mjs reconcile` with operationId, expected catalogToken, gitOperationsClear/remoteReconciled, Boolean verified and concrete evidence. It releases only its own matching catalog token and records verified/rejected outcome. A successful CLI exit alone is not remote publication proof. On proven foreign catalog contention before this command was sent, the helper records a rejected no-effect attempt and returns busy; other stacks proceed. Uncertain failures retain locks/slots. Adopt a corrected new operation ID only after reconciliation, never automatically retry.
+
+## Maintenance, inventory and recovery
+
+A maintenance actor follows [batch maintenance](batch-maintenance.md) for its one assigned ready stack. Its grant permits recording attempts/results, not bypassing current whole-stack gates. Record an operation before merge, auto-merge, queue/cancellation or alignment effects; retain exact identity/head/base/membership and capability proof in stack observations. Pending/unknown operations and unfinished alignment retain ownership and assignment accounting for reconciliation. A known pending external state with no active effect can end the job and return the slot. Native whole-stack requests, standalone eligibility, default squash subjects and sequential fallback gates are unchanged.
+
+Use an inventory actor for full coverage at registration, missing-state recovery, periodic deadlines and termination. The grant captures only assigned stack PRs. Start one global checkpoint pass with the captured URL set; finish only that grant's pass. New publications/events remain pending and cannot be folded into already-captured full coverage. Ready actors can independently submit targeted candidates/observations during a slow inventory. A partial scan never becomes complete helper plan input or merge authority.
+
+The coordinator heartbeat only recovers ledger/owners, allocates due actors/repairs and reconciles global state. It reuses one automation and preserves human cadence/notification intent. Do not recollect or restart work. Before replacing a stopped actor, reconcile worktree/Git/catalog state, token ownership, spawn/start delivery and all remote effects. Grant generations fence helper submissions from replaced actors; they do not prove an old Git process stopped. Existing runtime capacity and actual nested owners must be accounted before new reservations. Keep unknown operations and useful worktrees in final reporting.

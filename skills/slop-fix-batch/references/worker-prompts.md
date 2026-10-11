@@ -1,12 +1,12 @@
 # Slop Fix Batch worker handoffs
 
-Use these handoffs with the available subagent controls. Substitute the coordinator's recorded facts; do not send unresolved placeholders. These are scoped assignments under the human's `$slop-fix-batch` invocation, not fresh skill runs. Keep GitHub issue writes, batch-ledger writes, construction registrations, and all `gh stack` operations with the coordinator. Only a scoped publication worker may perform the assigned PR writes through `$create-pr`. Implementation workers never claim/release coordination tokens, register maintenance, or run `repair-pr`. Write only the assigned implementation branch; registered integration layer branches remain protected by the coordinator's construction token. Maintenance may repair other fully published ready stacks concurrently. The coordinator records ready handoffs and owns all construction-to-maintenance transitions. There is no default six-worker cap; all worker types, including publishers, share the explicit user limit and runtime capacity. Publication uses the parent skill’s measured adaptive ceiling, starting at three unless the human sets a positive limit; it adds no worker capacity. Use [scheduling and timing](scheduling.md) for queue calculation and timing transitions rather than copying those procedures into worker assignments. Follow the parent skill's priority: the coordinator processes eligible merges and auto-merge outcomes first, assigns eligible repairs next, publication next, and implementation/investigation/preparation last. Apply the parent skill’s single-slot progress exception when eligible publication or critical-path implementation was displaced by repair dispatches at two consecutive allocation boundaries. All allocations share the total budget; active workers are not interrupted and waiting gates reserve no idle slot. Report results promptly so the coordinator can apply that order at each safe boundary. A verified group may be published while later groups in its stack continue implementation in their separate worktrees; its next integration waits for prefix publication and remote verification, and the stack remains construction-protected until every assigned group is complete.
+Use these handoffs with available subagent controls and [scoped delegation](delegation.md). The coordinator owns fixed-list selection, group/dependency/stack decisions, slot reservations, issue closure and heartbeat registration. Ordinary workers return facts. A recorded stack executor submits its own permitted ledger events and owns integration/registration/gh-stack/$create-pr prefix publication; a maintenance actor submits its assigned ready-stack outcomes and owns fresh gates/conditional merges. Implementation and repair workers never merge. Inventory owns only one captured read pass. Legacy ledgers retain coordinator-only execution until explicit safe-boundary activation. All active/reserved/nested/uncertain roles share the human/runtime capacity. Stack executors use publication's adaptive measured ceiling starting at three, without a second publisher slot. Never retain an actor through implementation/CI/review waits when effects are known and its bounded job is complete. Building prefixes remain protected until every assigned group is verified ready.
 
 Apply the parent skill's validation policy to every handoff: skip direct app launches, manual reproduction, validation in a real environment, and screenshot capture for validation, including when requested by an issue. Keep automated tests, builds, linters, code inspection during investigation and implementation, and Git/GitHub state checks. Automated tests may launch the app or exercise reproduction scenarios. The policy does not relax evidence requirements for direct closure of already-resolved issues.
 
 ## Render and verify assignments
 
-Use [`render-handoff.mjs`](../scripts/render-handoff.mjs) with the [helper contract](helpers.md) for every role assignment. The templates below define investigation and implementation requirements; include their resolved scope/evidence/check details in the structured assignment rather than sending unresolved placeholders. For execution START, first persist the reservation, accepted worker identity, checkout and exact starting SHA with `batch-ledger.mjs`. Render preparation and START separately. Use the installed `github-request.mjs` as the shared request entry point; direct gh/extension calls retain documented coverage gaps and report observed limits. Workers return facts and never write ledger/checkpoint state. Do not bypass a renderer failure by sending an unchecked assignment.
+Use [`render-handoff.mjs`](../scripts/render-handoff.mjs) with the [helper contract](helpers.md) for every role assignment. The templates below define investigation and implementation requirements; include their resolved scope/evidence/check details in the structured assignment rather than sending unresolved placeholders. For execution START, first persist the reservation, accepted worker identity, checkout and exact starting SHA with `batch-ledger.mjs`. Render preparation and START separately. Use the installed `github-request.mjs` as the shared request entry point; direct gh/extension calls retain documented coverage gaps and report observed limits. Ordinary workers return facts; granted actors submit only permitted scoped events through batch-ledger submit. Do not bypass a renderer failure by sending an unchecked assignment.
 
 ## Shared API policy for every handoff
 
@@ -156,58 +156,18 @@ actual screenshots already available. Earlier
 prerequisite commits are not this group's commit range.
 ```
 
-## Publication assignment
+## Stack execution assignment
 
-Use one publisher per frozen stack checkout, inheriting the parent's model and reasoning settings. Spawn with read-only preparation permission. The coordinator records its actual identity and assignment before sending the start authorization; use `followup_task` if preparation has finished. An uncertain start retains its shared slot and construction protection. This worker does not own the build token or write the ledger.
+Use render-handoff role `stack-execution` with prepare/start, not a nested publication child. The coordinator reserves one publication-lane job for a checked group, records actual worker/checkout/startSha and the root-confirmed implementation handoff, then grants the exact stack/group and generation before START. Include all [delegation assignment fields](delegation.md#activate-allocate-and-start), original authorization, group issue URLs/acceptance, prerequisite checks, diff/template/disclosures and helper/state paths. The actor may execute the entire integration-to-verified-prefix tail under that grant. It uses batch-stack steps, invokes $create-pr and $write-ste directly, attaches each PR, submits only scoped events and returns blockers/known effects promptly. Source adaptation is limited to in-scope conflict resolution with affected checks. It cannot change group/stack membership, allocate children, close issues, merge or register maintenance.
 
-```text
-Publish only this verified Slop Fix Batch layer through
-[$create-pr](<absolute-installed-create-pr-path>).
+On final group completion, include exact clean detached tip and actual registry ready proof, then submit ready and own completion atomically. On an earlier prefix, retain build protection and return the slot. Unknown Git/PR/catalog effects retain the actor assignment until reconciliation. No separate cumulative-tip validation occurs.
 
-Original human authorization and delegated publication scope: <request and scope>
-Repository, GitHub host, push remote, and head repository: <resolved values>
-Publication job, stack ID, group, and layer position: <identities>
-Coordinator, absolute batch-ledger path, and assignment record: <identity and pointer>
-Frozen clean integration checkout and branch: <absolute path and branch>
-Exact publication head SHA and intended PR base branch/SHA: <head and base>
-Participating prefix branches, PR URLs, and expected head SHAs: <ordered prefix>
-Layer diff and fully resolved/related issue URLs: <diff and issue classifications>
-Existing PR URL when present: <recorded URL or none>
-Worker checks with covered revisions: <actual commands, results, and SHAs>
-Integration-change checks when needed: <actual commands/results/covered SHA or unchanged integration>
-Publication head: <exact SHA; no separate cumulative-tip validation>
-Skipped real-world validation and required disclosures: <not-performed details>
-PR template, draft setting, and relevant existing screenshots: <non-draft and facts>
+## Delegated maintenance and inventory assignments
 
-Until the coordinator records your actual identity and sends the start handoff,
-perform read-only preparation only. Before publication, verify your identity,
-assignment, stack's building phase and construction owner, clean checkout,
-exact head SHA, intended base, and lower-prefix publication against the handoff.
-Do not claim, release, or transfer the coordinator's build token.
-Stop and report mismatches rather than retargeting or changing branches.
+Use role `maintenance` for exactly one ready stack and role `inventory` for one captured batch read pass. Both START handoffs require actual recorded identity, checkout/startSha, active assignment and matching grant/generation. Pass the original conditional authorization, absolute maintenance/reference/coordination paths, current captured membership, state/capacity and fresh signal/candidate hints. The maintenance actor must freshly gate under whole-stack ownership; hints/unchanged SHAs do not authorize merge. It may record and spawn only repair children already reserved by the coordinator and added to its grant. Preserve the existing repair model and two-phase START. With no child slot, return the verified signal and finish so the coordinator can dispatch repair directly.
 
-After that start authorization, invoke $create-pr with this original delegation
-and its $write-ste dependency. Use the supplied committed changes and validation;
-do not commit, edit source, switch branches, change local layer refs, run tests,
-or rewrite history. Push only the assigned head branch without force. Reuse an
-exact matching PR, verify non-draft state, title/body/references, exact remote
-head SHA and intended base, and perform the required Codex PR attachment.
-The batch policy requires disclosure of skipped manual/environment/screenshot
-validation and standalone Closes lines for every fully implemented issue;
-do not downgrade them to Refs solely for skipped validation.
+Inventory START captures assigned URLs, read scope and full/targeted intention. Only its grant starts/finishes that pass. New arrivals remain pending. Complete read coverage is separate from final targeted whole-stack merge gates. It may not mutate GitHub or finish another pass. Finish its pass before returning its slot.
 
-Do not write the batch ledger, register branches/PRs, run gh stack, change issues,
-start maintenance, merge, or enable auto-merge. Report each push/PR/attachment
-outcome promptly to the coordinator. If a write is uncertain, reconcile exact
-remote refs and matching PR state through $create-pr before retrying. Never
-blindly create a duplicate PR or treat a failed attachment as failed PR creation.
+## Legacy publication assignment
 
-Return job/stack/group/layer identities, checkout, expected and observed remote
-head/base SHAs, exact PR URL and state, verified title/body/issue references,
-attachment outcome, actual validation coverage and skipped validation,
-stage outcomes, and any blockers or unresolved effects. Do not claim that CI
-or reviews passed, gh-stack submission finished, or the stack is ready;
-the coordinator owns prefix submission, final verification, and ready handoff.
-```
-
-The start handoff names the recorded publisher identity, job and ledger assignment, frozen checkout, head/base SHAs, and original scoped authorization. Only that worker may publish that job. After its result and remote effects are reconciled, the coordinator records the PR URL with the helper, serializes prefix submission under the catalog token, and verifies the published prefix before unfreezing that stack. It collects and refills other slots without waiting for all publication jobs.
+Use role `publication` only for an existing coordinator-only ledger continuation. Existing publishers finish their scoped create-pr job; loading the revised skill does not turn an active worker into an executor. After explicit idle activation, use stack-execution for later jobs. Preserve exact head/base, frozen checkout, original worker SHA coverage, non-draft Closes/disclosure, PR reuse/attachment and uncertain-write recovery. The legacy publisher never runs gh-stack or claims the build token. The coordinator still records its result, submits/verifies the prefix and makes the ready handoff.

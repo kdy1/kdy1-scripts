@@ -42,6 +42,19 @@ function makeReady(l, i = 0) {
   l = root(l, 'coordination', { stackId: `s${i}`, value: { phase: 'ready', evidence: 'Registry verified ready' } });
   return root(l, 'ready', { stackId: `s${i}`, detachedSha: head, evidence: 'Clean detached checkout at verified head' });
 }
+function pendingAutoMerge() {
+  const actor = assign(makeReady(fixture()), 0, 'maintenance');
+  const op = { id: 'auto-merge', kind: 'auto-merge', owner: actor.a.id, headSha: head, status: 'uncertain', token: 'retained-token' };
+  let l = send(actor.l, actor.g, [
+    { type: 'coordination', stackId: 's0', value: { phase: 'ready', owner: op.owner, token: op.token, evidence: 'Edit token acquired' } },
+    { type: 'operation', stackId: 's0', value: op },
+  ]);
+  l = send(l, actor.g, [
+    { type: 'operation', stackId: 's0', value: { ...op, status: 'verified', outcome: 'auto_merge_pending' }, reconciled: true, evidence: 'Authenticated autoMergeRequest at exact head' },
+    { type: 'stack-observation', stackId: 's0', value: { evidence: 'Verified external wait, no active Git/catalog operation', outstandingEffects: true, alignmentPending: false, ownershipActive: true, headSha: head, autoMergePending: true } },
+  ]);
+  return { ...actor, l, op };
+}
 async function scratch(fn) { const dir = mkdtempSync(join(tmpdir(), 'batch-delegation-')); try { return await fn(dir); } finally { rmSync(dir, { recursive: true, force: true }); } }
 
 test('legacy ledgers stay coordinator-only; activation requires safe boundary and capacity', () => {
@@ -114,6 +127,71 @@ test('maintenance scope requires ready stack; single captured inventory preserve
   l = send(l, inv.g, [{ type: 'checkpoint', value: { type: 'finish', passId: 'pass', at: 3, full: true, nextFullAt: 20, refresh: { s0: 20 }, inventory: { complete: true, prs: [{ url, readComplete: true, state: 'OPEN', headSha: head, baseSha: base, readAt: 2 }] } } }]);
   assert.equal(l.checkpoints.pending.at(-1).id, 'late'); assert.equal(l.checkpoints.refresh.s0, 0);
   assert.equal(checkpointPlan(l, 4).stop, false);
+});
+
+test('verified auto-merge waits return the actor slot without releasing stack ownership', () => {
+  const { l, g, a, op } = pendingAutoMerge();
+  const finished = send(l, g, [{ type: 'assignment', value: { ...a, status: 'finished', slots: 0, outcome: 'succeeded', evidence: 'External request confirmed; coordinator owns next reconciliation' } }]);
+  assert.equal(finished.assignments[a.id].slots, 0);
+  assert.equal(finished.delegation.grants[g.id].status, 'finished');
+  assert.equal(finished.stacks.s0.ownershipActive, true);
+  assert.equal(finished.stacks.s0.outstandingEffects, true);
+  assert.equal(finished.stacks.s0.coordination.token, op.token);
+  assert.equal(finished.stacks.s0.operations[op.id].outcome, 'auto_merge_pending');
+  const standalone = structuredClone(l);
+  Object.assign(standalone.stacks.s0.operations[op.id], { kind: 'standalone-auto-merge', outcome: undefined, result: 'auto_merge_pending', token: undefined });
+  Object.assign(standalone.stacks.s0.maintenance, { headSha: undefined, autoMergePending: false, autoMergeRequest: { enabledAt: at }, prs: [{ url: l.stacks.s0.layers[0].url, headSha: head }], outstandingEffects: false });
+  assert.equal(send(standalone, g, [{ type: 'assignment', value: { ...a, status: 'finished', slots: 0, outcome: 'succeeded', evidence: 'Verified standalone external wait' } }]).assignments[a.id].slots, 0);
+  assert.throws(() => assign(finished, 0, 'maintenance', { id: 'next' }), /Reconcile prior stack/);
+  const ownershipResume = { owner: op.owner, token: op.token, operationId: op.id };
+  for (const key of ['owner', 'token', 'operationId']) {
+    assert.throws(() => assign(finished, 0, 'maintenance', { id: 'next', ownershipResume: { ...ownershipResume, [key]: 'wrong' } }), /Reconcile prior stack/);
+  }
+  const resumed = assign(finished, 0, 'maintenance', { id: 'next', ownershipResume });
+  assert.equal(resumed.l.assignments.next.status, 'active');
+  assert.equal(resumed.l.stacks.s0.coordination.token, op.token);
+});
+
+test('auto-merge wait completion fails closed for stale proof, ownership changes and unknown effects', () => {
+  const { l, g, a } = pendingAutoMerge();
+  const completion = { type: 'assignment', value: { ...a, status: 'finished', slots: 0, outcome: 'succeeded', evidence: 'Return' } };
+  const changes = [
+    s => { s.maintenance.headSha = base; },
+    s => { s.maintenance.autoMergePending = false; },
+    s => { s.coordination.owner = 'another-owner'; },
+    s => { s.coordination.token = 'another-token'; },
+    s => { s.operations['auto-merge'].outcome = 'unverified'; },
+    s => { s.alignmentPending = true; },
+    s => { s.publicationAttempt = { reconciled: false }; },
+  ];
+  for (const change of changes) {
+    const changed = structuredClone(l); change(changed.stacks.s0);
+    assert.throws(() => send(changed, g, [completion]), /Unreconciled effects/);
+  }
+  const unknown = send(l, g, [{ type: 'operation', stackId: 's0', value: { id: 'cancel', kind: 'disable-auto', owner: a.id, headSha: head, status: 'uncertain' } }]);
+  assert.throws(() => send(unknown, g, [completion]), /Unreconciled effects/);
+  const child = { id: 'waiting-child', taskId: 'waiting-child', parentAssignmentId: a.id, stackId: 's0', lane: 'repair', status: 'reserved', slots: 1 };
+  let withChild = root(l, 'assignment', { value: child });
+  withChild = root(withChild, 'delegation-children', { grantId: g.id, childAssignmentIds: [child.id] });
+  assert.throws(() => send(withChild, g, [completion]), /children/);
+});
+
+test('inventory slots are independent of observed stacks ownership and unresolved effects', () => {
+  const maint = pendingAutoMerge();
+  let l = send(maint.l, maint.g, [{ type: 'operation', stackId: 's0', value: { id: 'cancel', kind: 'disable-auto', owner: maint.a.id, headSha: head, status: 'uncertain' } }]);
+  const inv = assign(l, 0, 'inventory'); l = inv.l;
+  const url = l.stacks.s0.layers[0].url;
+  const completion = { type: 'assignment', value: { ...inv.a, status: 'finished', slots: 0, outcome: 'succeeded', evidence: 'Captured reads finished; maintenance owns stack effects' } };
+  l = send(l, inv.g, [{ type: 'checkpoint', value: { type: 'start', passId: 'owned-pass', at: 1, prs: [url] } }]);
+  assert.throws(() => send(l, inv.g, [completion]), /Finish inventory pass/);
+  l = send(l, inv.g, [
+    { type: 'checkpoint', value: { type: 'finish', passId: 'owned-pass', at: 3, inventory: { complete: true, prs: [{ url, readComplete: true, state: 'OPEN', headSha: head, baseSha: base, readAt: 2 }] } } },
+    completion,
+  ]);
+  assert.equal(l.assignments[inv.a.id].slots, 0);
+  assert.equal(l.assignments[maint.a.id].slots, 1);
+  assert.equal(l.stacks.s0.operations.cancel.status, 'uncertain');
+  assert.equal(l.stacks.s0.coordination.token, maint.op.token);
 });
 
 test('maintenance repair children require coordinator reservations and both slots remain accounted', () => {

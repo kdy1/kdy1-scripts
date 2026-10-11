@@ -8,6 +8,26 @@ export const roleEvents = {
 };
 export const occupied = a => a.status !== 'finished';
 export const unresolvedOperations = s => Object.values(s.operations ?? {}).some(o => o.status === 'uncertain');
+function verifiedAutoMergeWait(s) {
+  const op = Object.values(s.operations ?? {}).at(-1), observation = s.maintenance;
+  const observedHead = observation?.headSha ?? observation?.prs?.find(p => p.url === s.layers?.[0]?.url)?.headSha;
+  // A confirmed external wait retains the stack token, not a running actor.
+  // Never use an older setup result to excuse a later uncertain operation.
+  return s.phase === 'ready' && s.layers?.length === 1 && !unresolvedOperations(s) && !s.alignmentPending
+    && op?.status === 'verified' && ['auto-merge', 'standalone-auto-merge'].includes(op.kind)
+    && (op.outcome ?? op.result) === 'auto_merge_pending' && Boolean(op.evidence)
+    && op.headSha === observedHead && Boolean(observation?.evidence)
+    && (observation.autoMergePending === true || Boolean(observation.autoMergeRequest)
+      || observation.autoMerge?.outcome === 'auto_merge_pending')
+    && Boolean(s.coordination?.owner) && Boolean(s.coordination?.token)
+    && op.owner === s.coordination.owner && (!op.token || op.token === s.coordination.token);
+}
+function resumesAutoMergeWait(s, assignment) {
+  const resume = assignment.ownershipResume;
+  return verifiedAutoMergeWait(s) && resume?.owner === s.coordination.owner
+    && resume.token === s.coordination.token
+    && resume.operationId === Object.values(s.operations).at(-1).id;
+}
 export function delegationSafeBoundary(ledger, evidence) {
   check(!Object.values(ledger.assignments).some(occupied) && !ledger.checkpoints.active, 'Delegation activation requires idle assignments and inventory');
   check(Object.values(ledger.stacks).every(s => !s.outstandingEffects && !s.alignmentPending && !s.ownershipActive && !unresolvedOperations(s) && (!s.publicationAttempt || s.publicationAttempt.reconciled)), 'Reconcile effects and ownership before delegation activation');
@@ -51,7 +71,14 @@ export function grantDelegation(ledger, value) {
   const a = ledger.assignments[value.assignmentId];
   check(a && ['reserved', 'active'].includes(a.status) && a.worker === value.worker && a.role === value.role, 'Persist actual assignment identity before grant');
   check((value.role === 'inventory' || value.stackIds?.includes(a.stackId)), 'Grant scope differs from assignment');
-  check(value.stackIds?.every(id => ledger.stacks[id] && !unresolvedOperations(ledger.stacks[id]) && !ledger.stacks[id].outstandingEffects && !ledger.stacks[id].alignmentPending && !ledger.stacks[id].ownershipActive), 'Reconcile prior stack effects before assigning a new actor');
+  check(value.stackIds?.every(id => {
+    const s = ledger.stacks[id];
+    if (!s) return false;
+    // Inventory never owns or mutates the stacks it observes.
+    if (value.role === 'inventory') return true;
+    return (!unresolvedOperations(s) && !s.outstandingEffects && !s.alignmentPending && !s.ownershipActive)
+      || (value.role === 'maintenance' && resumesAutoMergeWait(s, a));
+  }), 'Reconcile prior stack effects before assigning a new actor');
   if (value.role === 'stack-execution') check(ledger.stacks[a.stackId]?.phase === 'building', 'Execution requires building stack');
   if (value.role === 'maintenance') check(ledger.stacks[a.stackId]?.phase === 'ready', 'Maintenance requires ready stack');
   check(Object.values(ledger.delegation.grants).filter(g => g.role === value.role && g.stackIds.some(id => value.stackIds.includes(id))).every(g => value.generation > g.generation), 'Grant generation must advance on replacement');
@@ -84,7 +111,12 @@ export function authorizeEvent(ledger, g, e) {
     }
     check(isDeepStrictEqual(candidate, original), 'Assignment scope/identity/slots cannot change');
     if (a.id === g.assignmentId && e.value.status === 'finished') {
-      check(!g.stackIds.some(id => unresolvedOperations(ledger.stacks[id]) || ledger.stacks[id].outstandingEffects || ledger.stacks[id].alignmentPending || ledger.stacks[id].ownershipActive || (ledger.stacks[id].publicationAttempt && !ledger.stacks[id].publicationAttempt.reconciled)), 'Unreconciled effects retain actor slot');
+      if (g.role !== 'inventory') check(!g.stackIds.some(id => {
+        const s = ledger.stacks[id];
+        return unresolvedOperations(s) || s.alignmentPending
+          || (s.publicationAttempt && !s.publicationAttempt.reconciled)
+          || ((s.outstandingEffects || s.ownershipActive) && !(g.role === 'maintenance' && verifiedAutoMergeWait(s)));
+      }), 'Unreconciled effects retain actor slot');
       check(!g.childAssignmentIds.some(id => ledger.assignments[id].status !== 'finished'), 'Allocated repair children must be reconciled before parent completion');
       check(ledger.checkpoints.active?.ownerGrant !== g.id, 'Finish inventory pass before returning slot');
     }

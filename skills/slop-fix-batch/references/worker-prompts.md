@@ -4,6 +4,14 @@ Use these handoffs with available subagent controls and [scoped delegation](dele
 
 Apply the parent skill's validation policy to every handoff: skip direct app launches, manual reproduction, validation in a real environment, and screenshot capture for validation, including when requested by an issue. Keep automated tests, builds, linters, code inspection during investigation and implementation, and Git/GitHub state checks. Automated tests may launch the app or exercise reproduction scenarios. The policy does not relax evidence requirements for direct closure of already-resolved issues.
 
+## Worker settings and context
+
+Before creating any worker, run `node /installed/slop-fix-batch/scripts/worker-settings.mjs <role>`. Resolve the installed path and replace the role with investigation, preparation, implementation, stack-execution, maintenance, inventory, repair or publication. The helper is the single source of model, reasoning_effort and fork_turns values. Pass all three returned fields unchanged to `collaboration.spawn_agent`, alongside task_name and the scoped message; writing them in the message alone does not configure the agent. The handoff renderer displays the same settings for its supported roles. Repair uses this helper with the maintenance reference’s repair handoff, not a new renderer role.
+
+All roles use `fork_turns: "none"`. Supply the original human request and authorization, assigned scope and expected results, applicable skill/repository instruction paths, relevant evidence, exact checkout/SHA, ownership/grants where required, and shared helper/state paths in the first message. Include prior findings or their accessible absolute paths; do not rely on parent conversation history. This also applies to Plan Mode investigation and nested repairs.
+
+Use the same agent for a job’s prepare and START phases. Reuse an agent across roles only when all three settings match and the previous job and effects are reconciled. If settings differ, allocate a new agent under the existing slot/ownership rules and hand off the previous results. Apply settings to new workers only; do not restart active workers. If a specified model or effort is unavailable, report the role’s creation failure and reconcile its reservation; do not silently substitute a model. Coordinator settings, concurrency policy and START authorization remain unchanged.
+
 ## Render and verify assignments
 
 Use [`render-handoff.mjs`](../scripts/render-handoff.mjs) with the [helper contract](helpers.md) for every role assignment. The templates below define investigation and implementation requirements; include their resolved scope/evidence/check details in the structured assignment rather than sending unresolved placeholders. For execution START, first persist the reservation, accepted worker identity, checkout and exact starting SHA with `batch-ledger.mjs`. Render preparation and START separately. Use the installed `github-request.mjs` as the shared request entry point; direct gh/extension calls retain documented coverage gaps and report observed limits. Ordinary workers return facts; granted actors submit only permitted scoped events through batch-ledger submit. Do not bypass a renderer failure by sending an unchecked assignment.
@@ -67,7 +75,7 @@ Investigators can read other fixed-list issues to understand dependencies, but c
 
 ## Dependent-group preparation
 
-Use a read-only assignment while prerequisites are still being implemented. These workers share the user/runtime slot budget with investigation, implementation, publication, and maintenance repairs; reuse an investigator when practical.
+Use a read-only assignment while prerequisites are still being implemented. These workers share the user/runtime slot budget with investigation, implementation, publication, and maintenance repairs; carry forward investigation findings; changing from investigation to preparation requires a new agent because the reasoning effort differs.
 
 ```text
 Prepare this dependent group through read-only investigation and design.
@@ -126,8 +134,7 @@ required at this stage by repository policy, and commit each coherent verified u
 according to repository instructions. Run required whole-repository checks in this
 worker before handoff. Never bypass Git hooks or defer checks to integration
 or a final tip. Preserve required execution times. If preparation findings exist, reconcile
-them with relevant prerequisite changes at the assigned starting SHA. Inherit the
-parent's model and reasoning settings. Ask the coordinator before changing the
+them with relevant prerequisite changes at the assigned starting SHA. Use the implementation role’s explicit worker settings. Ask the coordinator before changing the
 assignment or using nested slots. Never modify another worker's refs/checkout,
 publish a PR, change GitHub issues/comments, or run gh stack. Do not invoke
 $slop-fix-issue or $bulk: this assignment ends at implementation handoff.
@@ -164,7 +171,7 @@ On final group completion, include exact clean detached tip and actual registry 
 
 ## Delegated maintenance and inventory assignments
 
-Use role `maintenance` for exactly one ready stack and role `inventory` for one captured batch read pass. Both START handoffs require actual recorded identity, checkout/startSha, active assignment and matching grant/generation. Pass the original conditional authorization, absolute maintenance/reference/coordination paths, current captured membership, state/capacity and fresh signal/candidate hints. The maintenance actor must freshly gate under whole-stack ownership; hints/unchanged SHAs do not authorize merge. It may record and spawn only repair children already reserved by the coordinator and added to its grant. Preserve the existing repair model and two-phase START. With no child slot, return the verified signal and finish so the coordinator can dispatch repair directly.
+Use role `maintenance` for exactly one ready stack and role `inventory` for one captured batch read pass. Both START handoffs require actual recorded identity, checkout/startSha, active assignment and matching grant/generation. Pass the original conditional authorization, absolute maintenance/reference/coordination paths, current captured membership, state/capacity and fresh signal/candidate hints. The maintenance actor must freshly gate under whole-stack ownership; hints/unchanged SHAs do not authorize merge. It may record and spawn only repair children already reserved by the coordinator and added to its grant. Resolve repair settings through worker-settings.mjs and preserve two-phase START. With no child slot, return the verified signal and finish so the coordinator can dispatch repair directly.
 
 Inventory START captures assigned URLs, read scope and full/targeted intention. Only its grant starts/finishes that pass. New arrivals remain pending. Complete read coverage is separate from final targeted whole-stack merge gates. It may not mutate GitHub or finish another pass. Finish its pass before returning its slot.
 

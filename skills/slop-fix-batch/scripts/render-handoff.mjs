@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { check, version, nonempty, sha, absolute, readJson, cli } from './helper-common.mjs';
+import { workerSettings } from './worker-settings.mjs';
 import { validateLedger } from './batch-ledger.mjs';
 const roles = ['investigation', 'preparation', 'implementation', 'publication', 'stack-execution', 'maintenance', 'inventory'];
 function placeholders(value) {
@@ -80,7 +81,8 @@ export function renderHandoff(input) {
   }
   placeholders(a);
   const phase = input.phase === 'prepare' ? 'Read-only preparation only. Do not begin implementation, publication, repair, registration or any mutation until a separately recorded START.' : 'START only within the recorded authorization and role constraints.';
-  return `# Slop Fix Batch: ${input.role} (${input.phase})\n\nMode: ${input.mode}\nBatch: ${ledger.batchId}\nRepository: ${ledger.repository}\nOriginal human authorization: ${ledger.authorization}\nExact query: ${ledger.query}\n\n${phase}\n\n${policy}\n\n${instructions[input.role]}\n\n## Recorded assignment\n\n\x60\x60\x60json\n${JSON.stringify(a, null, 2)}\n\x60\x60\x60\n`;
+  const spawnSettings = workerSettings(input.role);
+  return `# Slop Fix Batch: ${input.role} (${input.phase})\n\nMode: ${input.mode}\nBatch: ${ledger.batchId}\nRepository: ${ledger.repository}\nOriginal human authorization: ${ledger.authorization}\nExact query: ${ledger.query}\n\n## Agent creation settings\n\nPass these fields to collaboration.spawn_agent when creating this role. Keep the same agent for prepare and START.\n\n\x60\x60\x60json\n${JSON.stringify(spawnSettings, null, 2)}\n\x60\x60\x60\n\n${phase}\n\n${policy}\n\n${instructions[input.role]}\n\n## Recorded assignment\n\n\x60\x60\x60json\n${JSON.stringify(a, null, 2)}\n\x60\x60\x60\n`;
 }
 const cell = value => String(value ?? 'not recorded').replaceAll('|', '\\|').replaceAll('\n', ' ');
 export function renderReport(ledger) {

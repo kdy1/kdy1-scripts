@@ -10,6 +10,7 @@ import { initialize, validateLedger, applyEvent, updateLedger, schedulingSnapsho
 import { verifyPublication } from './verify-publication.mjs';
 import { checkpoint, emptyCheckpoints, checkpointPlan } from './batch-checkpoints.mjs';
 import { renderHandoff, renderReport } from './render-handoff.mjs';
+import { workerSettings } from './worker-settings.mjs';
 import { plan } from './batch-scheduler.mjs';
 import { save } from './helper-common.mjs';
 const sha = 'a'.repeat(40), head = 'b'.repeat(40);
@@ -182,6 +183,8 @@ function assignment() { return { scope: 'selected issue', repositoryInstructions
 test('handoff distinguishes Plan Mode, preparation and recorded START; rejects placeholders', () => {
   const i = { version: 1, mode: 'plan', role: 'investigation', phase: 'prepare', ledger: init(), assignment: assignment() };
   assert.match(renderHandoff(i), /Read-only preparation only/);
+  const renderedSettings = JSON.parse(renderHandoff(i).match(/```json\n([\s\S]*?)\n```/)[1]);
+  assert.deepEqual(renderedSettings, workerSettings(i.role));
   assert.throws(() => renderHandoff({ ...i, role: 'publication' }), /Plan Mode/);
   assert.throws(() => renderHandoff({ ...i, assignment: { ...assignment(), scope: '<scope>' } }), /placeholder/);
   assert.throws(() => renderHandoff({ ...i, mode: 'execution', phase: 'start' }), /persisted assignment/);

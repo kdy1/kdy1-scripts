@@ -7,6 +7,7 @@ Use these helpers for a human-authorized batch. Loading or testing them does not
 Each input document uses `version: 1`. JSON commands print one result. Handoff/report commands print Markdown. Exit 0 means the local operation completed, 1 means invalid input or a failed local invariant, and 2 means incomplete, blocked, busy, cooldown or uncertain evidence. Never treat either nonzero exit as a successful empty inventory. A complete request response does not prove publication, closure or merging. No helper spawns agents, registers automations or merges on its own. The grant-bound batch-stack helper runs explicit construction Git/gh-stack steps; it never chooses work or merge authority.
 
 ```sh
+node /installed/slop-fix-batch/scripts/worker-settings.mjs investigation
 node /installed/slop-fix-batch/scripts/collect-issues.mjs /batch/selection-input.json
 node /installed/slop-fix-batch/scripts/batch-ledger.mjs init /batch/ledger.json /batch/init.json
 node /installed/slop-fix-batch/scripts/batch-ledger.mjs apply /batch/ledger.json /batch/event.json coordinator-id
@@ -21,6 +22,8 @@ node /installed/slop-fix-batch/scripts/render-handoff.mjs handoff /batch/handoff
 node /installed/slop-fix-batch/scripts/render-handoff.mjs report /batch/ledger.json
 node /installed/slop-fix-batch/scripts/batch-ledger.mjs resume /batch/ledger.json
 ```
+
+`worker-settings.mjs <role>` takes a role name rather than a versioned input document and returns the three spawn settings as JSON. Unknown roles or extra arguments exit 1. Use these fields as actual spawn arguments under the [worker settings procedure](worker-prompts.md#worker-settings-and-context); the helper does not create an agent.
 
 Capture the snapshot command's JSON outside source before passing it to the unchanged scheduler CLI. Record its allocation output, policy window and displacement counters in the next coordinator `scheduler` event before dispatch. The ledger reconciles active/reserved/uncertain assignments into the snapshot; `otherOccupiedSlots` in the stored scheduling observations covers only workers outside the ledger, avoiding double counting.
 

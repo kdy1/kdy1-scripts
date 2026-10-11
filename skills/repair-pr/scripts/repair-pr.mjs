@@ -3,25 +3,30 @@
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { exit } from "node:process";
+import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
+import { readChecks as collectChecks } from "./lib/common.mjs";
 
 const REVIEW_AUTHOR = "chatgpt-codex-connector[bot]";
 
-const args = process.argv.slice(2);
-const command = args[0];
-
-if (!command || command === "--help" || command === "-h") {
-  printGlobalHelp();
-  exit(command ? 0 : 1);
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main(process.argv.slice(2)).catch(error => {
+    process.stderr.write(`repair-pr: ${error.message}\n`); process.exitCode = 1;
+  });
 }
 
-if (command === "status") {
-  statusCommand(args.slice(1));
-} else if (command === "reply-thread") {
-  replyThreadCommand(args.slice(1));
-} else if (command === "resolve-thread") {
-  resolveThreadCommand(args.slice(1));
-} else {
-  fail(`Unknown command: ${command}`);
+async function main(args) {
+  const command = args[0];
+  if (!command || command === "--help" || command === "-h") {
+    printGlobalHelp(); process.exitCode = command ? 0 : 1; return;
+  }
+  if (command === "status") statusCommand(args.slice(1));
+  else if (command === "reply-thread") replyThreadCommand(args.slice(1));
+  else if (command === "resolve-thread") resolveThreadCommand(args.slice(1));
+  else if (["preflight", "session", "ci-logs", "publish", "finish-threads"].includes(command)) {
+    const { workflowCommand } = await import("./lib/workflow.mjs");
+    workflowCommand(command, args.slice(1));
+  } else fail(`Unknown command: ${command}`);
 }
 
 function statusCommand(rawArgs) {
@@ -60,6 +65,8 @@ function statusCommand(rawArgs) {
     ),
     checks: {
       error: checks.error,
+      complete: checks.complete,
+      exitCode: checks.exitCode,
       failing: failingChecks.map(formatCheck),
       total: checks.items.length,
     },
@@ -317,7 +324,7 @@ function readCurrentRepo() {
 
 function parsePullRequestUrl(url) {
   const match = String(url).match(
-    /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/pull\/[0-9]+/,
+    /^https:\/\/([^/]+)\/([^/]+)\/([^/]+)\/pull\/[0-9]+/,
   );
 
   if (!match) {
@@ -325,12 +332,13 @@ function parsePullRequestUrl(url) {
   }
 
   return {
-    owner: match[1],
-    name: match[2],
+    host: match[1],
+    owner: match[2],
+    name: match[3],
   };
 }
 
-function readReviewThreads(repo, number) {
+export function readReviewThreads(repo, number) {
   const query = `
 query($owner: String!, $name: String!, $number: Int!, $cursor: String) {
   viewer {
@@ -396,6 +404,7 @@ query($owner: String!, $name: String!, $number: Int!, $cursor: String) {
       args.push("-F", `cursor=${cursor}`);
     }
 
+    if (repo.host && repo.host !== "github.com") args.push("--hostname", repo.host);
     const result = runJson("gh", args);
     failOnGraphQLErrors(result, "read review threads");
 
@@ -423,15 +432,15 @@ query($owner: String!, $name: String!, $number: Int!, $cursor: String) {
     cursor = connection.pageInfo.endCursor;
   }
 
-  return { threads: threads.map(readAllThreadComments), viewerLogin };
+  return { threads: threads.map(thread => readAllThreadComments(thread, repo.host)), viewerLogin };
 }
 
-function readAllThreadComments(thread) {
+function readAllThreadComments(thread, host) {
   const comments = thread.comments?.nodes ?? [];
   let pageInfo = thread.comments?.pageInfo;
 
   while (pageInfo?.hasNextPage) {
-    const page = readThreadCommentsPage(thread.id, pageInfo.endCursor);
+    const page = readThreadCommentsPage(thread.id, pageInfo.endCursor, host);
     comments.push(...(page.nodes ?? []));
     pageInfo = page.pageInfo;
   }
@@ -444,7 +453,7 @@ function readAllThreadComments(thread) {
   };
 }
 
-function readThreadCommentsPage(threadId, cursor) {
+function readThreadCommentsPage(threadId, cursor, host) {
   const query = `
 query($threadId: ID!, $cursor: String) {
   node(id: $threadId) {
@@ -478,6 +487,7 @@ query($threadId: ID!, $cursor: String) {
     `threadId=${threadId}`,
     "-F",
     `cursor=${cursor}`,
+    ...(host && host !== "github.com" ? ["--hostname", host] : []),
   ]);
   failOnGraphQLErrors(result, `read comments for review thread ${threadId}`);
 
@@ -490,40 +500,9 @@ query($threadId: ID!, $cursor: String) {
   return comments;
 }
 
-function readChecks(prArg) {
-  const result = run(
-    "gh",
-    [
-      "pr",
-      "checks",
-      prArg,
-      "--json",
-      "bucket,completedAt,description,link,name,startedAt,state,workflow",
-    ],
-    { allowFailure: true },
-  );
+function readChecks(prArg) { return collectChecks(prArg); }
 
-  if (!result.ok) {
-    return {
-      error: result.stderr.trim() || result.stdout.trim(),
-      items: [],
-    };
-  }
-
-  try {
-    return {
-      error: null,
-      items: JSON.parse(result.stdout),
-    };
-  } catch (error) {
-    return {
-      error: `Could not parse gh pr checks JSON: ${error.message}`,
-      items: [],
-    };
-  }
-}
-
-function isRelevantReviewThread(thread, viewerLogin) {
+export function isRelevantReviewThread(thread, viewerLogin) {
   if (thread.isResolved || thread.isOutdated) {
     return false;
   }
@@ -533,7 +512,7 @@ function isRelevantReviewThread(thread, viewerLogin) {
   );
 }
 
-function isReviewAuthor(login, viewerLogin) {
+export function isReviewAuthor(login, viewerLogin) {
   return (
     authorLoginMatches(login, REVIEW_AUTHOR) ||
     (typeof login === "string" && login.toLowerCase() === viewerLogin.toLowerCase())
@@ -652,6 +631,11 @@ function printGlobalHelp() {
   process.stdout.write(`Usage: repair-pr.mjs <command> [options]
 
 Commands:
+  preflight       Check checkout, PR identity, remotes, and stack ownership.
+  session         Initialize, record, or verify a repair session.
+  ci-logs         Collect current-head failing Actions logs.
+  publish         Publish verified ordinary-PR repairs once.
+  finish-threads  Reconcile replies and resolutions after publication.
   status          Show PR merge state, unresolved Codex bot and @me review threads, and failing checks.
   reply-thread    Reply to a GitHub review thread by node id.
   resolve-thread  Resolve a GitHub review thread by node id.
@@ -744,7 +728,4 @@ function run(commandName, commandArgs, options = {}) {
   };
 }
 
-function fail(message) {
-  process.stderr.write(`repair-pr: ${message}\n`);
-  exit(1);
-}
+function fail(message) { throw new Error(message); }

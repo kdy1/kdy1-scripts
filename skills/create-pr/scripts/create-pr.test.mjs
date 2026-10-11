@@ -27,6 +27,47 @@ test('references inside code cannot satisfy closing requirements; conflicts are 
   assert.equal(content(p, body).status, 'verified');
   assert.equal(content(p, body + 'Refs owner/repo#12\n').status, 'mismatch');
 });
+test('full issue URLs retain classifications and detect mixed-format duplicates', () => {
+  const p = plan(), urlBody = body.replace('Closes #12', 'Closes https://github.com/owner/repo/issues/12');
+  assert.equal(content(p, urlBody).status, 'verified');
+  assert.equal(content(p, urlBody + 'Closes #12\n').status, 'mismatch');
+  assert.equal(content(p, urlBody + 'Refs owner/repo#12\n').status, 'mismatch');
+  p.issues.push({ repository: 'other/project', number: 34, kind: 'refs' });
+  assert.equal(content(p, urlBody + 'Refs https://github.com/other/project/issues/34\n').status, 'verified');
+  p.requiredText.push('Closes https://github.com/owner/repo/issues/12');
+  assert.equal(content(p, body + 'Refs other/project#34\n').status, 'mismatch');
+});
+test('URL references require exact host and issue identity outside code', () => {
+  const p = plan();
+  for (const url of ['https://other.example/owner/repo/issues/12', 'https://github.com/wrong/repo/issues/12', 'https://github.com/owner/repo/pull/12', 'https://github.com/owner/repo/issues/12?x=1', 'https://github.com/owner/repo/issues/12#comment', 'https://user@github.com/owner/repo/issues/12', 'https://github.com/owner/repo/issues/0', 'https://github.com/owner/repo/issues/9007199254740992']) {
+    assert.equal(content(p, body.replace('Closes #12', `Closes ${url}`)).status, 'mismatch', url);
+  }
+  for (const line of ['```md\nCloses https://github.com/owner/repo/issues/12\n```', '    Closes https://github.com/owner/repo/issues/12']) {
+    assert.equal(content(p, 'Validation: not performed.\n' + line).status, 'mismatch');
+  }
+  p.host = 'github.example';
+  assert.equal(content(p, body.replace('Closes #12', 'Closes https://github.example/owner/repo/issues/12')).status, 'verified');
+  assert.equal(content(p, body.replace('Closes #12', 'Closes https://github.com/owner/repo/issues/12')).status, 'mismatch');
+});
+test('unrelated URL references remain protected during classified format changes', () => {
+  const p = plan(), unrelated = 'Refs https://github.com/other/project/issues/34';
+  assert.deepEqual(preserve(p, `${body}\n${unrelated}`, `${body.replace('Closes #12', 'Closes https://github.com/owner/repo/issues/12')}\n${unrelated}`), []);
+  assert.equal(preserve(p, unrelated, body).length, 1);
+});
+test('URL publication and reconciliation verify the original issue classification', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'create-pr-url-test-'));
+  try {
+    const p = plan(), client = fake(p), checked = [], path = join(dir, 'journal.json');
+    const urlBody = body.replace('Closes #12', 'Closes https://github.com/owner/repo/issues/12');
+    client.issue = (repository, number) => { checked.push([repository, number]); return {}; };
+    assert.equal(publish(p, urlBody, path, client).status, 'verified');
+    assert.deepEqual(checked, [['owner/repo', 12]]);
+    const journal = JSON.parse(readFileSync(path, 'utf8'));
+    assert.deepEqual(journal.plan.issues, p.issues);
+    assert.equal(reconcile(journal, client).status, 'verified');
+    assert.equal(client.writes, 1);
+  } finally { rmSync(dir, { recursive: true }); }
+});
 test('existing unrelated references/images survive edits but explicit classification can change', () => {
   const p = plan(), image = '![Screen](https://github.com/user-attachments/assets/abc)';
   assert.deepEqual(preserve(p, `Refs #12\nRefs #13\n${image}`, `${body}\nRefs #13\n${image}`), []);

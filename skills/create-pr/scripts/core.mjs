@@ -87,10 +87,17 @@ export function proseLines(body) {
   }
   return lines;
 }
-export function references(body, repository) {
+export function references(body, repository, host = 'github.com') {
   return proseLines(body).flatMap(line => {
     const m = line.match(/^ *(Closes|Refs) +(?:([\w.-]+\/[\w.-]+))?#([1-9]\d*) *$/);
-    return m ? [{ kind: m[1], repository: m[2] ?? repository, number: Number(m[3]), line: line.trim() }] : [];
+    if (m && Number.isSafeInteger(Number(m[3]))) return [{ kind: m[1], repository: m[2] ?? repository, number: Number(m[3]), line: line.trim() }];
+    const full = line.match(/^ *(Closes|Refs) +(https:\/\/\S+) *$/);
+    if (!full) return [];
+    let url;
+    try { url = new URL(full[2]); } catch { return []; }
+    const issue = url.pathname.match(/^\/([\w.-]+\/[\w.-]+)\/issues\/([1-9]\d*)$/);
+    if (url.protocol !== 'https:' || url.host !== host.toLowerCase() || url.username || url.password || url.search || url.hash || !issue || !Number.isSafeInteger(Number(issue[2]))) return [];
+    return [{ kind: full[1], repository: issue[1], number: Number(issue[2]), line: line.trim() }];
   });
 }
 export function issueLine(issue, repository) {
@@ -106,13 +113,13 @@ export function content(p, body) {
   check(Array.isArray(p.issues) && Array.isArray(p.requiredText) && Array.isArray(p.attachments), 'Explicit issues, requiredText, and attachments arrays required');
   check(/^[a-f0-9]{40,64}$/.test(p.headSha ?? ''), 'Expected published head SHA');
   if (!/^[a-z][a-z0-9-]*(?:\([^()\r\n]+\))?!?: [^\r\n]+$/.test(p.title)) errors.push('Invalid Conventional Commits title');
-  const refs = references(body, p.repository), seen = new Set();
+  const refs = references(body, p.repository, p.host), seen = new Set();
   for (const ref of refs) { const key = `${ref.repository}#${ref.number}`; if (seen.has(key)) errors.push(`Duplicate or conflicting reference: ${key}`); seen.add(key); }
   const classified = new Set();
   for (const issue of p.issues) {
     const expected = issueLine(issue, p.repository), key = `${issue.repository}#${issue.number}`;
     check(!classified.has(key), 'Duplicate manifest issue'); classified.add(key);
-    if (!refs.some(x => x.line === expected)) errors.push(`Missing standalone ${expected}`);
+    if (!refs.some(x => x.kind === (issue.kind === 'closes' ? 'Closes' : 'Refs') && x.repository === issue.repository && x.number === issue.number)) errors.push(`Missing standalone ${expected}`);
   }
   for (const fixed of p.requiredText) { check(typeof fixed === 'string' && fixed, 'Invalid requiredText'); if (!body.includes(fixed)) errors.push(`Missing required text: ${fixed}`); }
   if (/(?:file:\/\/|\/Users\/|\/home\/|[A-Za-z]:\\)/.test(body)) errors.push('Local path in published body');
@@ -122,9 +129,9 @@ export function content(p, body) {
 export function preserve(p, before, body) {
   const errors = [];
   for (const image of images(before)) if (!body.includes(image)) errors.push('Existing image removed or changed');
-  for (const ref of references(before, p.repository)) {
+  for (const ref of references(before, p.repository, p.host)) {
     if (p.issues.some(x => x.repository === ref.repository && x.number === ref.number)) continue;
-    if (!references(body, p.repository).some(x => x.line === ref.line)) errors.push(`Existing reference removed: ${ref.line}`);
+    if (!references(body, p.repository, p.host).some(x => x.line === ref.line)) errors.push(`Existing reference removed: ${ref.line}`);
   }
   return errors;
 }

@@ -34,6 +34,8 @@ Each missing screenshot uses `{"path":"/absolute/image.png","alt":"Captured sett
 
 `requiredText` carries exact required disclosures, reviewer mentions, template text, and validation statements selected by the agent. Language and factual correctness remain manual checks. The script validates Conventional Commits syntax; the agent selects a permitted type/scope and decides whether `!` is appropriate.
 
+Keep every issue classification in `issues` when the body uses full URLs. Standalone `Closes` and `Refs` accept `#number`, `owner/repo#number`, or an HTTPS issue URL on the manifest's `host`. The helper compares kind, repository and issue number across these formats and rejects duplicate or conflicting references. URLs with a different host, credentials, a query, a fragment or a non-issue path cannot satisfy a classification. Use `requiredText` when a caller requires an exact URL line in addition to semantic classification.
+
 ## Commands
 
 ```sh

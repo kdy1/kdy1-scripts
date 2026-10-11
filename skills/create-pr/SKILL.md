@@ -72,7 +72,7 @@ Closes #456
 Closes owner/other-repo#789
 ```
 
-Use `Closes #123` for an issue in the PR's repository and `Closes owner/repo#123` for another repository. Repeat the full syntax on a separate line for each issue. A title reference, plain link, comment, commit message, `Refs`, `Fixes`, or `Resolves` is not a substitute for the required `Closes` line. Do not duplicate an existing correct line.
+Use the caller's required reference format. By default, use `Closes #123` for an issue in the PR's repository and `Closes owner/repo#123` for another repository. A standalone full issue URL, such as `Closes https://github.com/owner/repo/issues/123`, is also supported for the selected GitHub host. Repeat the syntax on a separate line for each issue. A title reference, plain link, comment, commit message, `Refs`, `Fixes`, or `Resolves` is not a substitute for the required `Closes` line. Do not duplicate an existing correct line, including the same issue written in another supported format.
 
 For **every issue partially addressed or otherwise related to the changes**, use a standalone non-closing reference in the PR body instead:
 
@@ -81,7 +81,7 @@ Refs #234
 Refs owner/other-repo#567
 ```
 
-Use the same repository qualification rules as for `Closes`, with a separate line for each issue. Choose `Closes` when fully resolved and `Refs` otherwise; do not retain both standalone kinds for the same issue. A PR may contain both kinds for different issues. Do not add references when no associated issue exists.
+Use the same repository qualification and full-URL rules as for `Closes`, with a separate line for each issue. Choose `Closes` when fully resolved and `Refs` otherwise; do not retain both standalone kinds for the same issue. A PR may contain both kinds for different issues. Do not add references when no associated issue exists.
 
 Preserve existing issue references in body edits and avoid duplicate lines. When an issue's verified completion changes, replace its existing standalone line with the appropriate `Closes` or `Refs` line, preserving other references and unrelated content. Correct a confirmed closing reference that would incorrectly close a partially resolved issue; if its scope or completion is unclear, resolve that ambiguity before publishing.
 

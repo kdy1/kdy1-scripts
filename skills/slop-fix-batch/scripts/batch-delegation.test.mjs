@@ -258,7 +258,7 @@ test('parallel CLI submit serializes short local writes; busy does not lose or r
 }));
 function readJson(path) { return JSON.parse(readFileSync(path, 'utf8')); }
 
-test('real local worktree, registration, integration and ready steps preserve stack/catalog guards', () => scratch(dir => {
+for (const runtime of ['codex', 'claude-code']) test(`real local worktree, registration, integration and ready steps preserve stack/catalog guards (${runtime})`, () => scratch(dir => {
   const repo = join(dir, 'repo'); mkdirSync(repo); runCommand('git', ['init', '-b', 'main'], repo);
   runCommand('git', ['config', 'user.email', 'test@example.invalid'], repo); runCommand('git', ['config', 'user.name', 'Test'], repo);
   writeFileSync(join(repo, 'source.txt'), 'before\n'); runCommand('git', ['add', 'source.txt'], repo); runCommand('git', ['commit', '-m', 'base'], repo);
@@ -267,7 +267,7 @@ test('real local worktree, registration, integration and ready steps preserve st
   for (const path of [worker, integration]) prepareWorktree({ version: 1, mode: 'execution', checkout: repo, path, startSha: baseSha, commonRoot, owner: 'root', authorization: 'Local test only' });
   writeFileSync(join(worker, 'source.txt'), 'after\n'); runCommand('git', ['add', 'source.txt'], worker); runCommand('git', ['commit', '-m', 'fix'], worker);
   const workerSha = runCommand('git', ['rev-parse', 'HEAD'], worker);
-  let l = fixture(2); l.stacks.s0.baseSha = baseSha; l.stacks.s0.worktree = integration;
+  let l = fixture(2); l.context.runtime = runtime; l.stacks.s0.baseSha = baseSha; l.stacks.s0.worktree = integration;
   const coord = fileURLToPath(new URL('../../repair-pr/scripts/stack-coordination.mjs', import.meta.url));
   const ledgerPath = join(dir, 'ledger.json');
   const actor = assign(l, 0, 'stack-execution', { worktree: integration, startSha: baseSha, branch: 'kdy1/fix0', baseRef: 'main', remote: 'origin', coordinationId: 'batch/s0', stackOwner: 'build/s0', coordinationRoot: commonRoot, coordinationHelper: coord, requestState: join(dir, 'requests.json'), workerStartSha: baseSha, commits: [workerSha], requirementsSatisfied: true, checks: [{ command: 'fixture check', status: 'passed', sha: workerSha }] }); l = actor.l; save(ledgerPath, l);
@@ -298,6 +298,10 @@ test('real local worktree, registration, integration and ready steps preserve st
   const integrated = runStep({ ...input, operationId: 'integrate', kind: 'integrate', expectedHead: baseSha }, { run }); assert.equal(integrated.complete, true);
   l = readJson(ledgerPath); l = send(l, actor.g, [{ type: 'layer', stackId: 's0', value: layer(0, workerSha, integrated.headSha) }]);
   const p = prefix(0, integrated.headSha, baseSha);
+  if (runtime === 'claude-code') {
+    p.runtime = runtime; p.observed.attachmentStatus = 'not-applicable'; p.observed.attachments = [];
+    delete p.observed.attachmentComplete;
+  }
   l = send(l, actor.g, [{ type: 'publication-attempt', stackId: 's0', value: { id: 'publication', preparedPrefix: p } }]); save(ledgerPath, l);
   const submitted = runStep({ ...input, operationId: 'submit', kind: 'submit', expectedHead: integrated.headSha }, { run }); assert.equal(submitted.status, 'needs-verification');
   reconcileStep({ ...input, operationId: 'submit', catalogToken: submitted.catalogToken, gitOperationsClear: true, remoteReconciled: true, verified: true, evidence: 'Mock prefix submission reconciled; no live GitHub' }, { run });

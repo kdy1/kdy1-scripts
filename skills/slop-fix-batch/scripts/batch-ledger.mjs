@@ -3,6 +3,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { check, version, nonempty, sha, absolute, readJson, load, save, lock, cli } from './helper-common.mjs';
 import { emptyCheckpoints, checkpoint, validateCheckpoints } from './batch-checkpoints.mjs';
 import { verifyPublication } from './verify-publication.mjs';
+import { ledgerRuntime, matchRuntime, runtimeName } from './runtime.mjs';
 import { rankTasks } from './batch-scheduler.mjs';
 import { delegationSafeBoundary, validateDelegation, grantDelegation, authorizeSubmission, authorizeEvent, closeGrants, unresolvedOperations } from './batch-delegation.mjs';
 const safeId = value => { nonempty(value, 'id'); check(!['__proto__', 'constructor', 'prototype'].includes(value), 'Unsafe id'); return value; };
@@ -15,11 +16,12 @@ export function initialize(input) {
   nonempty(input.baseBranch, 'base branch'); nonempty(input.remote, 'remote'); nonempty(input.authorization, 'original authorization');
   const ledger = { version: 1, revision: 0, batchId: input.batchId, coordinator: input.coordinator, query: input.query,
     repository: input.repository, baseBranch: input.baseBranch, remote: input.remote, authorization: input.authorization,
-    inspectedSha: input.inspectedSha, context: structuredClone(input.context ?? {}), fixedIssues: structuredClone(input.selection.issues), groups: {}, stacks: {}, assignments: {}, assessments: {},
+    inspectedSha: input.inspectedSha, context: { ...structuredClone(input.context ?? {}), runtime: runtimeName(input.context?.runtime) }, fixedIssues: structuredClone(input.selection.issues), groups: {}, stacks: {}, assignments: {}, assessments: {},
     events: [], checkpoints: emptyCheckpoints(), scheduler: null, maintenance: null, implementationEnded: false };
   validateLedger(ledger); return ledger;
 }
 export function validateLedger(ledger) {
+  const runtime = ledgerRuntime(ledger);
   version(ledger); check(Number.isSafeInteger(ledger.revision) && ledger.revision >= 0, 'Invalid ledger revision');
   for (const key of ['batchId', 'coordinator', 'query', 'repository', 'baseBranch', 'remote', 'authorization']) nonempty(ledger[key], key);
   sha(ledger.inspectedSha);
@@ -41,11 +43,13 @@ export function validateLedger(ledger) {
   Object.keys(ledger.groups).forEach(visit);
   const assignedGroups = new Set();
   for (const stack of Object.values(ledger.stacks)) {
+    if (stack.publicationAttempt?.preparedPrefix) verifyPublication(stack.publicationAttempt.preparedPrefix, runtime);
     safeId(stack.id); sha(stack.baseSha); check(Array.isArray(stack.groups) && stack.groups.length && Array.isArray(stack.layers), 'Missing stack membership');
     check(['building', 'held', 'ready'].includes(stack.phase), 'Invalid stack phase');
     for (const id of stack.groups) { check(ledger.groups[id] && !assignedGroups.has(id), 'Missing or duplicated stack group'); assignedGroups.add(id); ledger.groups[id].requires.forEach(parent => check(stack.groups.includes(parent), 'Dependency crosses stacks')); }
     check(new Set(stack.layers.map(l => l.groupId)).size === stack.layers.length, 'Duplicate layer');
     stack.layers.forEach((layer, i) => {
+      if (layer.publication) matchRuntime(layer.publication.runtime, runtime);
       check(stack.groups.includes(layer.groupId), 'Layer outside stack scope'); check(layer.requirementsSatisfied === true, 'Incomplete implementation requirements'); sha(layer.headSha); sha(layer.workerSha);
       check(layer.checks?.length && layer.checks.every(c => c.status === 'passed' && c.sha === layer.workerSha && c.command), 'Missing passing worker checks at original SHA');
       check(layer.realWorldValidation === 'not-performed', 'Missing skipped validation disclosure');
@@ -152,10 +156,10 @@ export function applyEvent(ledger, event, owner) {
         const closes = ledger.groups[layer.groupId].issues.map(key => ledger.fixedIssues.find(issue => issue.key === key).url).sort();
         check(isDeepStrictEqual([...expected.layers[i].closes].sort(), closes), 'Publication must close every group member');
       });
-      const result = verifyPublication(event.verification); check(result.complete, result.errors.join('; '));
+      const result = verifyPublication(event.verification, ledgerRuntime(ledger)); check(result.complete, result.errors.join('; '));
       for (const [i, layer] of s.layers.entries()) {
         if (layer.publication) check(isDeepStrictEqual(layer.publication.layer, expected.layers[i]), 'Published layer changed');
-        layer.url = expected.layers[i].url; layer.publication = { complete: true, layer: expected.layers[i], observedAt: event.at };
+        layer.url = expected.layers[i].url; layer.publication = { complete: true, runtime: result.runtime, attachmentStatus: result.attachmentStatus, layer: expected.layers[i], observedAt: event.at };
       }
       if (s.publicationAttempt) s.publicationAttempt.reconciled = true;
       next.checkpoints = checkpoint(next.checkpoints, { type: 'enqueue', id: event.id, stackId: s.id, reason: 'publication', at: Date.parse(event.at) }); break;
@@ -236,7 +240,7 @@ export function schedulingSnapshot(ledger) {
 }
 export function resumeSummary(ledger) {
   validateLedger(ledger);
-  return { version: 1, revision: ledger.revision, fixedIssues: ledger.fixedIssues, stacks: ledger.stacks,
+  return { version: 1, runtime: ledgerRuntime(ledger), revision: ledger.revision, fixedIssues: ledger.fixedIssues, stacks: ledger.stacks,
     delegation: ledger.delegation ?? { status: 'legacy-coordinator-only' },
     assignments: Object.values(ledger.assignments).filter(a => a.status !== 'finished'), checkpoints: ledger.checkpoints, maintenance: ledger.maintenance,
     blockers: Object.values(ledger.stacks).filter(s => s.phase === 'held' || s.outstandingEffects).map(s => ({ stackId: s.id, reason: s.blocker ?? 'Unreconciled effects' })), mergeEvidenceReusable: false };

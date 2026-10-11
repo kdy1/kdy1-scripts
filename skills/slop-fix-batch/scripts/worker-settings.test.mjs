@@ -39,3 +39,23 @@ test('invalid roles and CLI arguments fail without emitting usable settings', ()
     assert.ok(result.stderr.length);
   }
 });
+
+test('Claude roles use Sonnet with native Agent settings through the function and CLI', () => {
+  for (const [role, [, effort]] of Object.entries(expected)) {
+    const settings = { subagent_type: 'general-purpose', model: 'sonnet', effort };
+    assert.deepEqual(workerSettings(role, 'claude-code'), settings);
+    const result = spawnSync(process.execPath, [script, role, '--runtime', 'claude-code'], { encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(JSON.parse(result.stdout), settings);
+    assert.deepEqual(workerSettings(role, 'codex'), workerSettings(role));
+  }
+});
+
+test('invalid runtimes and incomplete options cannot silently select Codex', () => {
+  for (const runtime of ['unknown', '', null, {}, 'toString']) assert.throws(() => workerSettings('repair', runtime), /runtime/);
+  for (const args of [['repair', '--runtime'], ['repair', '--runtime', 'unknown'], ['repair', '--other', 'codex'], ['repair', '--runtime', 'claude-code', 'extra']]) {
+    const result = spawnSync(process.execPath, [script, ...args], { encoding: 'utf8' });
+    assert.equal(result.status, 1);
+    assert.equal(result.stdout, '');
+  }
+});

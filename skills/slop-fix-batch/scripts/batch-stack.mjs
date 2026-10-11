@@ -6,6 +6,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { check, version, absolute, nonempty, sha, readJson, save, cli } from './helper-common.mjs';
 import { validateLedger, submitLedger } from './batch-ledger.mjs';
 import { verifyPublication } from './verify-publication.mjs';
+import { ledgerRuntime } from './runtime.mjs';
 import { requestStatus, control } from './github-request.mjs';
 
 export function runCommand(file, args, cwd) {
@@ -23,9 +24,9 @@ function context(input) {
   nonempty(a.coordinationId, 'coordination id'); nonempty(a.stackOwner, 'stable stack build owner'); nonempty(a.branch, 'assigned layer branch');
   return { ledger, g, a, s };
 }
-function preparedPrefix(s) {
+function preparedPrefix(s, runtime) {
   const p = s.publicationAttempt?.preparedPrefix;
-  check(p && verifyPublication(p).complete && p.expected.stackId === s.id && p.expected.layers.length === s.layers.length, 'Verify matching prepared PRs and attachments before submit');
+  check(p && verifyPublication(p, runtime).complete && p.expected.stackId === s.id && p.expected.layers.length === s.layers.length, 'Verify matching prepared PRs and runtime attachment status before submit');
   s.layers.forEach((l, i) => {
     check(p.expected.layers[i].headSha === l.headSha && p.expected.layers[i].groupId === l.groupId, 'Prepared prefix differs from integration');
     if (l.publication) check(isDeepStrictEqual(p.expected.layers[i], l.publication.layer), 'Prepared prefix changes existing publication');
@@ -45,7 +46,7 @@ function clean(a, run) {
   check(run('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], a.worktree) === a.coordinationRoot, 'Different Git common-directory root');
   check(!run('git', ['status', '--porcelain'], a.worktree), 'Integration checkout must be clean');
 }
-export function stepCommands(kind, a, s) {
+export function stepCommands(kind, a, s, runtime = 'codex') {
   switch (kind) {
     case 'init': check(s.layers.length === 0, 'Init only first layer'); nonempty(a.baseRef, 'pinned base ref'); return [['gh', ['stack', 'init', '--base', a.baseRef, a.branch]]];
     case 'add': check(s.layers.length && s.layers.at(-1).publication?.complete, 'Verify prior prefix before add'); return [['gh', ['stack', 'add', a.branch]]];
@@ -54,7 +55,7 @@ export function stepCommands(kind, a, s) {
       a.commits.forEach(sha); sha(a.workerStartSha);
       check(a.checks?.length && a.checks.every(c => c.status === 'passed' && c.sha === a.commits.at(-1) && c.command), 'Worker checks must cover final returned commit');
       return [['git', ['cherry-pick', ...a.commits]]];
-    case 'submit': preparedPrefix(s); return [['gh', ['stack', 'submit', '--auto', '--open', '--remote', a.remote]]];
+    case 'submit': preparedPrefix(s, runtime); return [['gh', ['stack', 'submit', '--auto', '--open', '--remote', a.remote]]];
     case 'detach': check(s.layers.length === s.groups.length && s.layers.every(l => l.publication?.complete), 'Complete verified stack required before detach'); return [['git', ['switch', '--detach', s.layers.at(-1).headSha]]];
     default: throw new Error('Unsupported stack step');
   }
@@ -79,7 +80,7 @@ export function runStep(input, { run = runCommand } = {}) {
   }
   if (kind === 'integrate') {
     check(run('git', ['branch', '--show-current'], a.worktree) === a.branch, 'Integration requires assigned layer branch');
-    const commands = stepCommands(kind, a, s); // validates handoff before any mutation
+    const commands = stepCommands(kind, a, s, ledgerRuntime(ledger)); // validates handoff before any mutation
     check(isDeepStrictEqual(run('git', ['rev-list', '--reverse', `${a.workerStartSha}..${a.commits.at(-1)}`], a.worktree).split('\n'), a.commits), 'Commit range includes missing or unrelated commits');
     for (const id of ledger.groups[a.groupId].requires) check(s.layers.some(l => l.groupId === id), 'Missing integrated prerequisite');
     run('git', ['merge-base', '--is-ancestor', a.workerStartSha, tip], a.worktree);
@@ -90,8 +91,8 @@ export function runStep(input, { run = runCommand } = {}) {
     check(!run('git', ['branch', '--show-current'], a.worktree), 'Detach before ready');
     check(isDeepStrictEqual(registered.layers.map(l => l.pr), s.layers.map(l => l.url)), 'Registration differs from published prefix');
   }
-  if (kind === 'submit') { nonempty(a.remote, 'verified push remote'); check(run('git', ['branch', '--show-current'], a.worktree) === preparedPrefix(s).expected.layers.at(-1).headBranch, 'Submit requires verified tip branch'); }
-  if (!['register', 'ready'].includes(kind)) stepCommands(kind, a, s);
+  if (kind === 'submit') { nonempty(a.remote, 'verified push remote'); check(run('git', ['branch', '--show-current'], a.worktree) === preparedPrefix(s, ledgerRuntime(ledger)).expected.layers.at(-1).headBranch, 'Submit requires verified tip branch'); }
+  if (!['register', 'ready'].includes(kind)) stepCommands(kind, a, s, ledgerRuntime(ledger));
   // Even CLI network work consults all known resource cooldowns and pending shared writes.
   const network = ['init', 'add', 'submit'].includes(kind);
   if (network) {
@@ -123,7 +124,7 @@ export function runStep(input, { run = runCommand } = {}) {
       output = run(process.execPath, [a.coordinationHelper, 'register', '--file', file, '--owner', a.stackOwner, ...(registered ? ['--token', registered.lock.token] : [])], a.worktree);
     } else if (kind === 'ready') output = run(process.execPath, [a.coordinationHelper, 'ready', '--stack', a.coordinationId, '--owner', a.stackOwner, '--token', registered.lock.token], a.worktree);
     else {
-      const commands = stepCommands(kind, a, s);
+      const commands = stepCommands(kind, a, s, ledgerRuntime(ledger));
       output = commands.map(([file, args]) => run(file, args, a.worktree)).join('\n');
     }
     const headSha = run('git', ['rev-parse', 'HEAD'], a.worktree);

@@ -6,7 +6,8 @@ import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { request, control } from './github-request.mjs';
 import { canonicalIssues, collectIssues } from './collect-issues.mjs';
-import { initialize, validateLedger, applyEvent, updateLedger, schedulingSnapshot } from './batch-ledger.mjs';
+import { initialize, validateLedger, applyEvent, updateLedger, schedulingSnapshot, resumeSummary } from './batch-ledger.mjs';
+import { stepCommands } from './batch-stack.mjs';
 import { verifyPublication } from './verify-publication.mjs';
 import { checkpoint, emptyCheckpoints, checkpointPlan } from './batch-checkpoints.mjs';
 import { renderHandoff, renderReport } from './render-handoff.mjs';
@@ -22,7 +23,7 @@ const stack = { id: 's', phase: 'building', groups: ['g'], layers: [], baseSha: 
 const layer = { groupId: 'g', requirementsSatisfied: true, headSha: head, workerSha: sha, checks: [{ command: 'node --test', status: 'passed', sha }], integrationChanged: false, realWorldValidation: 'not-performed' };
 function event(ledger, type, fields = {}) { return { id: `e${ledger.revision}`, expectedRevision: ledger.revision, at: '2026-10-11T00:00:00Z', type, ...fields }; }
 function apply(ledger, type, fields) { return applyEvent(ledger, event(ledger, type, fields), 'root'); }
-function building() { let l = apply(init(), 'groups', { groups: [group] }); return apply(l, 'stack', { value: stack }); }
+function building(runtime = 'codex') { const initial = init(); initial.context.runtime = runtime; let l = apply(initial, 'groups', { groups: [group] }); return apply(l, 'stack', { value: stack }); }
 function publication() {
   const l = { groupId: 'g', url: 'https://github.com/o/r/pull/2', headRepository: 'github.com/o/r', headBranch: 'kdy1/fix', baseBranch: 'main', headSha: head, baseSha: sha, title: 'Fix behavior', body: `Fix behavior\n\nCloses ${issue.url}`, closes: [issue.url] };
   return { version: 1, expected: { stackId: 's', baseBranch: 'main', layers: [l] }, observed: { complete: true, attachmentComplete: true, stackId: 's', layers: [{ ...l, state: 'OPEN', isDraft: false }], attachments: [l.url] } };
@@ -312,3 +313,79 @@ test('concurrent shared requests return busy immediately instead of duplicating 
   finally { finish(); }
   assert.equal((await a).complete, true);
 }));
+
+function claudePublication() {
+  const p = publication();
+  p.runtime = 'claude-code';
+  p.observed.attachmentStatus = 'not-applicable';
+  p.observed.attachments = [];
+  delete p.observed.attachmentComplete;
+  return p;
+}
+test('runtime is recorded on initialization and old ledgers resume as Codex', () => {
+  const l = init();
+  assert.equal(l.context.runtime, 'codex');
+  delete l.context.runtime;
+  assert.equal(resumeSummary(l).runtime, 'codex');
+  for (const runtime of [null, '', 'unknown', {}]) {
+    l.context.runtime = runtime;
+    assert.throws(() => validateLedger(l), /runtime/);
+  }
+  assert.equal(resumeSummary(building('claude-code')).runtime, 'claude-code');
+});
+test('Claude publication records attachment as not applicable while preserving remote gates', () => {
+  const p = claudePublication();
+  assert.equal(verifyPublication(p).complete, true);
+  for (const change of [
+    p => delete p.observed.attachmentStatus,
+    p => p.observed.attachmentComplete = true,
+    p => p.observed.attachments = [p.expected.layers[0].url],
+    p => p.observed.complete = false,
+    p => p.observed.layers[0].headSha = sha,
+    p => p.observed.layers[0].baseSha = head,
+    p => p.observed.layers[0].body = 'Wrong content',
+    p => p.observed.layers.push(p.observed.layers[0]),
+  ]) {
+    const bad = claudePublication(); change(bad);
+    assert.equal(verifyPublication(bad).complete, false);
+  }
+  let l = apply(building('claude-code'), 'layer', { stackId: 's', value: layer });
+  l = apply(l, 'publication', { stackId: 's', verification: p });
+  assert.equal(l.stacks.s.layers[0].publication.runtime, 'claude-code');
+  assert.equal(l.stacks.s.layers[0].publication.attachmentStatus, 'not-applicable');
+  assert.match(renderReport(l), /PR chat attachment: not-applicable/);
+});
+test('publication and staged submission cannot bypass the ledger runtime', () => {
+  for (const runtime of ['codex', 'claude-code']) {
+    const l = apply(building(runtime), 'layer', { stackId: 's', value: layer });
+    const wrong = runtime === 'codex' ? claudePublication() : publication();
+    assert.throws(() => apply(l, 'publication', { stackId: 's', verification: wrong }), /Runtime differs/);
+    assert.throws(() => apply(l, 'publication-attempt', { stackId: 's', value: { id: 'p', preparedPrefix: wrong } }), /Runtime differs/);
+    const staged = { ...l.stacks.s, publicationAttempt: { preparedPrefix: wrong } };
+    assert.throws(() => stepCommands('submit', { remote: 'origin' }, staged, runtime), /Runtime differs/);
+    const correct = runtime === 'codex' ? publication() : claudePublication();
+    staged.publicationAttempt.preparedPrefix = correct;
+    assert.deepEqual(stepCommands('submit', { remote: 'origin' }, staged, runtime), [['gh', ['stack', 'submit', '--auto', '--open', '--remote', 'origin']]]);
+    const published = apply(l, 'publication', { stackId: 's', verification: correct });
+    published.context.runtime = runtime === 'codex' ? 'claude-code' : 'codex';
+    assert.throws(() => validateLedger(published), /Runtime differs/);
+  }
+});
+test('Claude prepare and START retain the same worker, checkout and SHA checks', () => {
+  let l = building('claude-code');
+  const recorded = { id: 'a', taskId: 'implement', lane: 'implementation', stackId: 's', status: 'reserved', slots: 1, worker: 'claude-child', worktree: '/tmp/worker', startSha: sha };
+  l = apply(l, 'assignment', { value: recorded });
+  const a = { ...assignment(), assignmentId: 'a', worker: 'claude-child', stackId: 's', groupId: 'g', acceptance: 'Fix behavior', integrationWorktree: '/tmp/stack', dependencyEvidence: 'No prerequisites', startSha: sha, branch: 'kdy1/worker', prerequisiteChecks: 'Independent base revalidated', checkCommands: ['node --test'], repositoryCheckCommands: [], requiredExecutionTimes: 'none' };
+  const i = { version: 1, mode: 'execution', role: 'implementation', phase: 'prepare', ledger: l, assignment: a };
+  const prepared = renderHandoff(i);
+  assert.match(prepared, /Pass these fields to Agent/);
+  assert.doesNotMatch(prepared, /collaboration\.spawn_agent|fork_turns|reasoning_effort/);
+  assert.deepEqual(JSON.parse(prepared.match(/```json\n([\s\S]*?)\n```/)[1]), workerSettings('implementation', 'claude-code'));
+  assert.match(renderHandoff({ ...i, phase: 'start' }), /START only/);
+  assert.throws(() => renderHandoff({ ...i, runtime: 'codex' }), /Runtime differs/);
+  assert.throws(() => renderHandoff({ ...i, runtime: 'unknown' }), /runtime/);
+  for (const change of [{ worker: 'wrong' }, { checkout: '/tmp/wrong' }, { startSha: head }]) {
+    assert.throws(() => renderHandoff({ ...i, phase: 'start', assignment: { ...a, ...change } }), /identity|checkout|SHA differs/);
+  }
+  assert.throws(() => renderHandoff({ ...i, mode: 'plan' }), /Plan Mode/);
+});

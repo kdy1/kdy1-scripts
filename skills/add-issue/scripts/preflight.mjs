@@ -61,10 +61,10 @@ export function preflight(p, c, client, context, state = {}) {
     const receipts = new Set(Object.values(state.ops ?? {}).filter(op => op.status === 'verified').map(op => op.receipt));
     if (comments && !same(comments.filter(x => !receipts.has(x.url)), c.duplicate.comments)) errors.push('Duplicate thread changed; coordinator semantic review required');
   }
-  if (c.source) {
-    const source = attempt('source', () => client.source(c.source));
+  for (const retained of c.source ? [c.source,...c.source.relatedSources ?? []] : []) {
+    const source = attempt('source', () => client.source(retained));
     if (source?.resolved === true) skips.push('Source thread is now resolved');
-    if (!source || source.head !== c.source.head || source.threadHead !== c.source.head || source.merged !== true || source.threadMerged !== true) errors.push('Source PR revision or merged state changed/unverifiable');
+    if (!source || source.head !== retained.head || source.threadHead !== retained.head || source.merged !== true || source.threadMerged !== true) errors.push('Source PR revision or merged state changed/unverifiable');
   }
   const duplicates = attempt('duplicates', () => client.duplicates(c.duplicate.query, c.duplicate.limit));
   if (duplicates && !same(duplicates.filter(x => !(c.action === 'new issue' && state.ops?.create?.status === 'verified' && x.url === state.issueUrl)), c.duplicate.issues)) errors.push('Duplicate observations changed; coordinator semantic review required');

@@ -296,3 +296,41 @@ test('CLI uploads immutable approved bytes and removes only its private copies',
   }});
   assert.equal(record(input(s),{client}).status,'verified');assert.throws(()=>readFileSync(copiedPath),/ENOENT/);assert.equal(readFileSync(image.path,'utf8'),'Concurrent edit');
 });
+
+test('Collect Review supports explicit null thread/review revision while preserving PR preflight',t=>{
+  const s=setup(t),gh=new FakeGh();
+  s.c.classification='Bug'; s.c.revision=gh.pr.head.sha;
+  Object.assign(s.c.authorization,{kind:'collect-review',runId:'review-run',delegation:'Collect Review coordinator',scope:'Merged PR 5'});
+  s.c.source={number:5,url:gh.pr.html_url,head:s.c.revision,merged:true,resolved:null,threadId:null,threadUrl:null,reviewRevision:null,reviewEvidence:'Review body without a thread; original review SHA unavailable',authorship:'API Bot identity'};
+  assert.equal(validatePayload(s.payload).complete,true);
+  const observations=gh.client().source(s.c.source); assert.equal(observations.resolved,null);
+  assert.equal(gh.calls.some(x=>x.args.includes('graphql')),false);
+  assert.equal(preflight(s.payload,s.c,gh.client(),s.context).complete,true);
+  gh.pr.head.sha='b'.repeat(40); assert.equal(preflight(s.payload,s.c,gh.client(),s.context).complete,false);
+  gh.pr.head.sha=s.c.revision; gh.pr.merged=false; assert.equal(preflight(s.payload,s.c,gh.client(),s.context).complete,false);
+  gh.pr.merged=true;
+  delete s.c.source.reviewRevision; assert.throws(()=>validatePayload(s.payload),/review revision/); s.c.source.reviewRevision=null;
+  delete s.c.source.threadId; assert.throws(()=>validatePayload(s.payload),/threadId/); s.c.source.threadId=null;
+  s.c.source.resolved=false; assert.throws(()=>validatePayload(s.payload),/explicit null/);
+});
+test('Collect Review thread-backed source still requires unresolved boolean and exact source target',t=>{
+  const s=setup(t),gh=new FakeGh(); s.c.classification='Bug';s.c.revision=gh.pr.head.sha;
+  Object.assign(s.c.authorization,{kind:'collect-review',runId:'review-run',delegation:'coordinator',scope:'PR 5'});
+  s.c.source={number:5,url:gh.pr.html_url,head:s.c.revision,merged:true,resolved:false,threadId:'thread',threadUrl:gh.pr.html_url+'#discussion_r1',reviewRevision:null,reviewEvidence:'Source review',authorship:'API identity'};
+  assert.equal(validatePayload(s.payload).complete,true);
+  s.c.source.resolved=true;assert.throws(()=>validatePayload(s.payload),/not eligible/);
+  s.c.source.resolved=false;s.c.source.url='https://elsewhere.test/owner/repo/pull/5';assert.throws(()=>validatePayload(s.payload),/target mismatch/);
+  s.c.source.url=gh.pr.html_url;delete gh.thread.isResolved;assert.throws(()=>gh.client().source(s.c.source),/target mismatch/);
+});
+
+test('Collect Review recording preflight enforces every related source without changing investigation revision',t=>{
+  const s=setup(t),gh=new FakeGh();s.c.classification='Bug';s.c.revision=gh.pr.head.sha;
+  Object.assign(s.c.authorization,{kind:'collect-review',runId:'review-run',delegation:'coordinator',scope:'Merged PRs'});
+  const source={number:5,url:gh.pr.html_url,head:s.c.revision,merged:true,resolved:null,threadId:null,threadUrl:null,reviewRevision:null,reviewEvidence:'Confirmed retained revision and outcome applicability',authorship:'API Bot identity'};
+  s.c.source={...source,relatedSources:[{...source,threadId:'thread',threadUrl:gh.pr.html_url+'#discussion_r1',resolved:false}]};
+  assert.equal(validatePayload(s.payload).complete,true);
+  assert.equal(preflight(s.payload,s.c,gh.client(),s.context).complete,true);
+  gh.thread.isResolved=true;assert.equal(preflight(s.payload,s.c,gh.client(),s.context).skip,true);
+  gh.thread.isResolved=false;gh.thread.pullRequest.headRefOid='b'.repeat(40);assert.equal(preflight(s.payload,s.c,gh.client(),s.context).complete,false);
+  s.c.source.relatedSources[0].relatedSources=[];assert.throws(()=>validatePayload(s.payload),/Nested/);
+});

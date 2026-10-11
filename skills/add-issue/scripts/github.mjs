@@ -62,8 +62,10 @@ export class GitHub {
   comments(url) { return this.list(`${this.prefix}/issues/${issueNumber(url, this.target)}/comments`).map(x => ({ id: x.id, url: x.html_url, body: x.body ?? '', author: x.user?.login })); }
   source(source) {
     const pr = this.api(`${this.prefix}/pulls/${source.number}`);
+    check(pr.html_url === source.url, 'Source PR target mismatch');
+    if (source.threadId === null) return { head: pr.head.sha, merged: pr.merged === true, resolved: null, threadHead: pr.head.sha, threadMerged: pr.merged === true };
     const thread = this.graphql('query($id:ID!){ node(id:$id) { ... on PullRequestReviewThread { id isResolved pullRequest { url headRefOid merged } } } }', { id: source.threadId }).node;
-    check(thread?.pullRequest?.url === source.url && pr.html_url === source.url, 'Source thread/PR target mismatch');
+    check(thread?.pullRequest?.url === source.url && typeof thread.isResolved === 'boolean', 'Source thread/PR target mismatch');
     return { head: pr.head.sha, merged: pr.merged === true, resolved: thread.isResolved, threadHead: thread.pullRequest.headRefOid, threadMerged: thread.pullRequest.merged };
   }
   project(projectId) {

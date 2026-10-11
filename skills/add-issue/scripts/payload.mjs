@@ -121,11 +121,29 @@ export function validatePayload(p) {
     check(c.allowedActions.every(action => allowed.has(action)), 'Unknown permitted action');
     if (c.authorization.kind === 'collect-review') {
       check(c.source?.head === c.revision && Number.isInteger(c.source.number) && c.source.number > 0, 'Missing source PR revision');
-      for (const key of ['url','reviewEvidence','authorship','reviewRevision','threadId','threadUrl']) text(c.source[key], `source ${key}`);
-      check(c.source.merged === true && c.source.resolved === false, 'Source PR/thread not eligible');
+      validateReviewSource(c.source, p.target);
+      check(c.source.relatedSources === undefined || Array.isArray(c.source.relatedSources), 'Invalid related source preconditions');
+      for (const source of c.source.relatedSources ?? []) {
+        check(source.relatedSources === undefined, 'Nested related sources not permitted');
+        validateReviewSource(source,p.target);
+      }
     }
   }
   return result('verified', [], { payloadHash: hash(p) });
+}
+export function validateReviewSource(source, t) {
+  check(Number.isInteger(source.number) && source.number > 0 && /^[a-f\d]{40,64}$/i.test(source.head ?? ''), 'Missing source PR revision');
+  for (const key of ['url','reviewEvidence','authorship']) text(source[key], `source ${key}`);
+  const sourceUrl = new URL(source.url);
+  check(sourceUrl.href === `https://${t.host}/${t.repo}/pull/${source.number}`, 'Source PR target mismatch');
+  check(source.reviewRevision === null || /^[a-f\d]{40,64}$/i.test(source.reviewRevision ?? ''), 'Invalid source review revision');
+  if (source.threadId === null) {
+    check(source.threadUrl === null && source.resolved === null, 'Threadless source must use explicit null thread fields');
+  } else {
+    text(source.threadId, 'source threadId'); text(source.threadUrl, 'source threadUrl');
+    check(source.resolved === false, 'Source thread not eligible');
+  }
+  check(source.merged === true, 'Source PR not eligible');
 }
 export function executionGate(p, context) {
   const errors = [];

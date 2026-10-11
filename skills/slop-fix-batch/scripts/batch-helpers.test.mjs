@@ -268,13 +268,29 @@ test('implementation and publication START validate actual worker, separate/froz
   assert.match(text, /Read-only preparation/); assert.ok(text.includes(sha)); assert.ok(text.includes(head));
 });
 test('coordinator maintenance handoff consumes no child slot and preserves conditional gates', () => {
-  const l = ready(); const a = { ...assignment(), worker: 'root', batchSkill: '/skills/slop-fix-batch/SKILL.md', batchReference: '/skills/slop-fix-batch/references/batch-maintenance.md', coordinationRoot: '/repo/.git/coordination', capacityAccounting: 'one free slot' };
+  const l = apply(ready(), 'maintenance', { value: { mode: 'batch', management: 'direct', state: 'active' } }); const a = { ...assignment(), worker: 'root', batchSkill: '/skills/slop-fix-batch/SKILL.md', batchReference: '/skills/slop-fix-batch/references/batch-maintenance.md', coordinationRoot: '/repo/.git/coordination', capacityAccounting: 'one free slot' };
   assert.match(renderHandoff({ version: 1, mode: 'execution', role: 'maintenance', phase: 'start', ledger: l, assignment: a }), /fresh review\/CI\/membership gates/);
   assert.deepEqual(l.assignments, {});
   assert.throws(() => renderHandoff({ version: 1, mode: 'plan', role: 'maintenance', phase: 'start', ledger: l, assignment: a }), /Plan Mode permits read-only assignments only/);
   assert.throws(() => renderHandoff({ version: 1, mode: 'execution', role: 'maintenance', phase: 'start', ledger: building(), assignment: a }), /coordinator identity and ready handoff/);
   assert.throws(() => renderHandoff({ version: 1, mode: 'execution', role: 'maintenance', phase: 'start', ledger: l, assignment: { ...a, worker: 'child' } }), /coordinator identity and ready handoff/);
   assert.throws(() => renderHandoff({ version: 1, mode: 'execution', role: 'maintenance', phase: 'start', ledger: l, assignment: { ...a, batchSkill: undefined } }), /absolute path/);
+});
+
+test('direct maintenance needs no automation identity and preserves checkpoint completion gates', () => {
+  let l = apply(ready(), 'maintenance', { value: { mode: 'batch', management: 'direct', state: 'active', authorization: 'Fix selected issues' } });
+  assert.equal(l.maintenance.automationId, undefined);
+  assert.equal(validateLedger(l).maintenance.management, 'direct');
+  l = apply(l, 'implementation-ended');
+  assert.equal(checkpointPlan(l, 1000).stop, false);
+  const url = l.stacks.s.layers[0].url;
+  l = apply(l, 'checkpoint', { value: { type: 'start', passId: 'terminal', at: 1000, prs: [url] } });
+  l = apply(l, 'checkpoint', { value: { type: 'finish', passId: 'terminal', at: 2000,
+    inventory: { complete: true, prs: [{ url, readComplete: true, state: 'MERGED', headSha: head, baseSha: sha, readAt: 1500 }] } } });
+  assert.equal(checkpointPlan(l, 2000).stop, true);
+  l = apply(l, 'maintenance', { value: { ...l.maintenance, state: 'completed' } });
+  assert.equal(l.maintenance.state, 'completed');
+  assert.equal(l.maintenance.automationId, undefined);
 });
 
 test('finished ledger assignments cannot leave stale active slots in scheduler snapshots', () => {

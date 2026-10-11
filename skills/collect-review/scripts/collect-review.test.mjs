@@ -5,13 +5,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { initialize, dispatch, main } from './collect-review.mjs';
 import { GitHub, authorship, resolveScope } from './github.mjs';
+import { summaryMarker } from './summary.mjs';
 const target = {host:'github.com',repo:'owner/repo'}, head = 'a'.repeat(40);
 const bot = {login:'chatgpt-codex-connector[bot]',type:'Bot',id:123};
 const pr = {number:1,url:'https://github.com/owner/repo/pull/1',head,merged:true,nodeId:'PR1'};
 const comment = id => ({id,databaseId:id==='C1'?1:2,url:`${pr.url}#discussion_r${id==='C1'?1:2}`,body:'Reported behavior',author:{__typename:'Bot',login:'chatgpt-codex-connector',id:'BOT'},originalCommit:{oid:head},path:'src.js',line:2});
 const thread = () => ({id:'T1',pullRequest:{url:pr.url},isResolved:false,isOutdated:true,viewerCanResolve:true,comments:{nodes:[comment('C1')],pageInfo:{hasNextPage:false,endCursor:null}}});
 class Fake {
-  constructor() { this.target=target; this.prefix='repos/owner/repo'; this.current={...pr}; this.t=thread(); this.writes=0; }
+  constructor() { this.target=target; this.prefix='repos/owner/repo'; this.current={...pr}; this.t=thread(); this.writes=0; this.summaryComments=[]; this.commentWrites=[]; }
   identity() { return this.account ?? 'tester'; }
   repository() { return {full_name:target.repo}; }
   merged() { return [1,2]; }
@@ -25,18 +26,33 @@ class Fake {
   threads() { return [structuredClone(this.t)]; }
   thread(id,p) { assert.equal(id,'T1'); assert.equal(p.url,pr.url); if(this.failThread) throw Error('No state'); return structuredClone(this.t); }
   resolve(id) { assert.equal(id,'T1'); this.writes++; if(!this.noEffect) this.t.isResolved=true; if(this.loseResponse) throw Error('Lost response'); return {id,isResolved:true}; }
+  prComments(number) {
+    assert.equal(number,1);
+    if(this.failSummaryRead || this.failSummaryReadback && this.commentWrites.length) throw Error('Comment read unavailable');
+    return structuredClone(this.summaryComments);
+  }
+  writePrComment(number,body,id) {
+    assert.equal(number,1);this.commentWrites.push({number,body,id});
+    if(this.summaryDefiniteFailure) { const e=Error('Comment write forbidden');e.definite=true;throw e; }
+    const value={id:id ?? 100,url:`${pr.url}#issuecomment-${id ?? 100}`,body,author:'tester'};
+    if(!this.summaryNoEffect) {
+      if(id) Object.assign(this.summaryComments.find(c=>c.id===id),value); else this.summaryComments.push(value);
+    }
+    if(this.summaryLoseResponse) throw Error('Lost comment response');
+    return structuredClone(value);
+  }
 }
-const context={mode:'default',trustedAuthorization:true,resolutionAuthorized:true,evidence:'Human authorized run in trusted session'};
+const context={mode:'default',trustedAuthorization:true,resolutionAuthorized:true,summaryAuthorized:true,evidence:'Human authorized run in trusted session'};
 function setup() {
   const gh = new Fake();
   const s = initialize({version:1,target,scope:[1,2],draftOnly:false,authorization:{request:'Collect reviews',origin:'human chat',trusted:true}},gh);
   dispatch('collect',s,{number:1},gh);
   return {s,gh};
 }
-function ready(s,gh,id='bug',key='1/comment/C1') {
+function ready(s,gh,id='bug',key='1/comment/C1',issue=9,action='existing issue') {
   dispatch('candidate',s,{candidateId:id,sourceKeys:[key],judgment:'Root cause and behavior',partitionEvidence:'Independent behavior'},gh);
   dispatch('handoff',s,{candidateId:id,sourceKey:key,evidence:'Support, contradictions and missing evidence',mode:'default'},gh);
-  dispatch('outcome',s,{candidateId:id,action:'existing issue',verified:true,issueUrl:'https://github.com/owner/repo/issues/9',evidence:'Verified Add Issue result',confirmedSourceKeys:[key]},gh);
+  dispatch('outcome',s,{candidateId:id,action,verified:true,issueUrl:`https://github.com/owner/repo/issues/${issue}`,evidence:'Verified Add Issue result',confirmedSourceKeys:[key]},gh);
 }
 function assess(s,gh,ids=['bug']) { dispatch('assess',s,{number:1,threadId:'T1',items:ids.map(candidateId=>({commentId:'C1',candidateId})),evidence:'Every finding and reply classified'},gh); }
 const resolveInput = {number:1,threadId:'T1',context};
@@ -225,4 +241,173 @@ test('source exclusions distinguish classified reviews without Bugs from unproce
   assert.throws(()=>dispatch('candidate',s,{candidateId:'bug',sourceKeys:['1/comment/C1'],judgment:'Bug'},gh),/excluded/);
   s.prs[0].collection.sources[0].body='New finding';
   assert.equal(dispatch('report',s,{},gh).summaries[0].status,'sources-awaiting-classification');
+});
+
+const summaryInput={number:1,context};
+test('PR summary groups body and inline sources, deduplicates issues and skips unchanged writes',()=>{
+  const {s,gh}=setup();ready(s,gh);ready(s,gh,'body','1/review/R1');
+  ready(s,gh,'another','1/comment/C1',10,'new issue');
+  gh.t.isResolved=true; // Summary remains independent of completed thread resolution.
+  const saved=[];
+  const value=dispatch('summary',s,summaryInput,gh,()=>saved.push(structuredClone(s)));
+  assert.equal(value.status,'verified');assert.equal(gh.commentWrites.length,1);assert.equal(gh.summaryComments.length,1);
+  assert.equal(saved[0].trackingSummaries[1].status,'uncertain');assert.equal(saved[0].trackingSummaries[1].attempts[0].body,value.summary.body);
+  assert.equal(value.summary.body.split('Tracked at https://github.com/owner/repo/issues/9').length,2);
+  assert.deepEqual(value.summary.entries.find(x=>x.issueUrl.endsWith('/9')).sourceUrls,
+    [`${pr.url}#discussion_r1`,`${pr.url}#pullrequestreview-1`]);
+  assert.equal(value.summary.commentUrl,`${pr.url}#issuecomment-100`);
+  assert.equal(dispatch('summary',s,summaryInput,gh).summary.unchanged,true);assert.equal(gh.commentWrites.length,1);
+  assert.equal(dispatch('report',s,{},gh).trackingComments[1].commentUrl,value.summary.commentUrl);
+  assert.equal(dispatch('report',s,{},gh).summaries[0].trackingComment.status,'verified');
+});
+test('later runs merge new issues into the same PR comment and preserve earlier entries',()=>{
+  const {s,gh}=setup();ready(s,gh);dispatch('summary',s,summaryInput,gh);
+  const fresh=initialize({version:1,target,scope:[1],draftOnly:false,authorization:s.authorization},gh);
+  dispatch('collect',fresh,{number:1},gh);ready(fresh,gh,'body','1/review/R1',10,'metadata update');
+  const value=dispatch('summary',fresh,summaryInput,gh);
+  assert.equal(value.status,'verified');assert.equal(gh.summaryComments.length,1);assert.equal(gh.commentWrites[1].id,100);
+  assert.deepEqual(value.summary.entries.map(x=>x.issueUrl).sort(),['https://github.com/owner/repo/issues/10','https://github.com/owner/repo/issues/9']);
+  assert.equal(dispatch('summary',fresh,summaryInput,gh).summary.unchanged,true);assert.equal(gh.commentWrites.length,2);
+  assert.equal(fresh.candidates[0].handoffs.length,1);
+});
+test('new source confirmation adds its review link while unconfirmed repeats are omitted',()=>{
+  const {s,gh}=setup();ready(s,gh);dispatch('summary',s,summaryInput,gh);
+  dispatch('candidate',s,{candidateId:'bug',sourceKeys:['1/review/R1']},gh);
+  assert.equal(dispatch('summary',s,summaryInput,gh).summary.entries[0].sourceUrls.length,1);
+  dispatch('outcome',s,{candidateId:'bug',action:'existing issue',verified:true,issueUrl:'https://github.com/owner/repo/issues/9',
+    evidence:'Confirmed body applicability',confirmedSourceKeys:['1/comment/C1','1/review/R1']},gh);
+  assert.equal(dispatch('summary',s,summaryInput,gh).summary.entries[0].sourceUrls.length,2);
+  assert.equal(gh.summaryComments.length,1);assert.equal(gh.commentWrites.length,2);
+});
+test('summary only includes the selected PR sources and verified successful outcomes',()=>{
+  for(const action of ['prepared','fixed','unconfirmed','failed']) {
+    const {s,gh}=setup();dispatch('candidate',s,{candidateId:'bug',sourceKeys:['1/comment/C1'],judgment:'Bug'},gh);
+    dispatch('outcome',s,{candidateId:'bug',action,payload:action==='prepared'?{exact:'payload'}:undefined,evidence:'Not recorded'},gh);
+    assert.equal(dispatch('summary',s,summaryInput,gh).summary.status,'skipped');assert.equal(gh.commentWrites.length,0);
+  }
+  const {s,gh}=setup();ready(s,gh);s.candidates[0].outcome.verified=false;
+  assert.equal(dispatch('summary',s,summaryInput,gh).summary.status,'skipped');
+  s.candidates[0].outcome.verified=true;s.candidates[0].sources[0].number=3;
+  assert.equal(dispatch('summary',s,summaryInput,gh).summary.status,'skipped');assert.equal(gh.commentWrites.length,0);
+  assert.throws(()=>dispatch('summary',s,{number:3,context},gh),/outside snapshot/);
+});
+test('plan and original draft/diagnosis restrictions retain a preview without posting',()=>{
+  for(const restriction of ['plan','draft','restricted-draft','diagnosis']) {
+    const {s,gh}=setup();ready(s,gh);const input=structuredClone(summaryInput);
+    if(restriction==='plan') input.context.mode='plan';
+    if(restriction==='draft') s.draftOnly=true;
+    if(restriction==='restricted-draft') s.restrictions.draftOnly=true;
+    if(restriction==='diagnosis') s.restrictions.diagnosisOnly=true;
+    const value=dispatch('summary',s,input,gh);
+    assert.equal(value.status,'prepared');assert.ok(value.summary.body.includes('Tracked at '));assert.equal(gh.commentWrites.length,0);
+    if(restriction==='plan') {
+      assert.equal(dispatch('summary',s,summaryInput,gh).status,'verified');assert.equal(gh.commentWrites.length,1);
+    }
+  }
+});
+test('current summary authorization and retained account are required for writes',()=>{
+  for(const restriction of ['run-untrusted','context-untrusted','not-authorized','account']) {
+    const {s,gh}=setup();ready(s,gh);const input=structuredClone(summaryInput);
+    if(restriction==='run-untrusted') s.authorization.trusted=false;
+    if(restriction==='context-untrusted') input.context.trustedAuthorization=false;
+    if(restriction==='not-authorized') input.context.summaryAuthorized=false;
+    if(restriction==='account') {
+      gh.account='someone-else';assert.equal(dispatch('summary',s,input,gh).status,'blocked');
+    } else assert.throws(()=>dispatch('summary',s,input,gh),/authorization/);
+    assert.equal(gh.commentWrites.length,0);
+  }
+});
+test('lost create and update responses are verified by readback without duplicate comments',()=>{
+  const {s,gh}=setup();ready(s,gh);gh.summaryLoseResponse=true;
+  assert.equal(dispatch('summary',s,summaryInput,gh).status,'verified');
+  ready(s,gh,'body','1/review/R1',10,'duplicate comment');
+  assert.equal(dispatch('summary',s,summaryInput,gh).status,'verified');assert.equal(gh.summaryComments.length,1);
+  assert.equal(dispatch('reconcile-summary',s,{number:1},gh).status,'verified');assert.equal(gh.commentWrites.length,2);
+});
+test('unavailable readback is reconciled later using reads, even with new outcomes or changed head',()=>{
+  const {s,gh}=setup();ready(s,gh);gh.summaryLoseResponse=true;gh.failSummaryReadback=true;
+  assert.equal(dispatch('summary',s,summaryInput,gh).status,'uncertain');assert.equal(gh.commentWrites.length,1);
+  gh.failSummaryReadback=false;gh.current.head='b'.repeat(40);
+  assert.equal(dispatch('reconcile-summary',s,{number:1},gh).status,'verified');assert.equal(gh.commentWrites.length,1);
+  gh.current.head=head;ready(s,gh,'body','1/review/R1',10);
+  assert.equal(dispatch('summary',s,summaryInput,gh).status,'verified');assert.equal(gh.commentWrites.length,2);
+});
+test('uncertain or failed summary writes are never automatically retried and do not repeat handoffs',()=>{
+  for(const definite of [false,true]) {
+    const {s,gh}=setup();ready(s,gh);gh.summaryNoEffect=true;gh.summaryLoseResponse=true;gh.summaryDefiniteFailure=definite;
+    const expected=definite?'failed':'uncertain';
+    assert.equal(dispatch('summary',s,summaryInput,gh).status,expected);
+    assert.equal(dispatch('summary',s,summaryInput,gh).status,expected);
+    assert.equal(dispatch('reconcile-summary',s,{number:1},gh).status,expected);
+    assert.equal(gh.commentWrites.length,1);assert.equal(s.candidates[0].outcome.verified,true);
+    assert.equal(dispatch('handoff',s,{candidateId:'bug'},gh).resume,'resolution-only');assert.equal(s.candidates[0].handoffs.length,1);
+    assert.equal(dispatch('report',s,{},gh).trackingComments[1].status,expected);
+  }
+});
+test('changed PR state and incomplete summary reads block posting',()=>{
+  for(const condition of ['head','unmerged','unavailable','comments']) {
+    const {s,gh}=setup();ready(s,gh);
+    if(condition==='head') gh.current.head='b'.repeat(40);
+    if(condition==='unmerged') gh.current.merged=false;
+    if(condition==='unavailable') gh.failPr=true;
+    if(condition==='comments') gh.failSummaryRead=true;
+    assert.equal(dispatch('summary',s,summaryInput,gh).status,'blocked');assert.equal(gh.commentWrites.length,0);
+    if(condition!=='comments') assert.ok(s.prs[0].blocked);
+  }
+});
+test('multiple, malformed, foreign-account, edited and missing managed comments are handled safely',()=>{
+  const {s,gh}=setup();ready(s,gh);dispatch('summary',s,summaryInput,gh);
+  const original=structuredClone(gh.summaryComments[0]);
+  gh.summaryComments.push({...original,id:101,url:`${pr.url}#issuecomment-101`});
+  assert.equal(dispatch('summary',s,summaryInput,gh).status,'blocked');assert.equal(gh.commentWrites.length,1);
+  gh.summaryComments=[{...original,body:`${summaryMarker}\n\nHuman edit`}];
+  assert.equal(dispatch('summary',s,summaryInput,gh).status,'blocked');assert.equal(gh.commentWrites.length,1);
+  gh.summaryComments=[];
+  assert.equal(dispatch('summary',s,summaryInput,gh).status,'blocked');assert.equal(gh.commentWrites.length,1);
+  const other=setup();ready(other.s,other.gh);other.gh.summaryComments=[{...original,author:'other-account'}];
+  assert.equal(dispatch('summary',other.s,summaryInput,other.gh).status,'verified');assert.equal(other.gh.commentWrites.length,1);
+});
+test('summary refuses overwriting a concurrently changed comment',()=>{
+  const {s,gh}=setup();ready(s,gh);dispatch('summary',s,summaryInput,gh);ready(s,gh,'body','1/review/R1',10);
+  let reads=0;const read=gh.prComments.bind(gh);
+  gh.prComments=number=>{if(++reads===2) gh.summaryComments[0].body+='\nEdited';return read(number);};
+  assert.equal(dispatch('summary',s,summaryInput,gh).status,'blocked');assert.equal(gh.commentWrites.length,1);
+});
+test('PR summary transport uses paginated issue-comment endpoints and validates returned targets',()=>{
+  const gh=new GitHub(target);const calls=[];
+  const raw={id:100,html_url:`${pr.url}#issuecomment-100`,body:'Exact body',user:{login:'tester'}};
+  gh.api=(endpoint,method,body)=>{calls.push({endpoint,method,body});return method?raw:[raw];};
+  assert.equal(gh.prComments(1)[0].url,raw.html_url);
+  assert.equal(gh.writePrComment(1,'Exact body').id,100);assert.equal(gh.writePrComment(1,'Exact body',100).id,100);
+  assert.deepEqual(calls,[{endpoint:'repos/owner/repo/issues/1/comments?per_page=100&page=1',method:undefined,body:undefined},
+    {endpoint:'repos/owner/repo/issues/1/comments',method:'POST',body:{body:'Exact body'}},
+    {endpoint:'repos/owner/repo/issues/comments/100',method:'PATCH',body:{body:'Exact body'}}]);
+  gh.api=()=>({...raw,html_url:'https://github.com/other/repo/pull/1#issuecomment-100'});
+  assert.throws(()=>gh.writePrComment(1,'Exact body'),/target mismatch/);
+});
+
+test('reconcile-summary verifies the prior receipt without posting a newly prepared preview',()=>{
+  const {s,gh}=setup();ready(s,gh);dispatch('summary',s,summaryInput,gh);ready(s,gh,'body','1/review/R1',10);
+  assert.equal(dispatch('summary',s,{number:1,context:{mode:'plan'}},gh).summary.entries.length,2);
+  const value=dispatch('reconcile-summary',s,{number:1},gh);
+  assert.equal(value.status,'verified');assert.equal(value.summary.entries.length,1);assert.equal(gh.commentWrites.length,1);
+  assert.equal(dispatch('summary',s,summaryInput,gh).summary.entries.length,2);assert.equal(gh.commentWrites.length,2);
+});
+test('CLI persists uncertain summary writes across restarts and recovers the receipt read-only',async t=>{
+  const {save}=await import('../../add-issue/scripts/common.mjs');
+  const {statSync}=await import('node:fs');
+  const dir=mkdtempSync(join(tmpdir(),'collect-review-summary-cli-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));
+  const statePath=join(dir,'ledger.json'),inputPath=join(dir,'input.json'),outputPath=join(dir,'output.json');
+  const {s,gh}=setup();ready(s,gh);save(statePath,s);gh.summaryLoseResponse=true;gh.failSummaryReadback=true;
+  const call=(command,fields)=>{save(inputPath,{version:1,statePath,...fields});return main([command,inputPath,outputPath],gh);};
+  assert.equal(call('summary',summaryInput).status,'uncertain');
+  const pending=JSON.parse(readFileSync(statePath,'utf8')).trackingSummaries[1];
+  assert.equal(pending.attempts[0].status,'uncertain');assert.ok(pending.attempts[0].body.includes('Tracked at '));
+  assert.equal(call('summary',summaryInput).status,'blocked');assert.equal(gh.commentWrites.length,1);
+  gh.failSummaryReadback=false;
+  assert.equal(call('reconcile-summary',{number:1}).status,'verified');assert.equal(gh.commentWrites.length,1);
+  const observed=JSON.parse(readFileSync(statePath,'utf8')).trackingSummaries[1];
+  assert.equal(observed.status,'verified');assert.equal(observed.commentUrl,`${pr.url}#issuecomment-100`);
+  assert.equal(statSync(statePath).mode & 0o777,0o600);assert.equal(statSync(outputPath).mode & 0o777,0o600);
+  const report=main(['report',inputPath],gh);assert.equal(report.trackingComments[1].status,'verified');
 });

@@ -57,6 +57,23 @@ export class GitHub extends Base {
     return this.completeThread(t, pr);
   }
   resolve(id) { return this.graphql('mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{id isResolved}}}', {id}).resolveReviewThread?.thread; }
+  prComment(raw, number) {
+    check(Number.isSafeInteger(raw?.id) && raw.id > 0 && typeof raw.body === 'string' && typeof raw.user?.login === 'string',
+      'Incomplete PR comment');
+    check(raw.html_url === `https://${this.target.host}/${this.target.repo}/pull/${number}#issuecomment-${raw.id}`,
+      'PR comment target mismatch');
+    return {id: raw.id, url: raw.html_url, body: raw.body, author: raw.user.login};
+  }
+  prComments(number) {
+    check(Number.isSafeInteger(number) && number > 0, 'Invalid PR number');
+    return this.list(`${this.prefix}/issues/${number}/comments`).map(raw => this.prComment(raw, number));
+  }
+  writePrComment(number, body, commentId = null) {
+    check(Number.isSafeInteger(number) && number > 0 && typeof body === 'string' && body.trim(), 'Invalid PR summary');
+    check(commentId === null || Number.isSafeInteger(commentId) && commentId > 0, 'Invalid PR comment ID');
+    const endpoint = commentId === null ? `${this.prefix}/issues/${number}/comments` : `${this.prefix}/issues/comments/${commentId}`;
+    return this.prComment(this.api(endpoint, commentId === null ? 'POST' : 'PATCH', {body}), number);
+  }
 }
 const commentFields = 'id databaseId url body author{__typename login ... on User{id} ... on Bot{id}} originalCommit{oid} commit{oid} pullRequestReview{id} path line originalLine diffHunk createdAt updatedAt';
 

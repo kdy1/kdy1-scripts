@@ -1,6 +1,6 @@
 # Deterministic Collect Review helpers
 
-Use Node.js and an authenticated `gh` installation. Install sibling `add-issue` alongside this skill: the CLI imports its reusable transport, private-file, locking and JSON-validation helpers. No extra packages are required. The helper never invokes Add Issue, investigates code, determines semantic duplicates, creates issues, posts replies, or grants authorization.
+Use Node.js and an authenticated `gh` installation. Install sibling `add-issue` alongside this skill: the CLI imports its reusable transport, private-file, locking and JSON-validation helpers. No extra packages are required. The helper never invokes Add Issue, investigates code, determines semantic duplicates, creates issues, posts inline replies, or grants authorization. Its PR-comment writes are limited to one managed tracking summary per PR and authenticated account.
 
 ## CLI and storage
 
@@ -82,4 +82,40 @@ Resolution requires complete collection, unchanged comments since full assessmen
 
 `reconcile` is read-only against GitHub. Uncertain requests are never automatically repeated. If the thread remains unresolved, preserve the incomplete result and recover explicit evidence about the prior attempt before deciding on a later operation. Completed issue writes are retained; continuation resumes only missing resolution. There is no automatic retry/reset command. API contracts: [PR reviews](https://docs.github.com/en/rest/pulls/reviews), [thread fields and resolution](https://docs.github.com/en/graphql/reference/pulls#pullrequestreviewthread).
 
-`report` returns the fixed scope, heads, skipped PRs/threads, raw coverage gaps, authorship uncertainties, candidates, exact prepared payloads, outcomes and verified/uncertain resolutions. Use its summaries to distinguish absent Codex reviews, sources awaiting classification and incomplete collection. After coordinator classification, distinguish reviews with no unresolved Bug candidates from unprocessed sources. Report fixed and repeated findings without claiming absence of bugs.
+## PR tracking summary and recovery
+
+After each PR's review processing, run `summary` with `number` and current-session `context`:
+
+```json
+{
+  "version": 1,
+  "statePath": "/private/collect-review/run.json",
+  "number": 12,
+  "context": {
+    "mode": "default",
+    "trustedAuthorization": true,
+    "summaryAuthorized": true,
+    "evidence": "Current human Collect Review authorization verified for this retained run"
+  }
+}
+```
+
+The helper derives the content from retained verified `new issue`, `duplicate comment`, `metadata update`, and `existing issue` outcomes. It includes only confirmed sources from the selected PR, including review-body and inline findings. Resolved threads still contribute their completed outcomes. It groups entries by issue URL and keeps every original review URL. `prepared`, `fixed`, `unconfirmed`, `failed`, and newly appended sources without per-source confirmation are omitted. With no qualifying outcomes, it returns a `skipped` summary without posting.
+
+The visible body uses this format; a stable hidden `<!-- collect-review:tracked-issues:v1 -->` identifier precedes it:
+
+```md
+Tracked at https://github.com/owner/repo/issues/9
+- [Original review](https://github.com/owner/repo/pull/12#discussion_r123)
+- [Original review](https://github.com/owner/repo/pull/12#pullrequestreview-456)
+```
+
+Every issue gets one block in the same PR comment. The helper reads all paginated PR conversation comments, locates the identifier under the retained authenticated account, merges earlier entries, and updates that comment. Identical content needs no write. Multiple matching comments, an unsupported edited body, an incomplete comment inventory, or a missing/replaced comment already retained in the ledger blocks writing. A different account's comment is never edited. Preserve the retained account on continuations and reruns.
+
+`context.mode: "plan"`, original draft-only restrictions, or diagnosis-only restrictions return `prepared` with the exact preview and no GitHub write. Default-mode writes require original trusted authorization and current trusted context; caller flags alone do not establish permission. Before mutation, the helper verifies the retained account, merged state and exact head, and unchanged existing summary. API contracts: [create PR conversation comment](https://docs.github.com/en/rest/issues/comments#create-an-issue-comment), [update comment](https://docs.github.com/en/rest/issues/comments#update-an-issue-comment).
+
+Before sending, it persists the expected body and an uncertain create/update attempt. It reads back the exact comment body, account, target and URL after sending, even after response loss. Only matching readback yields `verified`; definite API rejection yields `failed`, and an unverified result remains `uncertain`. `summary.commentUrl` and `commentId` identify the receipt when available; `summary.attempts` retains previous attempts.
+
+`reconcile-summary` adds only `number` and is read-only against GitHub. It verifies the retained attempt without repeating a write, even if the PR head later changes. An uncertain or failed previous attempt also makes `summary` perform only this reconciliation. Once reconciliation verifies the old write, rerun `summary` to include any newer completed outcomes. There is no automatic retry/reset. Keep successful issue results and thread resolutions; summary failure never requires another Add Issue handoff. A `resolution-only` handoff does not skip the PR summary step.
+
+`report` returns the fixed scope, heads, skipped PRs/threads, raw coverage gaps, authorship uncertainties, candidates, exact prepared payloads, outcomes and verified/uncertain resolutions. `trackingComments` exposes the per-PR summary ledger, including preview, comment URL, errors and failed/uncertain attempts; each coverage summary also carries `trackingComment`. A coverage-level `complete: true` does not establish summary success. Use its summaries to distinguish absent Codex reviews, sources awaiting classification and incomplete collection. After coordinator classification, distinguish reviews with no unresolved Bug candidates from unprocessed sources. Report fixed and repeated findings without claiming absence of bugs.

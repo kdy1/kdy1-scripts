@@ -6,8 +6,8 @@ import { fileURLToPath } from 'node:url';
 import { check, text, version, hash, readJson, save, lock, outside, result } from '../../add-issue/scripts/common.mjs';
 import { target } from '../../add-issue/scripts/payload.mjs';
 import { GitHub, resolveScope, authorship, threadFingerprint } from './github.mjs';
+import { summarize, successfulActions as successful } from './summary.mjs';
 
-const successful = ['new issue','duplicate comment','metadata update','existing issue'];
 const outcomes = [...successful,'prepared','fixed','unconfirmed','failed'];
 const now = () => new Date().toISOString();
 function artifact(path, input) {
@@ -53,7 +53,7 @@ export function initialize(input, client) {
   text(input.authorization?.request,'original human request'); text(input.authorization?.origin,'authorization origin');
   check(typeof input.authorization?.trusted === 'boolean' && typeof input.draftOnly === 'boolean', 'Missing authorization/restrictions');
   return {version:1,runId:input.runId ?? randomUUID(),createdAt:now(),selectionStartedAt,account,target:scope.target,scope:input.scope ?? null,authorization:input.authorization,
-    draftOnly:input.draftOnly,restrictions:input.restrictions ?? {},checkout:input.checkout ?? null,privateOutside:input.privateOutside ?? [],maxPages:input.maxPages ?? 10000,prs,excluded,candidates:[],resolutions:{}};
+    draftOnly:input.draftOnly,restrictions:input.restrictions ?? {},checkout:input.checkout ?? null,privateOutside:input.privateOutside ?? [],maxPages:input.maxPages ?? 10000,prs,excluded,candidates:[],resolutions:{},trackingSummaries:{}};
 }
 function collect(s,input,client) {
   const p = findPr(s,input.number), gate = sourceCheck(s,{number:p.number,threadId:null},client); if (!gate.complete) return gate;
@@ -239,6 +239,7 @@ export function dispatch(command,s,input,client,persist=()=>{}) {
   if (command === 'handoff') return handoff(s,input,client);
   if (command === 'outcome') return outcome(s,input);
   if (command === 'resolve' || command === 'reconcile') return resolveThread(s,input,client,persist,command === 'reconcile');
+  if (command === 'summary' || command === 'reconcile-summary') return summarize(s,input,client,persist,command === 'reconcile-summary');
   if (command === 'report') {
     const gaps = s.prs.flatMap(p => !p.collection ? [{number:p.number,reason:'Not collected'}] : p.collection.gaps.map(x => ({number:p.number,...x})));
     const summaries = s.prs.map(p => {
@@ -253,16 +254,16 @@ export function dispatch(command,s,input,client,persist=()=>{}) {
         else if (!s.candidates.some(c => c.sources.some(x => x.number === p.number))) status = 'no-unresolved-bug-candidates';
         else status = 'candidates-tracked';
       }
-      return {number:p.number,head:p.head,blocked:p.blocked ?? null,status};
+      return {number:p.number,head:p.head,blocked:p.blocked ?? null,status,trackingComment:s.trackingSummaries?.[p.number] ?? null};
     });
-    return result(gaps.length || s.prs.some(p => p.blocked) ? 'blocked' : 'verified',gaps.map(x => x.reason),{run:s,coverage:gaps,summaries,
+    return result(gaps.length || s.prs.some(p => p.blocked) ? 'blocked' : 'verified',gaps.map(x => x.reason),{run:s,coverage:gaps,summaries,trackingComments:s.trackingSummaries ?? {},
       meaning:'complete describes collection coverage only, not candidate handling or absence of bugs'});
   }
   throw new Error('Unknown command');
 }
 export function main(args, injectedClient) {
   const [command,path,output] = args;
-  if (command === '--help') return {help:'node collect-review.mjs init|collect|candidate|assess|preflight|handoff|outcome|resolve|reconcile|report /absolute/input.json [/absolute/output.json]'};
+  if (command === '--help') return {help:'node collect-review.mjs init|collect|candidate|assess|preflight|handoff|outcome|resolve|reconcile|summary|reconcile-summary|report /absolute/input.json [/absolute/output.json]'};
   check(path && args.length <= 3,'Expected command and absolute JSON input'); const input = readJson(path); version(input);
   check(input.statePath,'Missing private statePath'); artifact(input.statePath,input); if (output) { check(resolve(output) !== resolve(input.statePath) && resolve(output) !== resolve(path),'Output must not overwrite input or ledger'); artifact(output,input); }
   const release = lock(input.statePath); check(release,'Ledger locked; reconcile interrupted owner before removing its lock');

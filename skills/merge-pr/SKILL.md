@@ -24,30 +24,35 @@ See the [GitHub CLI merge documentation](https://cli.github.com/manual/gh_pr_mer
 
 Use the requested PR URLs, numbers, or selection criteria with the repository context. Resolve targets from the request and conversation context, including the complete results of a requested selection workflow. Use those targets even when the checkout has a detached HEAD.
 
-Only when the request and conversation context do not identify targets, resolve the current branch's PR with `gh pr view --json url`. Ask for a target only when neither source identifies the intended PRs or when the requested scope is genuinely ambiguous. Do not ask for merge authorization again after an explicit invocation.
+Only when the request and conversation context do not identify targets, resolve the current branch's PR with the helper:
 
-For an explicitly authorized workflow handoff with merge gates, honor its narrower constraints: let the caller own readiness checks, use its verified head with `--match-head-commit`, omit `--auto` when forbidden, and return after the single requested layer. A dependent stack stops on failure or a queued/unverified result instead of advancing to an upper PR. These constraints do not change the default direct-invocation behavior below.
+```sh
+node <SKILL_DIR>/scripts/merge-pr.mjs resolve-current
+```
+
+Use the returned `url`. A lookup failure does not select another target. Ask for a target only when neither source identifies the intended PRs or when the requested scope is genuinely ambiguous. Do not ask for merge authorization again after an explicit invocation. Replace `<SKILL_DIR>` with this skill's absolute directory when running commands.
+
+For an explicitly authorized workflow handoff with merge gates, honor its narrower constraints: let the caller own readiness checks, pass its verified head through `--match-head-commit SHA`, and pass `--no-auto` when auto-merge is forbidden. Either option restricts the helper to one target. Return after the single requested layer. The caller owns dependent-stack progression and stops on failure or any pending/unverified result instead of advancing to an upper PR. These constraints do not change the default direct-invocation behavior below.
 
 Once the target is identified for a direct invocation, attempt the merge immediately. Do not preflight authentication, CI, reviews, draft status, conflicts, squash support, merge queues, or head SHAs. Let GitHub enforce its merge requirements. Do not announce plans to check readiness.
 
 ```sh
-gh pr merge <PR_URL> --squash --auto
+node <SKILL_DIR>/scripts/merge-pr.mjs merge <PR_URL> [<PR_URL>...]
 ```
 
-An explicit PR number can replace `<PR_URL>`. Use `--auto` by default unless the authorized handoff forbids it: `gh` merges immediately when possible and enables auto-merge when requirements remain unmet. Omit `--admin` and `--delete-branch` by default. Do not fix source, change PR metadata, submit approvals, or bypass rules to make the merge succeed. Additional actions require applicable human instructions. The two core rules still apply.
+An explicit PR number can replace `<PR_URL>`; use the repository checkout or pass `--repo [HOST/]OWNER/REPO`. The helper runs `gh pr merge` with `--squash --auto` by default, omits `--auto` with `--no-auto`, and never passes a subject, administrator bypass, or branch-deletion option. It accepts no arbitrary `gh` options. The head option requires a full 40-character SHA. Do not fix source, change PR metadata, submit approvals, or bypass rules to make the merge succeed. Additional actions require applicable human instructions. The two core rules still apply.
 
-For multiple directly requested PRs without dependent-stack handoff constraints, attempt them sequentially in the requested order, or the supplied list order when no separate order is specified. Continue to the remaining PRs after an individual failure.
+For multiple directly requested PRs without dependent-stack handoff constraints, pass them in the requested order, or the supplied list order when no separate order is specified. The helper attempts them sequentially and continues after an individual failure.
 
 ## Verify and Report
 
-After each attempt, fetch the PR's URL, state, `mergedAt`, `mergeCommit`, and `autoMergeRequest`:
+The helper fetches `url,state,mergedAt,mergeCommit,autoMergeRequest` after each attempt, even when the merge command fails. Its JSON `results` preserve the input `target`, URL, `outcome`, `mergeCommitSha`, PR state, merge command exit code and output, and verification output/error.
 
-```sh
-gh pr view <PR_URL> --json url,state,mergedAt,mergeCommit,autoMergeRequest
-```
+- `merged`: GitHub confirms merged state and a merge commit SHA. Report completion with its URL and SHA.
+- `queued`: GitHub confirms open state and the CLI explicitly confirms queue registration. Report queued and pending.
+- `auto_merge_pending`: GitHub confirms open state with non-null `autoMergeRequest`. Report auto-merge enabled and pending.
+- `unverified`: State, commit SHA, or the outcome cannot be confirmed. Report the verification error and any known state.
 
-Report a completed merge only when GitHub confirms the PR is merged, and return its URL and merge commit SHA. Report an unavailable commit SHA or unreadable state as unverified.
+Queue eligibility or a promise to add the PR when ready does not confirm registration. Unknown or suppressed CLI output does not establish a queued result. Pending outcomes are not completed merges. Do not block the attempt because a queue applies or add `--admin` to bypass it.
 
-For an open PR, report it as queued and pending if the CLI explicitly confirms merge queue registration. Otherwise, report auto-merge as enabled and pending when `autoMergeRequest` is non-null. Neither result is a completed merge. If verification cannot confirm the result, report it as unverified. Do not block the attempt because a queue applies or add `--admin` to bypass it.
-
-If the command fails, including when auto-merge is disabled or permissions are insufficient, report the GitHub or CLI error briefly along with any verified outcome. Do not retry automatically or start a merge-readiness investigation. Keep the final report concise.
+Exit code 1 means a merge command failed or a result is unverified; inspect every result even on that exit code. Exit code 0 can include pending outcomes. If the command fails, including when auto-merge is disabled or permissions are insufficient, report the GitHub or CLI error briefly along with any verified outcome. The helper does not retry; do not rerun it automatically or start a merge-readiness investigation. Keep the final report concise.

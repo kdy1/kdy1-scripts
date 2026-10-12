@@ -1,20 +1,22 @@
 # Slop Fix Batch worker handoffs
 
-Use these handoffs with available subagent controls and [scoped delegation](delegation.md). The coordinator owns fixed-list selection, group/dependency/stack decisions, slot reservations, issue closure, direct management and stop/resume state. Ordinary workers return facts. A recorded stack executor submits its own permitted ledger events and owns integration/registration/gh-stack/$create-pr prefix publication; a maintenance actor submits its assigned ready-stack outcomes and owns fresh gates/conditional merges. Implementation and repair workers never merge. Inventory owns only one captured read pass. Legacy ledgers retain coordinator-only execution until explicit safe-boundary activation. All active/reserved/nested/uncertain roles share the human/runtime capacity. Stack executors use publication's adaptive measured ceiling starting at three, without a second publisher slot. Never retain an actor through implementation/CI/review waits when effects are known and its bounded job is complete. Building prefixes remain protected until every assigned group is verified ready.
+Read the settings, rendering and shared-API sections once, then only the current role handoff. Use available subagent controls and [scoped delegation](delegation.md). The coordinator owns fixed-list selection, group/dependency/stack decisions, slot reservations, issue closure, direct management and stop/resume state. Ordinary workers return facts. A recorded stack executor submits its own permitted ledger events and owns integration/registration/gh-stack/$create-pr prefix publication; a maintenance actor submits its assigned ready-stack outcomes and owns fresh gates/conditional merges. Implementation and repair workers never merge. Inventory owns only one captured read pass. Legacy ledgers retain coordinator-only execution until explicit safe-boundary activation. All active/reserved/nested/uncertain roles share the human/runtime capacity. Stack executors use publication's adaptive measured ceiling starting at three, without a second publisher slot. Never retain an actor through implementation/CI/review waits when effects are known and its bounded job is complete. Building prefixes remain protected until every assigned group is verified ready.
 
 Apply the parent skill's validation policy to every handoff: skip direct app launches, manual reproduction, validation in a real environment, and screenshot capture for validation, including when requested by an issue. Keep automated tests, builds, linters, code inspection during investigation and implementation, and Git/GitHub state checks. Automated tests may launch the app or exercise reproduction scenarios. The policy does not relax evidence requirements for direct closure of already-resolved issues.
 
 ## Worker settings and context
 
-Before creating any worker, run `node /installed/slop-fix-batch/scripts/worker-settings.mjs <role> --runtime <runtime>`. Resolve the installed path, use the ledger's runtime (Codex when absent), and select investigation, preparation, implementation, stack-execution, maintenance, inventory, repair or publication. The helper is the single source of creation settings. Pass its fields unchanged to the runtime's creation tool, with the task name and scoped message as described in [runtime tools](runtimes.md); writing settings in the message alone does not configure an agent. The handoff renderer uses the same ledger runtime. Repair uses this helper with the maintenance reference's repair handoff, not a new renderer role.
+Before creating any worker, run `node /installed/slop-fix-batch/scripts/worker-settings.mjs <role> --runtime <runtime> --complexity <simple|standard>`. Resolve the installed path, use the ledger's runtime (Codex when absent), and select investigation, preparation, implementation, stack-execution, maintenance, inventory, repair or publication. The helper is the single source of creation settings. Pass its fields unchanged to the runtime's creation tool, with the task name and scoped message as described in [runtime tools](runtimes.md); writing settings in the message alone does not configure an agent. The handoff renderer uses the same ledger runtime and assignment complexity. Repair uses this helper with the maintenance reference's repair handoff, not a new renderer role.
 
-All new workers start without parent conversation history: Codex uses `fork_turns: "none"`; Claude uses non-fork `general-purpose` agents. Supply the original human request and authorization, assigned scope and expected results, applicable skill/repository instruction paths, relevant evidence, exact checkout/SHA, ownership/grants where required, and shared helper/state paths in the first message. Include prior findings or their accessible absolute paths. This also applies to Plan Mode investigation and nested repairs.
+All new workers start without parent history: Codex uses `fork_turns: "none"`; Claude uses non-fork `general-purpose` agents. In the first message include original authorization, assigned scope/acceptance, exact checkout/SHA, instruction/helper paths, ownership/grants and checks. Put full prior findings/check logs/observations in batch-state evidence files; pass their verified paths and brief summaries. Workers read the relevant referenced fields before acting, not every role's procedures. This also applies in Plan Mode and nested repairs.
+
+Choose `simple` only for investigation or implementation when requirements are clear, one isolated change area is established, no dependencies/shared-state/schema changes are involved, and validation commands are known. Otherwise use `standard`, including unknown complexity. Simple investigation/implementation uses the same model with medium effort; other roles retain existing settings. Record `complexity` and `complexityReason` in the reserved assignment before creation and retain them through START/results. Omitted complexity in an old assignment means standard; do not change an active worker's settings.
 
 Use the same agent for a job's prepare and START phases. Reuse an agent across roles only when all returned settings match and the previous job and effects are reconciled. Otherwise allocate a new agent under the existing slot/ownership rules and hand off previous results. Apply settings to new workers only; do not restart active workers. If the required model, effort or tool capability is unavailable or overridden, report the creation failure and reconcile its reservation; do not silently substitute settings. Coordinator settings, concurrency policy and START authorization remain unchanged.
 
 ## Render and verify assignments
 
-Use [`render-handoff.mjs`](../scripts/render-handoff.mjs) with the [helper contract](helpers.md) for every role assignment. The templates below define investigation and implementation requirements; include their resolved scope/evidence/check details in the structured assignment rather than sending unresolved placeholders. For execution START, first persist the reservation, accepted worker identity, checkout and exact starting SHA with `batch-ledger.mjs`. Render preparation and START separately. Use the installed `github-request.mjs` as the shared request entry point; direct gh/extension calls retain documented coverage gaps and report observed limits. Ordinary workers return facts; granted actors submit only permitted scoped events through batch-ledger submit. Do not bypass a renderer failure by sending an unchecked assignment.
+Use [`render-handoff.mjs`](../scripts/render-handoff.mjs) with the [helper contract](helpers.md) for every role assignment. The templates below define investigation and implementation requirements; include resolved scope/acceptance/identity/check commands inline and long evidence through `evidenceRefs` in the structured assignment. Use its `pack` command to prepare long evidence and compact input files without rebuilding serialization/hash commands for every assignment. The renderer validates referenced JSON fields and their SHA-256 before rendering, including START; see the [evidence contract](helpers.md#worker-assignments-and-final-report). Never truncate facts or send unresolved placeholders. For execution START, first persist the reservation, accepted worker identity, checkout and exact starting SHA with `batch-ledger.mjs`. Render preparation and START separately. Use the installed `github-request.mjs` as the shared request entry point; direct gh/extension calls retain documented coverage gaps and report observed limits. Ordinary workers return facts; granted actors submit only permitted scoped events through batch-ledger submit. Do not bypass a renderer failure by sending an unchecked assignment.
 
 ## Shared API policy for every handoff
 
@@ -48,8 +50,9 @@ Do not launch the app, manually reproduce an issue, validate in a real environme
 or capture screenshots for validation. Distinguish implementation requirements
 from skipped real-world validation and report the latter as not performed.
 
-Report each issue assessment as it becomes available without waiting for the
-whole partition. Include immutable evidence links,
+Save full assessments in batch-state files. Report each assessment as available
+with new facts, decisions or blockers and its evidence file path; do not repeat
+previous reports or wait for the whole partition. Include immutable evidence links,
 inspection versus executed checks, requirements still unmet, existing PR URLs,
 proposed grouping, affected functions/state/schemas/contracts and consumers,
 classification as inseparable, ordered shared implementation, or independent,
@@ -60,10 +63,11 @@ remaining dependency paths and related issues whose investigation could unblock
 group confirmation. Use medium for unknown costs and mark them uncertain;
 do not invent dependencies or treat estimates as completion evidence. Identify the exact
 revision inspected and flag possible relationships with uninvestigated fixed-list
-issues. Include proposed implementation changes, estimated publication/CI/review/repair/merge
-latency with evidence and uncertainty, and concrete worker automated validation
-commands for actionable work, with acceptance coverage and any missing evidence.
-Finish with coverage of every assigned issue. In Plan Mode, the coordinator collects
+issues. Include proposed changes and concrete worker automated validation
+commands for actionable work, with acceptance coverage and missing evidence.
+Estimate external-stage latency only with supporting observations; otherwise
+use the scheduler's uncertain medium default without inventing stage estimates.
+Finish with complete coverage in the result file and a brief coverage/blocker summary. In Plan Mode, the coordinator collects
 all investigation results and reconciles the entire fixed list before finalizing
 the plan; neither workers nor the coordinator implement or close issues. Report
 incomplete reads and unresolved decisions as blockers, not completed investigation.
@@ -75,7 +79,7 @@ Investigators can read other fixed-list issues to understand dependencies, but c
 
 ## Dependent-group preparation
 
-Use a read-only assignment while prerequisites are still being implemented. These workers share the user/runtime slot budget with investigation, implementation, publication, and maintenance repairs; carry forward investigation findings; changing from investigation to preparation requires a new agent because the reasoning effort differs.
+Use a read-only assignment while prerequisites are still being implemented. These workers share the user/runtime slot budget with investigation, implementation, publication, and maintenance repairs; carry forward investigation findings; changing from investigation to preparation requires a new agent only if the resolved creation settings differ; otherwise reuse the reconciled agent under the existing reservation/START rules.
 
 ```text
 Prepare this dependent group through read-only investigation and design.
@@ -154,13 +158,14 @@ promptly and pause affected work until the coordinator reconciles the assignment
 Never rebase or rewrite existing layers, move work across stacks, or copy
 prerequisite commits from another stack to bypass a dependency blocker.
 
-Return group/issue identities, assigned stack ID and integration worktree,
+Save the complete result in a batch-state file: group/issue identities, assigned stack ID and integration worktree,
 starting SHA, branch and worker worktree path, ordered
 commits belonging only to this group, final SHA, diff summary, acceptance
 coverage for every issue, exact worker checks and results with covered revisions,
 stage timing, wait reasons and estimate evidence, skipped real-world validation, remaining changes, blockers, and any relevant
 actual screenshots already available. Earlier
-prerequisite commits are not this group's commit range.
+prerequisite commits are not this group's commit range. Send its path, completion
+identities and new changes/blockers; do not resend investigation or check logs.
 ```
 
 ## Stack execution assignment

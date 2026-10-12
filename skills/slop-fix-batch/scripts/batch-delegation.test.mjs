@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { spawn, spawnSync } from 'node:child_process';
 import { initialize, applyEvent, submitEvents, submitLedger, schedulingSnapshot } from './batch-ledger.mjs';
 import { roleEvents } from './batch-delegation.mjs';
-import { renderHandoff } from './render-handoff.mjs';
+import { renderHandoff, packHandoff } from './render-handoff.mjs';
 import { runStep, reconcileStep, prepareWorktree, runCommand } from './batch-stack.mjs';
 import { checkpointPlan } from './batch-checkpoints.mjs';
 import { plan } from './batch-scheduler.mjs';
@@ -337,4 +337,16 @@ test('submit CLI returns bounded receipts and --full, duplicates, busy and uncer
   result = invoke(); assert.equal(result.status, 1); assert.equal(result.stdout, ''); assert.deepEqual(JSON.parse(readFileSync(path)), stored);
   save(file, submission); mkdirSync(`${path}.lock`);
   result = invoke(); assert.equal(result.status, 2); assert.equal(JSON.parse(result.stdout).status, 'busy'); assert.equal(JSON.parse(result.stdout).complete, false);
+}));
+
+test('packed stack START retains acceptance, grant and commands while validating referenced worker coverage', () => scratch(dir => {
+  const extra = { branch: 'kdy1/fix0', coordinationId: 'batch/s0', stackOwner: 'build/s0', commits: [head] };
+  const { l, g, a } = assign(fixture(), 0, 'stack-execution', extra);
+  const assignment = { ...a, assignmentId: a.id, grantId: g.id, generation: 1, scope: 'One checked group', repositoryInstructions: 'AGENTS.md', concurrency: 'One slot', estimateEvidence: 'Worker timing', requestHelper: '/installed/github-request.mjs', requestState: join(dir, 'github.json'), schedulerHelper: '/installed/scheduler.mjs', timingState: join(dir, 'timing.json'), ledgerPath: join(dir, 'ledger.json'), checkout: a.worktree, inspectedSha: base, issueKeys: [issues[0].key], acceptance: 'Fix all function requirements', dependencyEvidence: 'Independent function', integrationWorktree: a.worktree, coordinationHelper: '/installed/coordination.mjs', coordinationRoot: '/repo/.git', stackHelper: '/installed/batch-stack.mjs', createPrSkill: '/installed/create-pr/SKILL.md', workerStartSha: base, requirementsSatisfied: true, checks: [{ command: 'node --test', status: 'passed', sha: head, output: 'Complete validation output. '.repeat(100) }], integrationCheckCommands: ['node --test changed.test.mjs'] };
+  const result = packHandoff({ version: 1, mode: 'execution', role: 'stack-execution', phase: 'start', ledger: l, assignment });
+  const packed = JSON.parse(readFileSync(result.handoffPath)); const text = renderHandoff(packed);
+  for (const critical of [assignment.acceptance, g.id, a.worker, assignment.integrationCheckCommands[0], head]) assert.ok(text.includes(critical));
+  assert.doesNotMatch(text, /Complete validation output/);
+  const data = JSON.parse(readFileSync(result.evidencePaths[0])); data.checks[0].status = 'failed'; save(result.evidencePaths[0], data);
+  assert.throws(() => renderHandoff(packed), /SHA-256 mismatch/);
 }));

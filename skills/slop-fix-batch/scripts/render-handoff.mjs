@@ -3,7 +3,7 @@ import { readFileSync, realpathSync, statSync } from 'node:fs';
 import { dirname, relative, isAbsolute } from 'node:path';
 import { createHash } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
-import { check, version, nonempty, sha, absolute, readJson, cli } from './helper-common.mjs';
+import { check, version, nonempty, sha, absolute, readJson, save, cli } from './helper-common.mjs';
 import { workerSettings } from './worker-settings.mjs';
 import { ledgerRuntime, matchRuntime } from './runtime.mjs';
 import { validateLedger } from './batch-ledger.mjs';
@@ -20,7 +20,7 @@ const instructions = {
   preparation: 'Perform read-only preparation. Do not edit source, refs or GitHub. Source changes require a later implementation START at the exact integration SHA containing checked prerequisites. Reconcile findings with those prerequisite changes.',
   implementation: 'Verify checkout, branch, stack and exact starting SHA before editing. Implement the complete group requirements in the assigned clean worktree, run retained targeted and repository-wide commands and required execution times, preserve hooks, and commit coherent verified units. Do not publish PRs, write issues/comments, run gh stack, change another checkout or independently update the base. Return commits, coverage at exact SHAs, skipped validation and stage timing.',
   publication: 'Explicitly invoke the installed $create-pr skill. Use only the frozen integration checkout for the assigned prefix. Verify exact head/base and scope. Publish non-draft; include each fully implemented issue on its own Closes line, preserving Closes despite skipped real-world validation. Disclose worker coverage at the original SHA separately from publication head and integration-change checks. Reuse recorded PRs, apply the runtime attachment policy, and return verified URLs. Do not commit, switch branches, mutate source/local layer refs or run gh stack. Do not merge or register maintenance.',
-  maintenance: 'Continue $slop-fix-batch’s internal batch maintenance procedure and read its batch reference. Do not recollect issues or restart construction. Manage only the ledger PR set. Return results to the direct coordinator loop; never register automation. Building/held stacks remain protected. Honor stopped management state, whole-stack ownership, two-phase repair START and fresh review/CI/membership gates. Process merges then repairs then publication then implementation, including the scheduler progress exception. Only the coordinator in legacy mode or the recorded maintenance actor in delegated mode merges under original conditional authorization; implementation and repair children never merge. Maintenance actors consume a slot; nested repairs require coordinator-reserved additional slots. Candidate hints are not authority. Reconcile uncertain requests before retry and retain original standalone eligibility. Do not wait for unrelated workers or CI/reviews during a bounded pass.',
+  maintenance: 'Continue $slop-fix-batch’s internal batch maintenance procedure and read only the assigned maintenance sections. Do not recollect issues or restart construction. Manage only the ledger PR set. Return results to the direct coordinator loop; never register automation. Building/held stacks remain protected. Honor stopped management state, whole-stack ownership, two-phase repair START and fresh review/CI/membership gates. Process merges then repairs then publication then implementation, including the scheduler progress exception. Only the coordinator in legacy mode or the recorded maintenance actor in delegated mode merges under original conditional authorization; implementation and repair children never merge. Maintenance actors consume a slot; nested repairs require coordinator-reserved additional slots. Candidate hints are not authority. Reconcile uncertain requests before retry and retain original standalone eligibility. Do not wait for unrelated workers or CI/reviews during a bounded pass.',
 };
 // Evidence files hold long findings, never identity, acceptance or execution authority.
 const evidenceFields = new Set(['investigationEvidence', 'preparationFindings', 'priorFindings', 'observations',
@@ -150,6 +150,29 @@ export function renderHandoff(input) {
   const roleInstructions = runtime === 'claude-code' ? instructions[input.role].replaceAll('$create-pr', '/create-pr').replaceAll('$slop-fix-batch', '/slop-fix-batch') : instructions[input.role];
   return `# Slop Fix Batch: ${input.role} (${input.phase})\n\nMode: ${input.mode}\nRuntime: ${runtime}\nBatch: ${ledger.batchId}\nRepository: ${ledger.repository}\nOriginal human authorization: ${ledger.authorization}\nExact query: ${ledger.query}\n\n## Agent creation settings\n\nPass these fields to ${spawnTool} when creating this role. Keep the same agent for prepare and START.\n\n\x60\x60\x60json\n${JSON.stringify(spawnSettings, null, 2)}\n\x60\x60\x60\n\n${phase}\n\n${policy}\n\n${roleInstructions}\n\n${attachmentPolicy}\n\n## Recorded assignment\n\n${compactAssignment(a, referenced)}\n\nRead each referenced JSON field before acting; do not treat its summary as acceptance evidence. Report new facts, changes and blockers; keep complete results in batch-state files.\n`;
 }
+// Package repeated long evidence without asking the coordinator to rebuild JSON/hash commands.
+export function packHandoff(input) {
+  version(input);
+  const { resolved } = resolveEvidence(input.assignment), prepared = structuredClone(input);
+  absolute(resolved.ledgerPath);
+  const root = realpathSync(dirname(resolved.ledgerPath)), data = {};
+  for (const field of evidenceFields) {
+    if (Object.hasOwn(prepared.assignment, field) && JSON.stringify(prepared.assignment[field]).length > 1200 &&
+      !(prepared.assignment.evidenceRefs ?? []).some(ref => ref.fields.includes(field))) {
+      data[field] = prepared.assignment[field]; delete prepared.assignment[field];
+    }
+  }
+  if (Object.keys(data).length) {
+    const bytes = `${JSON.stringify(data, null, 2)}\n`, sha256 = createHash('sha256').update(bytes).digest('hex');
+    const path = `${root}/handoff-evidence-${sha256}.json`; save(path, data);
+    prepared.assignment.evidenceRefs = [...(prepared.assignment.evidenceRefs ?? []),
+      { path, fields: Object.keys(data), summary: 'Complete assigned findings and validation evidence', sha256 }];
+  }
+  renderHandoff(prepared); // Validate full facts and authority before publishing a usable input path.
+  const hash = createHash('sha256').update(JSON.stringify(prepared)).digest('hex');
+  const handoffPath = `${root}/handoff-input-${hash}.json`; save(handoffPath, prepared);
+  return { version: 1, complete: true, handoffPath, evidencePaths: (prepared.assignment.evidenceRefs ?? []).map(ref => ref.path) };
+}
 const cell = value => String(value ?? 'not recorded').replaceAll('|', '\\|').replaceAll('\n', ' ');
 export function renderReport(ledger) {
   validateLedger(ledger);
@@ -168,7 +191,7 @@ export function renderReport(ledger) {
 Maintenance: ${JSON.stringify(ledger.maintenance ?? { status: 'inactive' })}\nImplementation ended: ${ledger.implementationEnded}\nLedger: ${ledger.context?.ledgerPath ?? 'not recorded in context; use the coordinator-retained absolute ledger path'}. Continue via batch-ledger resume.
 Real-world validation: not performed for implementation. Publication heads do not extend worker check coverage. CI/review and merge outcomes require separate current evidence.\n`;
 }
-cli(import.meta.url, 'render-handoff.mjs <handoff|report> input.json', ([command, path]) => {
-  check(path && ['handoff', 'report'].includes(command), 'Missing renderer command/input');
-  const input = readJson(path); return command === 'handoff' ? renderHandoff(input) : renderReport(input);
+cli(import.meta.url, 'render-handoff.mjs <pack|handoff|report> input.json', ([command, path]) => {
+  check(path && ['pack', 'handoff', 'report'].includes(command), 'Missing renderer command/input');
+  const input = readJson(path); return command === 'pack' ? packHandoff(input) : command === 'handoff' ? renderHandoff(input) : renderReport(input);
 });

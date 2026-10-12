@@ -1,6 +1,6 @@
 # Scoped execution delegation
 
-Read with [helpers](helpers.md), [scheduling](scheduling.md) and [worker handoffs](worker-prompts.md). This procedure applies only after an explicit execution-time activation. A legacy ledger without `delegation` remains coordinator-only. Plan Mode never activates grants, records execution events, creates worktrees or sends execution START.
+Read its activation/event sections for grants, then only the assigned execution or maintenance procedure. Consult relevant [helper](helpers.md) sections and [worker handoff](worker-prompts.md) sections; global [scheduling](scheduling.md) belongs to the coordinator. This procedure applies only after an explicit execution-time activation. A legacy ledger without `delegation` remains coordinator-only. Plan Mode never activates grants, records execution events, creates worktrees or sends execution START.
 
 ## Activate, allocate and START
 
@@ -8,7 +8,7 @@ The coordinator initializes the normal version-1 ledger, then applies `delegatio
 
 For each job:
 
-1. Persist its reserved assignment and slot before agent creation. Resolve the role and recorded runtime through worker-settings.mjs and pass its returned fields to the matching creation tool in [runtime tools](runtimes.md); follow [worker settings and context](worker-prompts.md#worker-settings-and-context). Unknown creations retain their reservation. Initial permission is read-only preparation.
+1. Persist its reserved assignment and slot before agent creation. Record complexity and its reason, then resolve the role/runtime/complexity through worker-settings.mjs and pass its returned fields to the matching creation tool in [runtime tools](runtimes.md); follow [worker settings and context](worker-prompts.md#worker-settings-and-context). Unknown creations retain their reservation. Initial permission is read-only preparation.
 2. Persist the actual worker identity, role, checkout, starting SHA and resolved execution facts. Make the assignment active before START. Implementation/repair worktrees are separate from integration checkouts.
 3. Apply `delegation-grant`. Its fields are `id`, `assignmentId`, `worker`, `role`, `stackIds`, positive `generation`, `allowedEvents` and optional `childAssignmentIds`. IDs are never reused; each replacement advances the generation for overlapping role/scope. `allowedEvents` must be a subset of the helper's role permissions.
 4. Render the exact `start` handoff with grant ID/generation and actual worker. Send it to that agent; resume an idle prepared agent with the recorded runtime’s follow-up tool. Record delivery outcome; uncertainty never authorizes a second actor. START covers the entire bounded job, not separate approvals for each command.

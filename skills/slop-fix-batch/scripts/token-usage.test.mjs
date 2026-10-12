@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { initialize, applyEvent, ledgerSummary, schedulingSnapshot, resumeSummary } from './batch-ledger.mjs';
-import { renderHandoff } from './render-handoff.mjs';
+import { renderHandoff, packHandoff } from './render-handoff.mjs';
 import { workerSettings } from './worker-settings.mjs';
 import { save } from './helper-common.mjs';
 const sha = 'a'.repeat(40), query = 'repo:o/r is:issue is:open';
@@ -114,4 +114,37 @@ test('START binds complexity to recorded creation settings in Codex and Claude, 
   }
   assert.deepEqual(JSON.parse(renderHandoff(handoff(dir)).match(/```json\n([\s\S]*?)\n```/)[1]), workerSettings('investigation'));
   assert.throws(() => renderHandoff(handoff(dir, { complexity: 'simple' })), /complexity reason/);
+}));
+
+test('unchanged wait snapshots preserve one-minute CI and five-minute review/full deadlines without state writes', async () => {
+  const { checkpointPlan, checkpoint } = await import('./batch-checkpoints.mjs');
+  const l = initialize(input); l.checkpoints.nextFullAt = 300000;
+  l.checkpoints.refresh = { ci: 60000, review: 300000 };
+  const original = JSON.stringify(l);
+  for (const at of [0, 30000, 59999]) {
+    const result = checkpointPlan(l, at); assert.equal(result.schedulingOnly, true); assert.equal(result.fullDue, false); assert.deepEqual(result.dueStacks, []);
+    assert.equal(JSON.stringify(l), original);
+  }
+  assert.deepEqual(checkpointPlan(l, 60000).dueStacks, ['ci']);
+  const due = checkpointPlan(l, 300000); assert.equal(due.fullDue, true); assert.deepEqual(due.dueStacks, ['ci', 'review']);
+  assert.equal(JSON.stringify(l), original);
+  l.checkpoints = checkpoint(l.checkpoints, { type: 'invalidate', stackId: 'review' });
+  assert.deepEqual(checkpointPlan(l, 30000).dueStacks, ['review']);
+  assert.equal(checkpointPlan(l, 30000).stop, false);
+});
+
+test('pack helper preserves complete evidence and emits only reusable batch-file paths', () => scratch(dir => {
+  const i = handoff(dir, { findings: 'Full issue findings and immutable code evidence. '.repeat(500) });
+  const result = packHandoff(i); assert.equal(result.complete, true); assert.equal(result.evidencePaths.length, 1);
+  const packed = JSON.parse(readFileSync(result.handoffPath));
+  assert.equal(packed.assignment.findings, undefined); assert.deepEqual(packed.ledger, i.ledger);
+  assert.equal(JSON.parse(readFileSync(result.evidencePaths[0])).findings, i.assignment.findings);
+  assert.ok(renderHandoff(packed).includes(result.evidencePaths[0])); assert.equal(i.assignment.evidenceRefs, undefined);
+  assert.deepEqual(packHandoff(i), result);
+  const source = join(dir, 'input.json'); save(source, i);
+  const cliResult = spawnSync(process.execPath, [new URL('./render-handoff.mjs', import.meta.url).pathname, 'pack', source], { encoding: 'utf8' });
+  assert.equal(cliResult.status, 0, cliResult.stderr); assert.deepEqual(JSON.parse(cliResult.stdout), result);
+  assert.doesNotMatch(cliResult.stdout, /Full issue findings|fixedIssues|authorization/);
+  const invalid = handoff(dir, { findings: i.assignment.findings, inspectedSha: 'main' });
+  assert.throws(() => packHandoff(invalid), /SHA/);
 }));

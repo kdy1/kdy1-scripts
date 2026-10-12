@@ -4,7 +4,7 @@ Use these helpers for a human-authorized batch. Loading or testing them does not
 
 ## Commands and result contract
 
-Each input document uses `version: 1`. JSON commands print one result. Handoff/report commands print Markdown. Exit 0 means the local operation completed, 1 means invalid input or a failed local invariant, and 2 means incomplete, blocked, busy, cooldown or uncertain evidence. Never treat either nonzero exit as a successful empty inventory. A complete request response does not prove publication, closure or merging. No helper spawns agents, registers automations or merges on its own. The grant-bound batch-stack helper runs explicit construction Git/gh-stack steps; it never chooses work or merge authority.
+Each input document uses `version: 1`. JSON commands print one result; redirect machine-to-machine payloads to batch-state files and inspect only needed fields. Handoff/report commands print Markdown. Exit 0 means the local operation completed, 1 means invalid input or a failed local invariant, and 2 means incomplete, blocked, busy, cooldown or uncertain evidence. Never treat either nonzero exit as a successful empty inventory. A complete request response does not prove publication, closure or merging. No helper spawns agents, registers automations or merges on its own. The grant-bound batch-stack helper runs explicit construction Git/gh-stack steps; it never chooses work or merge authority.
 
 ```sh
 node /installed/slop-fix-batch/scripts/worker-settings.mjs investigation
@@ -14,16 +14,17 @@ node /installed/slop-fix-batch/scripts/batch-ledger.mjs apply /batch/ledger.json
 node /installed/slop-fix-batch/scripts/batch-ledger.mjs submit /batch/ledger.json /batch/submission.json
 node /installed/slop-fix-batch/scripts/batch-stack.mjs run /batch/step.json
 node /installed/slop-fix-batch/scripts/batch-stack.mjs reconcile /batch/step-reconciliation.json
-node /installed/slop-fix-batch/scripts/batch-ledger.mjs snapshot /batch/ledger.json
-node /installed/slop-fix-batch/scripts/batch-scheduler.mjs plan /batch/scheduling.json
+node /installed/slop-fix-batch/scripts/batch-ledger.mjs snapshot /batch/ledger.json > /batch/scheduling.json
+node /installed/slop-fix-batch/scripts/batch-scheduler.mjs plan /batch/scheduling.json > /batch/allocation.json
 node /installed/slop-fix-batch/scripts/verify-publication.mjs /batch/publication-input.json
 node /installed/slop-fix-batch/scripts/batch-checkpoints.mjs plan /batch/ledger.json
+node /installed/slop-fix-batch/scripts/render-handoff.mjs pack /batch/handoff-input.json
 node /installed/slop-fix-batch/scripts/render-handoff.mjs handoff /batch/handoff-input.json
 node /installed/slop-fix-batch/scripts/render-handoff.mjs report /batch/ledger.json
 node /installed/slop-fix-batch/scripts/batch-ledger.mjs resume /batch/ledger.json
 ```
 
-`worker-settings.mjs <role>` takes a role name rather than a versioned input document and returns the three spawn settings as JSON. Unknown roles or extra arguments exit 1. Use these fields as actual spawn arguments under the [worker settings procedure](worker-prompts.md#worker-settings-and-context); the helper does not create an agent.
+`worker-settings.mjs <role>` takes a role name rather than a versioned input document and returns the three spawn settings as JSON. Unknown roles, incomplete options and duplicate options exit 1. Use these fields as actual spawn arguments under the [worker settings procedure](worker-prompts.md#worker-settings-and-context); the helper does not create an agent.
 
 Capture the snapshot command's JSON outside source before passing it to the unchanged scheduler CLI. Record its allocation output, policy window and displacement counters in the next coordinator `scheduler` event before dispatch. The ledger reconciles active/reserved/uncertain assignments into the snapshot; `otherOccupiedSlots` in the stored scheduling observations covers only workers outside the ledger, avoiding double counting.
 
@@ -72,6 +73,11 @@ It uses authenticated `/search/issues`, every next page and a 100-result page si
 
 ## Ledger and recovery
 
+Successful `init/import/apply/submit/status/validate` CLI output contains only `version`, `complete: true`, `ledgerPath`, `revision`, `appliedEventIds`, and `changed` with issueIds/groupIds/stackIds/assignmentIds. Changed IDs describe the actual before/after transition; identical retries return the same applied IDs with no changed IDs and do not replay effects. Read-only status/validate have no applied or changed IDs. Initialization/import report created identities, not historical event bodies. Success is a local receipt, never GitHub completion evidence. Busy/blocked/error results and exit codes are unchanged.
+
+Add `--full` to those commands only when a consumer needs the full ledger; redirect it to a file rather than echoing it in chat. Saved state and internal function returns are unchanged by default. `snapshot` and `resume` retain their original schemas; capture them to files for scheduler/recovery and read only needed fields. Do not infer missing state from the compact result.
+
+
 Initialize with `version`, `batchId`, `coordinator`, exact `query`, complete `selection`, `repository` (host/owner/name), `baseBranch`, `remote`, `authorization` (original human request), and 40-character `inspectedSha`. The coordinator may retain original conditions, resolved author, concurrency, installed helper/state paths and capabilities in `context`. Preserve these facts in every subsequent handoff.
 
 The ledger stores fixed issues, issue assessments, confirmed groups, pinned stacks/layers, original worker and integration-change check coverage, assignments/slots, publication records, checkpoint state, scheduling observations, maintenance registration and event history. It does not own actual Git or stack locks. An execution event has `id`, `expectedRevision`, ISO `at`, `type` and the following payload:
@@ -108,7 +114,7 @@ Use `validate` before resume and `resume` for unresolved assignments, checkpoint
 
 Initialize `context.runtime` to `codex` or `claude-code`. The ledger, handoff renderer, publication recorder and stack submission share the runtime helper. Missing runtime in a legacy ledger means Codex; unknown values fail. There is no runtime-switch event. Recovery retains the original runtime, and `resume` reports it.
 
-`node /installed/slop-fix-batch/scripts/worker-settings.mjs <role> [--runtime codex|claude-code]` returns native creation arguments. Without the option, the existing Codex output is unchanged. Claude output contains `subagent_type`, `model` and `effort`. Use [runtime tools](runtimes.md) to apply them; optional handoff `runtime` must agree with the ledger.
+`node /installed/slop-fix-batch/scripts/worker-settings.mjs <role> [--runtime codex|claude-code] [--complexity simple|standard]` returns native creation arguments. Omitted runtime means Codex and omitted complexity means standard, preserving existing settings. Simple investigation/implementation changes only effort to medium. Other roles remain unchanged. Record explicit complexity and its reason before creation; the renderer uses that same choice and rejects START mismatches. Claude output contains `subagent_type`, `model` and `effort`. Use [runtime tools](runtimes.md) to apply them; optional handoff `runtime` must agree with the ledger.
 
 ## Publication verification
 
@@ -132,7 +138,11 @@ Run `plan` at safe boundaries to select full versus due targeted reads. Full inv
 
 ## Worker assignments and final report
 
-`render-handoff.mjs handoff` takes version, explicit mode (`plan` or `execution`), role, phase (`prepare` or `start`), ledger and assignment. It renders recorded JSON facts alongside role constraints. Do not execute read-only preparation as permission to implement or publish.
+`render-handoff.mjs handoff` takes version, explicit mode (`plan` or `execution`), role, phase (`prepare` or `start`), ledger and assignment. It renders compact labeled facts alongside role constraints, without repeating the complete assignment JSON. Do not execute read-only preparation as permission to implement or publish.
+
+Long evidence uses assignment `evidenceRefs`: an array of `{path, fields, summary, sha256}`. `path` is an absolute regular JSON file inside the directory containing `ledgerPath` (or a subdirectory); symlinks must resolve inside that directory. `sha256` is the lowercase SHA-256 of the file's exact bytes. `fields` selects nonempty JSON keys to supply assignment evidence; the renderer verifies the digest, data and required role constraints before prepare or START. Workers read those fields in full before acting. `summary` is a short description, not completion evidence. Inline/ref conflicts, duplicate fields, missing/changed files and unresolved placeholders fail closed.
+
+Referenceable fields are investigationEvidence, preparationFindings, priorFindings, observations, observationEvidence, checks, integrationChecks, prerequisiteChecks, dependencyEvidence, estimateEvidence, timingEvidence, diffSummary, publicationEvidence and findings. Keep authorization, identity, acceptance, scope, SHA, checkout, commands, complexity/reason and grants inline. Referenceable inline values longer than 1,200 characters require files; the renderer rejects them rather than truncating. Existing shorter inline evidence remains supported. Run `render-handoff.mjs pack <full-input.json>` to move long referenceable values into content-addressed evidence JSON, compute their digests, validate the complete handoff and save a compact input in the batch directory. It returns only version/complete/handoffPath/evidencePaths; render the returned handoffPath. Original input and ledger stay unchanged. Existing references are checked and preserved. It creates scratch evidence/input files, never execution state or authority; in Plan Mode use only permitted planning scratch paths. Invalid input may leave an unused evidence file, but never a successful handoff receipt. Complete results stay in batch files; messages report new facts, changes, coverage and blockers with their result path.
 
 All assignments require scope, repositoryInstructions, concurrency, estimateEvidence, and absolute requestHelper/requestState/schedulerHelper/timingState/ledgerPath. Investigation/preparation/implementation/publication/stack-execution require checkout, inspectedSha and fixed-list issueKeys. Inventory and delegated maintenance also carry their recorded checkout/startSha for START identity checks. Group roles require stackId, groupId, acceptance, integrationWorktree and dependencyEvidence.
 

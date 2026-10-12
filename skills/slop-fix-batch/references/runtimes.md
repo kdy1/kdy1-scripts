@@ -4,7 +4,7 @@ Use one runtime for the entire batch. Record `context.runtime: "codex"` or `"cla
 
 Before dispatch, verify the tools needed to create, message/resume, observe completion, stop, and wait for workers in the current session. Verify the selected model and effort are available. Read capabilities without launching a batch or test merge. Record actual runtime capacity and nesting restrictions; do not impose another concurrency cap or alter the user's configuration. If a required capability is missing, report the blocker before writes. If only nested delegation is unavailable, return the maintenance repair signal and slot so the coordinator can dispatch that repair directly under the existing ownership rules.
 
-Run `node /installed/slop-fix-batch/scripts/worker-settings.mjs <role> --runtime <runtime>` before creation. Resolve the installed absolute path. The renderer derives settings from `ledger.context.runtime`; an optional top-level handoff `runtime` must match. Repair handoffs use the same helper directly. Do not put settings only in prompt text or silently replace a rejected model/effort. Respect the host's permissions and report conflicting model/effort overrides without changing them.
+Run `node /installed/slop-fix-batch/scripts/worker-settings.mjs <role> --runtime <runtime> --complexity <simple|standard>` before creation. Resolve the installed absolute path. The renderer derives settings from `ledger.context.runtime` and the recorded assignment complexity; an optional top-level handoff `runtime` must match. Repair handoffs use the same helper directly. Do not put settings only in prompt text or silently replace a rejected model/effort. Respect the host's permissions and report conflicting model/effort overrides without changing them.
 
 ## Codex
 
@@ -14,7 +14,7 @@ Run `node /installed/slop-fix-batch/scripts/worker-settings.mjs <role> --runtime
 - Stop with `collaboration.interrupt_agent`, then reconcile actual process, Git and remote effects before releasing a slot or replacing the actor. An unavailable handle is not proof of termination.
 - Attach every published PR to the Codex chat through `attach_artifact`. Observe the attachments independently; publication input uses `attachmentComplete: true` and the attached PR URLs in `attachments`.
 
-Existing role models and reasoning efforts remain unchanged. `fork_turns: "none"` requires a complete first-message handoff.
+Role models and standard reasoning efforts remain unchanged; simple investigation/implementation uses medium effort as recorded before creation. `fork_turns: "none"` requires a complete first-message handoff.
 
 ## Claude Code
 
@@ -29,6 +29,6 @@ Target current Claude Code as described in the official [subagent documentation]
 - Invoke installed dependencies with Claude's Skill tool by skill name, or read their resolved `SKILL.md` when Skill is unavailable. `$skill-name` in shared references means the dependency, not a requirement for Codex tooling. Pass original human authorization and scope explicitly; dependency loading does not start a new batch.
 - Codex chat attachment does not apply. Report the authenticated, verified PR URLs. Publication input must set `runtime: "claude-code"`, `observed.attachmentStatus: "not-applicable"`, and `observed.attachments: []`, and omit `attachmentComplete`. Do not fabricate successful attachments. This affects only Codex chat artifacts, not GitHub body images or PR identity/content/head/base/stack checks.
 
-All Claude roles use Sonnet. Effort is `high` for investigation, implementation and repair; `medium` for preparation, stack-execution, maintenance and publication; `low` for inventory. The settings helper is authoritative. Coordinator settings are unchanged. A resumed worker keeps its creation settings; changing roles with different settings requires a new actor after reconciliation.
+All Claude roles use Sonnet. Standard effort is `high` for investigation, implementation and repair; `medium` for preparation, stack-execution, maintenance and publication; `low` for inventory. Simple investigation/implementation uses medium effort. The settings helper is authoritative. Coordinator settings are unchanged. A resumed worker keeps its creation settings; changing roles with different settings requires a new actor after reconciliation.
 
 The two-phase preparation/START protocol, exact worker/grant/worktree checks, nested-slot reservations, shared API cooldown, construction locks, ready-stack priority and merge-result verification apply identically in both runtimes. A nested maintenance actor may use only coordinator-reserved repair slots. If it cannot obtain reliable completion evidence for its children, retain their accounting and return that uncertainty to the coordinator.

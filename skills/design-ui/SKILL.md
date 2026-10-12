@@ -56,10 +56,18 @@ conversation when implementation is within the authorized task.
    - Resolve discoverable facts before asking the user about product intent.
    - Establish the target surface, users, goal, viewports, states, requirements
      or current gap, and behavior or content that must remain unchanged.
+   - When requirements, existing UI, or supplied materials establish the final
+     UI's language, use that language for UI text in previews and for actual UI
+     copy included in the text specification. Do not infer the UI's language
+     from the conversation language alone. If the UI's language is unknown,
+     this rule does not impose one. It does not set the language of explanations
+     or the conversation.
 
 2. Create the preview with `$imagegen`.
    - Load and follow `$imagegen`, using its built-in tool mode by default and
      the `ui-mockup` use case.
+   - If the final UI's language is known, specify it explicitly in the image
+     generation prompt as the language for visible UI text.
    - Treat the output as preview-only. Render it inline and leave it in the
      image-generation default storage; do not copy it into the target repository
      or update consuming code.

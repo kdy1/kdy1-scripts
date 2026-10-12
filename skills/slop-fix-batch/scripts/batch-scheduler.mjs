@@ -32,6 +32,7 @@ export function rankTasks(tasks) {
     }
     if (task.remainingMs !== undefined) check(Number.isFinite(task.remainingMs) && task.remainingMs >= 0 && task.estimateEvidence, `Missing estimate evidence for ${task.id}`);
     if (task.priority !== undefined) check(Number.isFinite(task.priority), 'Invalid priority');
+    if (task.mergeablePrCount !== undefined) integer(task.mergeablePrCount, 'mergeable PR count');
     byId.set(task.id, task);
   }
   const children = new Map(tasks.map(t => [t.id, []]));
@@ -67,6 +68,10 @@ function compare(a, b) {
     b.downstream.length - a.downstream.length || a.ownMs - b.ownMs ||
     (a.completionOrder ?? Number.MAX_SAFE_INTEGER) - (b.completionOrder ?? Number.MAX_SAFE_INTEGER) ||
     (a.canonicalOrder ?? Number.MAX_SAFE_INTEGER) - (b.canonicalOrder ?? Number.MAX_SAFE_INTEGER) || a.id.localeCompare(b.id);
+}
+
+function compareMergeCandidates(a, b) {
+  return (b.mergeablePrCount ?? 0) - (a.mergeablePrCount ?? 0) || compare(a, b);
 }
 
 export function publicationCeiling(policy = {}, capacity, demand) {
@@ -120,7 +125,7 @@ export function plan(snapshot) {
   const earned = tracked.filter(t => (prior[t.id]?.count ?? 0) >= 2).sort((a, b) =>
     (prior[a.id].sinceBoundary ?? 0) - (prior[b.id].sinceBoundary ?? 0) || pubSort(a, b));
   // Delegated gate/merge work is real runtime work; dispatch it before repair allocations.
-  for (const task of ready.filter(t => t.lane === 'maintenance')) pick(task);
+  for (const task of ready.filter(t => t.lane === 'maintenance').sort(compareMergeCandidates)) pick(task);
   const repairs = ready.filter(t => t.lane === 'repair').sort((a, b) =>
     (b.priority ?? 0) - (a.priority ?? 0) || Number(!!b.unblocksMerge) - Number(!!a.unblocksMerge) ||
     (a.layer ?? 0) - (b.layer ?? 0) || compare(a, b));
@@ -138,7 +143,7 @@ export function plan(snapshot) {
       count: (prior[task.id]?.count ?? 0) + 1, sinceBoundary: prior[task.id]?.sinceBoundary ?? boundary,
     };
   }
-  return { version: 1, schedulingOnly: true, ranked: rows, mergeCandidates: ready.filter(t => t.lane === 'merge').map(t => t.id),
+  return { version: 1, schedulingOnly: true, ranked: rows, mergeCandidates: ready.filter(t => t.lane === 'merge').sort(compareMergeCandidates).map(t => t.id),
     allocations, progressException: exception, displaced, publicationPolicy: pubPolicy,
     accounting: { capacity, used, allocated: allocations.length, unused: free },
     unusedReason: free ? 'No eligible work within publication, dependency and stack limits' : null };

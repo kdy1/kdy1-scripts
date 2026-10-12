@@ -108,6 +108,46 @@ test('confirmed merge-blocking repairs precede earned publication and implementa
   }
 });
 
+for (const lane of ['merge', 'maintenance']) {
+  const selected = result => lane === 'merge' ? result.mergeCandidates : result.allocations.map(t => t.id);
+
+  test(`${lane} selects the most mergeable PRs before priority or latency`, () => {
+    const tasks = [
+      task('large-stack-prefix', lane, { mergeablePrCount: 1, priority: 100, estimate: 'long' }),
+      task('three-ready-prs', lane, { mergeablePrCount: 3 }),
+    ];
+    assert.deepEqual(selected(plan(snapshot(tasks, { capacity: 2 }))), ['three-ready-prs', 'large-stack-prefix']);
+    if (lane === 'maintenance') assert.deepEqual(selected(plan(snapshot(tasks, { capacity: 1 }))), ['three-ready-prs']);
+  });
+
+  test(`${lane} ties retain human priority and remaining-path order`, () => {
+    const result = plan(snapshot([
+      task('short', lane, { mergeablePrCount: 2 }),
+      task('slow', lane, { mergeablePrCount: 2, estimate: 'long' }),
+      task('human-priority', lane, { mergeablePrCount: 2, priority: 1 }),
+    ]));
+    assert.deepEqual(selected(result), ['human-priority', 'slow', 'short']);
+  });
+
+  test(`${lane} missing counts default to zero and counts do not grant eligibility`, () => {
+    const result = plan(snapshot([
+      task('unknown', lane, { priority: 1 }),
+      task('pending-ci-auto-merge', lane, { mergeablePrCount: 0 }),
+      task('ready', lane, { mergeablePrCount: 1 }),
+      task('blocked', lane, { mergeablePrCount: 10, eligible: false }),
+      task('waiting', 'external', { status: 'waiting', eligible: false }),
+      task('dependent', lane, { mergeablePrCount: 20, requires: ['waiting'] }),
+    ]));
+    assert.deepEqual(selected(result), ['ready', 'unknown', 'pending-ci-auto-merge']);
+  });
+}
+
+test('mergeable PR counts must be nonnegative safe integers', () => {
+  for (const mergeablePrCount of [-1, 1.5, NaN, Infinity, '3', null, Number.MAX_SAFE_INTEGER + 1]) {
+    assert.throws(() => plan(snapshot([task('bad', 'maintenance', { mergeablePrCount })])), /Invalid mergeable PR count/);
+  }
+});
+
 test('ordinary repairs still yield to an earned implementation progress exception', () => {
   const result = plan(snapshot([task('impl'), task('repair', 'repair')], {
     capacity: 1, displaced: { impl: { count: 2, sinceBoundary: 1 } }, boundary: 3,

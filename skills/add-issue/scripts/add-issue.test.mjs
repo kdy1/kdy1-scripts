@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, symlinkSyn
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { hash, save, result } from './common.mjs';
+import { hash, save, result, run } from './common.mjs';
 import { snapshot, compare } from './workspace.mjs';
 import { validatePayload, images } from './payload.mjs';
 import { GitHub, collect, definition } from './github.mjs';
@@ -165,6 +165,7 @@ test('metadata applied before response loss is reconciled through reads',t=>{
 function recoverySetup(t) {
   const s=setup(t),gh=new FakeGh();
   assert.throws(()=>record(input(s),{client:gh.client(),afterJournal:()=>{throw new Error('interrupted before launch');}}));
+  const ledger=JSON.parse(readFileSync(s.statePath));ledger.candidates.candidate.ops.create.finishedAt=new Date().toISOString();save(s.statePath,ledger);
   s.context.creationRetry={confirmed:true,originalRecorderFinished:true,evidence:'Human explicitly requests retry; original recorder terminal state verified'};
   const request={...input(s),candidateId:s.c.id};
   const options={client:gh.client(),now:()=>Date.now()+180000};
@@ -210,6 +211,38 @@ test('creation recovery never treats an edited title or unrelated authored issue
   issue.body='Both title and body edited';
   assert.equal(recoverCreate(request,options).status,'blocked');
   assert.equal(readFileSync(s.statePath,'utf8'),original);assert.equal(gh.writes().length,0);
+});
+test('creation recovery excludes later unrelated issues only with an audited completion bound',t=>{
+  const {s,gh,request,options}=recoverySetup(t);
+  gh.addIssue('Another task','Later unrelated issue').created_at=new Date(Date.now()+120000).toISOString();
+  assert.equal(recoverCreate(request,options).retryReleased,true);assert.equal(gh.writes().length,0);
+});
+test('a delayed server creation remains recoverable outside the local command completion window',t=>{
+  const {s,gh,request,options}=recoverySetup(t);
+  const issue=gh.addIssue(s.c.body,s.c.title);issue.created_at=new Date(Date.now()+120000).toISOString();
+  assert.equal(recoverCreate(request,options).recoveredReceipt,true);assert.equal(gh.writes().length,0);
+});
+test('a delayed creation with an edited title still blocks retry through its exact body',t=>{
+  const {s,gh,request,options}=recoverySetup(t);
+  const issue=gh.addIssue(s.c.body,'Edited after delayed completion');issue.created_at=new Date(Date.now()+120000).toISOString();
+  assert.equal(recoverCreate(request,options).status,'blocked');assert.equal(gh.writes().length,0);
+});
+test('legacy creation completion uses the exact saved result and rejects altered or different attempt proof',t=>{
+  const {s,gh,request,options}=recoverySetup(t);
+  const ledger=JSON.parse(readFileSync(s.statePath));delete ledger.candidates.candidate.ops.create.finishedAt;save(s.statePath,ledger);
+  const path=join(s.dir,'original-result.json');
+  save(path,{version:1,payloadHash:hash(s.payload),outcomes:[{candidateId:s.c.id,operations:{create:ledger.candidates.candidate.ops.create}}]});
+  s.context.creationRetry.completionResult={path,sha256:hash(readFileSync(path))};
+  const original=readFileSync(s.statePath,'utf8');
+  const proof=readFileSync(path);writeFileSync(path,'{}');
+  assert.throws(()=>recoverCreate(request,options),/Completion result changed/);assert.equal(readFileSync(s.statePath,'utf8'),original);
+  writeFileSync(path,proof);s.context.creationRetry.completionResult.sha256=hash(readFileSync(path));
+  assert.equal(recoverCreate(request,options).retryReleased,true);
+});
+test('CLI failures expose only a bounded classification without raw stderr',()=>{
+  const r=run(process.execPath,['-e','process.stderr.write("API rate limit exceeded secret-example");process.exit(1)']);
+  assert.equal(r.failureCode,'rate-limit');assert.equal(r.ok,false);assert.equal(r.stderr,undefined);
+  assert.equal(JSON.stringify(r).includes('secret-example'),false);
 });
 test('write-ahead journal survives interruption and locks/changed payload prevent new writes',t=>{
   const s=setup(t),gh=new FakeGh();assert.throws(()=>record(input(s),{client:gh.client(),afterJournal:()=>{throw new Error('process interrupted');}}),/interrupted/);assert.equal(gh.writes().length,0);assert.equal(record(input(s),{client:gh.client()}).status,'uncertain');

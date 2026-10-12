@@ -197,7 +197,7 @@ export class GitHub {
       const r = this.command(args);
       // gh can create the record and some attachments before returning non-zero.
       const url = r.stdout.match(/https:\/\/[^\s]+\/issues\/\d+(?:#issuecomment-\d+)?/g)?.at(-1);
-      check(url, r.ok ? 'No verified target returned' : 'Write outcome uncertain');
+      check(url, r.ok ? 'No verified target returned' : `Write outcome uncertain (${['timeout','rate-limit','command-failed'].includes(r.failureCode) ? r.failureCode : 'unknown'})`);
       if (args[1] === 'create') issueNumber(url, this.target);
       else { const u = new URL(url); check(u.host === this.target.host && u.pathname === `/${this.target.repo}/issues/${args[2]}` && /^#issuecomment-\d+$/.test(u.hash), 'Returned comment target mismatch'); }
       return url;

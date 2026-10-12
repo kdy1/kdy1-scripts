@@ -80,10 +80,11 @@ export function record(input, { client = new GitHub(input.payload.target), after
           state.ops[id].browser = browser; if (browser.appendImagesOnly) state.ops[id].receipt = browser.target; persist(); return false;
         }
         try {
-          state.ops[id].receipt = fn(); persist();
+          state.ops[id].receipt = fn(); state.ops[id].finishedAt = new Date().toISOString(); persist();
           check(verifyOperation(p, c, client, state, id, state.ops[id]), 'Recorded operation not verified');
           state.ops[id].status = 'verified'; persist(); return true;
         } catch (e) {
+          state.ops[id].finishedAt ??= new Date().toISOString();
           // Only an explicit HTTP rejection proves no mutation. Lost responses stay uncertain.
           if (id.startsWith('metadata:') && e.definite) {
             const m = c.metadata.find(x => `metadata:${x.id}` === id);

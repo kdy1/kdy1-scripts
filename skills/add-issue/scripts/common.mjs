@@ -38,5 +38,6 @@ function physical(path) {
 export function outside(path, repo) { const rel = relative(physical(repo), physical(absolute(path))); check(rel.startsWith('..' + '/') || isAbsolute(rel), 'Private artifacts must be outside the investigated repository'); }
 export function run(program, args, options = {}) {
   const r = spawnSync(program, args, { encoding: 'utf8', timeout: 30000, maxBuffer: 32 * 1024 * 1024, ...options });
-  return { ok: !r.error && r.status === 0, stdout: r.stdout ?? '', code: r.status, error: r.error?.code ?? null, httpStatus: Number(r.stderr?.match(/HTTP (\d{3})/)?.[1]) || null };
+  const failureCode = r.error?.code === 'ETIMEDOUT' ? 'timeout' : /rate limit/i.test(r.stderr ?? '') ? 'rate-limit' : r.status !== 0 ? 'command-failed' : null;
+  return { ok: !r.error && r.status === 0, stdout: r.stdout ?? '', code: r.status, error: r.error?.code ?? null, httpStatus: Number(r.stderr?.match(/HTTP (\d{3})/)?.[1]) || null, failureCode };
 }

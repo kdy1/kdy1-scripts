@@ -4,6 +4,7 @@ import { check, version, nonempty, sha, absolute, readJson, load, save, lock, cl
 import { emptyCheckpoints, checkpoint, validateCheckpoints } from './batch-checkpoints.mjs';
 import { verifyPublication } from './verify-publication.mjs';
 import { ledgerRuntime, matchRuntime, runtimeName } from './runtime.mjs';
+import { workerSettings } from './worker-settings.mjs';
 import { rankTasks } from './batch-scheduler.mjs';
 import { delegationSafeBoundary, validateDelegation, grantDelegation, authorizeSubmission, authorizeEvent, closeGrants, unresolvedOperations } from './batch-delegation.mjs';
 const safeId = value => { nonempty(value, 'id'); check(!['__proto__', 'constructor', 'prototype'].includes(value), 'Unsafe id'); return value; };
@@ -60,6 +61,11 @@ export function validateLedger(ledger) {
     if (stack.phase === 'ready') check(stack.layers.length === stack.groups.length && stack.layers.every(l => l.publication?.complete === true) && stack.readyEvidence && stack.coordination?.phase === 'ready' && stack.detachedSha === stack.layers.at(-1).headSha, 'Incomplete ready handoff');
   }
   for (const a of Object.values(ledger.assignments)) {
+    if (a.complexity !== undefined) {
+      check(['simple', 'standard'].includes(a.complexity), 'Unknown worker complexity');
+      nonempty(a.complexityReason, 'complexity reason');
+      workerSettings(a.role ?? a.lane, runtime, a.complexity);
+    }
     safeId(a.id); nonempty(a.taskId, 'assignment task id'); check(['investigation', 'preparation', 'implementation', 'publication', 'repair', 'maintenance', 'inventory'].includes(a.lane), 'Invalid worker lane'); check(['reserved', 'active', 'uncertain', 'finished'].includes(a.status), 'Invalid assignment status');
     check(Number.isSafeInteger(a.slots) && a.slots >= (a.status === 'finished' ? 0 : 1), 'Missing occupied slots');
     if (a.status === 'finished') check(a.slots === 0 && a.evidence && ['succeeded', 'failed', 'cancelled'].includes(a.outcome), 'Missing assignment completion evidence/outcome');
@@ -187,6 +193,7 @@ export function applyEvent(ledger, event, owner) {
         check(old.slots === a.slots || a.status === 'finished', 'Occupied slots cannot be silently changed');
         check(old.status === a.status || (old.status === 'reserved' && ['active', 'uncertain', 'finished'].includes(a.status)) || (old.status === 'active' && ['uncertain', 'finished'].includes(a.status)) || old.status === 'uncertain', 'Illegal assignment transition');
         if (old.worker) check(old.worker === a.worker, 'Worker identity changed');
+        check((old.complexity ?? 'standard') === (a.complexity ?? 'standard') && old.complexityReason === a.complexityReason, 'Worker complexity changed');
       } else check(a.status === 'reserved', 'Persist reservation before start');
       if (a.status === 'active') { nonempty(a.worker, 'actual worker identity'); absolute(a.worktree); sha(a.startSha); }
       next.assignments[a.id] = a; break;
@@ -261,16 +268,39 @@ export function submitEvents(ledger, input) {
   next.delegation.receipts[`${grant.id}:${input.sequence}`] = { input: structuredClone(input), revision: next.revision };
   return validateLedger(next);
 }
-export function submitLedger(path, input) {
+export function ledgerSummary(path, ledger, previous = ledger, appliedEventIds = []) {
+  const changedIds = (before, after) => [...new Set([...Object.keys(before), ...Object.keys(after)])]
+    .filter(id => !isDeepStrictEqual(before[id], after[id]));
+  return { version: 1, complete: true, ledgerPath: path, revision: ledger.revision, appliedEventIds,
+    changed: { issueIds: [...new Set([...changedIds(previous.assessments, ledger.assessments),
+      ...changedIds(Object.fromEntries((previous.fixedIssues ?? []).map(i => [i.key, i])), Object.fromEntries(ledger.fixedIssues.map(i => [i.key, i])))])],
+      groupIds: changedIds(previous.groups, ledger.groups), stackIds: changedIds(previous.stacks, ledger.stacks),
+      assignmentIds: changedIds(previous.assignments, ledger.assignments) } };
+}
+export function submitLedger(path, input, summary = false) {
   absolute(path); const release = lock(path);
   if (!release) return { version: 1, complete: false, status: 'busy', reason: 'Ledger busy or interrupted; no network operation started' };
-  try { const next = submitEvents(readJson(path), input); save(path, next); return next; } finally { release(); }
+  try {
+    const previous = readJson(path), next = submitEvents(previous, input); save(path, next);
+    const eventIds = input.events.map((_, i) => `delegate:${input.grantId}:${input.generation}:${input.sequence}:${i}`);
+    return summary ? ledgerSummary(path, next, previous, eventIds) : next;
+  } finally { release(); }
 }
-export function updateLedger(path, owner, event) {
+export function updateLedger(path, owner, event, summary = false) {
   absolute(path); const release = lock(path); check(release, 'Ledger busy or interrupted; reconcile owner before retry');
-  try { const next = applyEvent(readJson(path), event, owner); save(path, next); return next; } finally { release(); }
+  try {
+    const previous = readJson(path), next = applyEvent(previous, event, owner); save(path, next);
+    return summary ? ledgerSummary(path, next, previous, [event.id]) : next;
+  } finally { release(); }
 }
-cli(import.meta.url, 'batch-ledger.mjs <init|import|validate|status|resume|snapshot|apply|submit> ledger.json [input.json] [owner]', ([command, path, inputPath, owner]) => {
+cli(import.meta.url, 'batch-ledger.mjs <init|import|validate|status|resume|snapshot|apply|submit> ledger.json [input.json] [owner] [--full]', args => {
+  const full = args.includes('--full');
+  check(args.filter(a => a === '--full').length <= 1, 'Duplicate --full option');
+  const [command, path, inputPath, owner, ...extra] = args.filter(a => a !== '--full');
+  check(!extra.length && !args.some(a => a.startsWith('--') && a !== '--full'), 'Unexpected ledger arguments');
+  check(['init', 'import', 'validate', 'status', 'resume', 'snapshot', 'apply', 'submit'].includes(command), 'Unknown ledger command');
+  check(command === 'apply' ? Boolean(inputPath && owner) : ['init', 'import', 'submit'].includes(command) ? Boolean(inputPath && !owner) : !inputPath && !owner, 'Unexpected or missing ledger arguments');
+  check(!full || !['snapshot', 'resume'].includes(command), '--full applies only to ledger results');
   absolute(path);
   if (command === 'init' || command === 'import') {
     check(inputPath, 'Missing input file'); const release = lock(path); check(release, 'Ledger busy or interrupted');
@@ -279,13 +309,13 @@ cli(import.meta.url, 'batch-ledger.mjs <init|import|validate|status|resume|snaps
       let ledger;
       try { ledger = command === 'init' ? initialize(readJson(inputPath)) : validateLedger(readJson(inputPath)); }
       catch (e) { if (command === 'import') return { version: 1, complete: false, status: 'blocked', reason: `Import requires explicit recovery: ${e.message}` }; throw e; }
-      save(path, ledger); return ledger;
+      save(path, ledger); return full ? ledger : ledgerSummary(path, ledger, { assessments: {}, groups: {}, stacks: {}, assignments: {} });
     } finally { release(); }
   }
-  if (command === 'submit') { check(inputPath, 'Missing submission file'); return submitLedger(path, readJson(inputPath)); }
-  if (command === 'apply') { check(inputPath && owner, 'Missing event or coordinator'); return updateLedger(path, owner, readJson(inputPath)); }
+  if (command === 'submit') { check(inputPath, 'Missing submission file'); return submitLedger(path, readJson(inputPath), !full); }
+  if (command === 'apply') { check(inputPath && owner, 'Missing event or coordinator'); return updateLedger(path, owner, readJson(inputPath), !full); }
   const ledger = validateLedger(readJson(path));
   if (command === 'snapshot') return schedulingSnapshot(ledger);
   if (command === 'resume') return resumeSummary(ledger);
-  check(['status', 'validate'].includes(command), 'Unknown ledger command'); return ledger;
+  check(['status', 'validate'].includes(command), 'Unknown ledger command'); return full ? ledger : ledgerSummary(path, ledger);
 });

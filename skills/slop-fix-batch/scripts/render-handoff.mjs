@@ -1,4 +1,8 @@
 #!/usr/bin/env node
+import { readFileSync, realpathSync, statSync } from 'node:fs';
+import { dirname, relative, isAbsolute } from 'node:path';
+import { createHash } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import { check, version, nonempty, sha, absolute, readJson, cli } from './helper-common.mjs';
 import { workerSettings } from './worker-settings.mjs';
 import { ledgerRuntime, matchRuntime } from './runtime.mjs';
@@ -18,12 +22,60 @@ const instructions = {
   publication: 'Explicitly invoke the installed $create-pr skill. Use only the frozen integration checkout for the assigned prefix. Verify exact head/base and scope. Publish non-draft; include each fully implemented issue on its own Closes line, preserving Closes despite skipped real-world validation. Disclose worker coverage at the original SHA separately from publication head and integration-change checks. Reuse recorded PRs, apply the runtime attachment policy, and return verified URLs. Do not commit, switch branches, mutate source/local layer refs or run gh stack. Do not merge or register maintenance.',
   maintenance: 'Continue $slop-fix-batch’s internal batch maintenance procedure and read its batch reference. Do not recollect issues or restart construction. Manage only the ledger PR set. Return results to the direct coordinator loop; never register automation. Building/held stacks remain protected. Honor stopped management state, whole-stack ownership, two-phase repair START and fresh review/CI/membership gates. Process merges then repairs then publication then implementation, including the scheduler progress exception. Only the coordinator in legacy mode or the recorded maintenance actor in delegated mode merges under original conditional authorization; implementation and repair children never merge. Maintenance actors consume a slot; nested repairs require coordinator-reserved additional slots. Candidate hints are not authority. Reconcile uncertain requests before retry and retain original standalone eligibility. Do not wait for unrelated workers or CI/reviews during a bounded pass.',
 };
+// Evidence files hold long findings, never identity, acceptance or execution authority.
+const evidenceFields = new Set(['investigationEvidence', 'preparationFindings', 'priorFindings', 'observations',
+  'observationEvidence', 'checks', 'integrationChecks', 'prerequisiteChecks', 'dependencyEvidence',
+  'estimateEvidence', 'timingEvidence', 'diffSummary', 'publicationEvidence', 'findings']);
+export function resolveEvidence(assignment) {
+  check(assignment && typeof assignment === 'object' && !Array.isArray(assignment), 'Missing assignment');
+  const refs = assignment.evidenceRefs ?? [];
+  check(Array.isArray(refs), 'Invalid evidence references');
+  const resolved = { ...assignment }, referenced = new Set();
+  if (!refs.length) return { resolved, referenced };
+  absolute(assignment.ledgerPath);
+  const root = realpathSync(dirname(assignment.ledgerPath));
+  for (const ref of refs) {
+    absolute(ref.path); nonempty(ref.summary, 'evidence summary');
+    check(/^[a-f0-9]{64}$/.test(ref.sha256 ?? ''), 'Missing evidence SHA-256');
+    check(Array.isArray(ref.fields) && ref.fields.length > 0, 'Missing evidence fields');
+    const path = realpathSync(ref.path), within = relative(root, path);
+    check(within !== '' && within !== '..' && !within.startsWith('../') && !isAbsolute(within), 'Evidence outside batch state directory');
+    check(statSync(path).isFile(), 'Evidence must be a regular file');
+    const bytes = readFileSync(path);
+    check(createHash('sha256').update(bytes).digest('hex') === ref.sha256, 'Evidence SHA-256 mismatch');
+    const data = JSON.parse(bytes.toString('utf8'));
+    check(data && typeof data === 'object' && !Array.isArray(data), 'Evidence must be a JSON object');
+    for (const field of ref.fields) {
+      check(evidenceFields.has(field) && !referenced.has(field), 'Unsupported or duplicate evidence field');
+      check(Object.hasOwn(data, field), `Missing evidence field: ${field}`);
+      const value = data[field];
+      check(value !== null && (typeof value === 'string' ? value.trim().length > 0 :
+        Array.isArray(value) ? value.length > 0 : typeof value === 'object' ? Object.keys(value).length > 0 : false), `Empty evidence field: ${field}`);
+      check(!Object.hasOwn(assignment, field) || isDeepStrictEqual(assignment[field], value), `Conflicting inline evidence: ${field}`);
+      resolved[field] = value; referenced.add(field);
+    }
+  }
+  return { resolved, referenced };
+}
+function compactAssignment(assignment, referenced) {
+  const lines = Object.entries(assignment).filter(([key]) => key !== 'evidenceRefs' && !referenced.has(key))
+    .map(([key, value]) => {
+      const text = typeof value === 'string' ? value : JSON.stringify(value);
+      check(!evidenceFields.has(key) || text.length <= 1200, `Long ${key} requires an evidence reference`);
+      return `- **${key}:** ${text}`;
+    });
+  for (const ref of assignment.evidenceRefs ?? []) {
+    lines.push(`- **Evidence (${ref.fields.join(', ')}):** ${ref.summary}\n  File: ${ref.path}\n  SHA-256: ${ref.sha256}`);
+  }
+  return lines.join('\n');
+}
 export function renderHandoff(input) {
   version(input); check(roles.includes(input.role), 'Unknown handoff role');
   check(['plan', 'execution'].includes(input.mode), 'Explicit mode required');
   check(input.mode !== 'plan' || ['investigation', 'preparation'].includes(input.role), 'Plan Mode permits read-only assignments only');
   check(['prepare', 'start'].includes(input.phase), 'Explicit prepare/start phase required');
-  const ledger = validateLedger(input.ledger); const a = input.assignment;
+  const ledger = validateLedger(input.ledger);
+  const { resolved: a, referenced } = resolveEvidence(input.assignment);
   const runtime = ledgerRuntime(ledger);
   if (input.runtime !== undefined) matchRuntime(input.runtime, runtime);
   check(a && typeof a === 'object', 'Missing assignment');
@@ -82,15 +134,21 @@ export function renderHandoff(input) {
     if (!['maintenance', 'inventory'].includes(input.role)) check(recorded.worktree === a.checkout, 'START checkout differs from assignment');
     if (input.role === 'implementation') check(recorded.startSha === a.startSha, 'START SHA differs from assignment');
   }
+  const complexity = a.complexity ?? 'standard';
+  if (a.complexity !== undefined) nonempty(a.complexityReason, 'complexity reason');
+  const recordedSettings = ledger.assignments[a.assignmentId];
+  if (input.phase === 'start' && input.mode === 'execution' && recordedSettings) {
+    check((recordedSettings.complexity ?? 'standard') === complexity && recordedSettings.complexityReason === a.complexityReason, 'START complexity differs from recorded assignment');
+  }
   placeholders(a);
   const phase = input.phase === 'prepare' ? 'Read-only preparation only. Do not begin implementation, publication, repair, registration or any mutation until a separately recorded START.' : 'START only within the recorded authorization and role constraints.';
-  const spawnSettings = workerSettings(input.role, runtime);
+  const spawnSettings = workerSettings(input.role, runtime, complexity);
   const spawnTool = runtime === 'claude-code' ? 'Agent' : 'collaboration.spawn_agent';
   const attachmentPolicy = runtime === 'claude-code'
     ? 'Codex chat attachment is not applicable. Record attachmentStatus: "not-applicable" and attachments: []; report verified PR URLs. Do not claim an attachment succeeded.'
     : 'Verify Codex chat attachment for every published PR.';
   const roleInstructions = runtime === 'claude-code' ? instructions[input.role].replaceAll('$create-pr', '/create-pr').replaceAll('$slop-fix-batch', '/slop-fix-batch') : instructions[input.role];
-  return `# Slop Fix Batch: ${input.role} (${input.phase})\n\nMode: ${input.mode}\nRuntime: ${runtime}\nBatch: ${ledger.batchId}\nRepository: ${ledger.repository}\nOriginal human authorization: ${ledger.authorization}\nExact query: ${ledger.query}\n\n## Agent creation settings\n\nPass these fields to ${spawnTool} when creating this role. Keep the same agent for prepare and START.\n\n\x60\x60\x60json\n${JSON.stringify(spawnSettings, null, 2)}\n\x60\x60\x60\n\n${phase}\n\n${policy}\n\n${roleInstructions}\n\n${attachmentPolicy}\n\n## Recorded assignment\n\n\x60\x60\x60json\n${JSON.stringify(a, null, 2)}\n\x60\x60\x60\n`;
+  return `# Slop Fix Batch: ${input.role} (${input.phase})\n\nMode: ${input.mode}\nRuntime: ${runtime}\nBatch: ${ledger.batchId}\nRepository: ${ledger.repository}\nOriginal human authorization: ${ledger.authorization}\nExact query: ${ledger.query}\n\n## Agent creation settings\n\nPass these fields to ${spawnTool} when creating this role. Keep the same agent for prepare and START.\n\n\x60\x60\x60json\n${JSON.stringify(spawnSettings, null, 2)}\n\x60\x60\x60\n\n${phase}\n\n${policy}\n\n${roleInstructions}\n\n${attachmentPolicy}\n\n## Recorded assignment\n\n${compactAssignment(a, referenced)}\n\nRead each referenced JSON field before acting; do not treat its summary as acceptance evidence. Report new facts, changes and blockers; keep complete results in batch-state files.\n`;
 }
 const cell = value => String(value ?? 'not recorded').replaceAll('|', '\\|').replaceAll('\n', ' ');
 export function renderReport(ledger) {

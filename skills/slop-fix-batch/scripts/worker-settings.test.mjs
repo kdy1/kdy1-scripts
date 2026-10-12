@@ -59,3 +59,23 @@ test('invalid runtimes and incomplete options cannot silently select Codex', () 
     assert.equal(result.stdout, '');
   }
 });
+
+test('simple investigation and implementation reduce effort in both runtimes, other roles stay unchanged', () => {
+  for (const runtime of ['codex', 'claude-code']) for (const role of Object.keys(expected)) {
+    const standard = workerSettings(role, runtime), simple = workerSettings(role, runtime, 'simple');
+    const effort = runtime === 'codex' ? 'reasoning_effort' : 'effort';
+    assert.deepEqual(simple, { ...standard, [effort]: ['investigation', 'implementation'].includes(role) ? 'medium' : standard[effort] });
+    for (const flags of [['--runtime', runtime, '--complexity', 'simple'], ['--complexity', 'simple', '--runtime', runtime]]) {
+      const result = spawnSync(process.execPath, [script, role, ...flags], { encoding: 'utf8' });
+      assert.equal(result.status, 0, result.stderr); assert.deepEqual(JSON.parse(result.stdout), simple);
+    }
+  }
+});
+
+test('invalid and duplicate complexity options never emit settings', () => {
+  for (const complexity of ['', null, {}, 'unknown']) assert.throws(() => workerSettings('investigation', 'codex', complexity), /complexity/);
+  for (const flags of [['--complexity'], ['--complexity', 'unknown'], ['--complexity', 'simple', '--complexity', 'standard'], ['--runtime', 'codex', '--runtime', 'claude-code']]) {
+    const result = spawnSync(process.execPath, [script, 'implementation', ...flags], { encoding: 'utf8' });
+    assert.equal(result.status, 1); assert.equal(result.stdout, '');
+  }
+});

@@ -13,15 +13,23 @@ const settings = new Map([
   ['publication', ['gpt-6.1-sol', 'medium']],
 ]);
 
-export function workerSettings(role, runtime = 'codex') {
+export function workerSettings(role, runtime = 'codex', complexity = 'standard') {
   runtimeName(runtime);
   check(settings.has(role), 'Unknown worker role');
-  const [model, reasoning_effort] = settings.get(role);
+  check(['simple', 'standard'].includes(complexity), 'Unknown worker complexity');
+  const [model, defaultEffort] = settings.get(role);
+  const reasoning_effort = complexity === 'simple' && ['investigation', 'implementation'].includes(role) ? 'medium' : defaultEffort;
   if (runtime === 'claude-code') return { subagent_type: 'general-purpose', model: 'sonnet', effort: reasoning_effort };
   return { model, reasoning_effort, fork_turns: 'none' };
 }
 
-cli(import.meta.url, 'worker-settings.mjs <role> [--runtime codex|claude-code]', args => {
-  check(args.length === 1 || (args.length === 3 && args[1] === '--runtime'), 'Expected one worker role and optional --runtime');
-  return workerSettings(args[0], args[2]);
+cli(import.meta.url, 'worker-settings.mjs <role> [--runtime codex|claude-code] [--complexity simple|standard]', args => {
+  check(args.length > 0 && args.length % 2 === 1, 'Expected role and complete option pairs');
+  const options = {};
+  for (let i = 1; i < args.length; i += 2) {
+    const key = args[i];
+    check(['--runtime', '--complexity'].includes(key) && !Object.hasOwn(options, key), 'Unknown or duplicate worker option');
+    options[key] = args[i + 1];
+  }
+  return workerSettings(args[0], options['--runtime'], options['--complexity']);
 });

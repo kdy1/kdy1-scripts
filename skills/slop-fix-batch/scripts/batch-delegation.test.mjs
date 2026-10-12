@@ -320,3 +320,21 @@ test('unresolved operations prevent terminal batch completion even without an ac
   l.implementationEnded = true; l.checkpoints.pending = []; l.checkpoints.inventory = { complete: true, prs: ['s0', 's1'].map(id => ({ url: l.stacks[id].layers[0].url, state: 'MERGED', readComplete: true, headSha: head, baseSha: base, readAt: 1 })) };
   assert.equal(checkpointPlan(l, 2).stop, false);
 });
+
+test('submit CLI returns bounded receipts and --full, duplicates, busy and uncertain effects keep their contracts', () => scratch(dir => {
+  const { l, g } = assign(fixture()); const path = join(dir, 'ledger.json'), file = join(dir, 'submission.json'); save(path, l);
+  const submission = envelope(l, g, [{ type: 'operation', stackId: 's0', value: { id: 'pending', kind: 'submit', owner: g.worker, headSha: base, status: 'uncertain' } }]);
+  save(file, submission);
+  const invoke = (...flags) => spawnSync(process.execPath, [fileURLToPath(new URL('./batch-ledger.mjs', import.meta.url)), 'submit', path, file, ...flags], { encoding: 'utf8' });
+  let result = invoke(); assert.equal(result.status, 0, result.stderr); const summary = JSON.parse(result.stdout);
+  assert.equal(summary.complete, true); assert.deepEqual(summary.changed.stackIds, ['s0']);
+  assert.deepEqual(summary.appliedEventIds, [`delegate:${g.id}:1:1:0`]); assert.equal(summary.events, undefined);
+  const stored = JSON.parse(readFileSync(path)); assert.equal(stored.stacks.s0.operations.pending.status, 'uncertain');
+  result = invoke(); assert.equal(result.status, 0); assert.equal(JSON.parse(result.stdout).revision, stored.revision);
+  assert.deepEqual(JSON.parse(result.stdout).changed.stackIds, []); assert.deepEqual(JSON.parse(readFileSync(path)), stored);
+  result = invoke('--full'); assert.equal(result.status, 0); assert.deepEqual(JSON.parse(result.stdout), stored);
+  save(file, { ...submission, events: [{ type: 'operation', stackId: 's0', value: { ...submission.events[0].value, kind: 'conflicting' } }] });
+  result = invoke(); assert.equal(result.status, 1); assert.equal(result.stdout, ''); assert.deepEqual(JSON.parse(readFileSync(path)), stored);
+  save(file, submission); mkdirSync(`${path}.lock`);
+  result = invoke(); assert.equal(result.status, 2); assert.equal(JSON.parse(result.stdout).status, 'busy'); assert.equal(JSON.parse(result.stdout).complete, false);
+}));

@@ -1,3 +1,4 @@
+import { resolveHistoryPayload } from './ledger-storage.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, symlinkSync } from 'node:fs';
@@ -244,6 +245,66 @@ test('CLI failures expose only a bounded classification without raw stderr',()=>
   assert.equal(r.failureCode,'rate-limit');assert.equal(r.ok,false);assert.equal(r.stderr,undefined);
   assert.equal(JSON.stringify(r).includes('secret-example'),false);
 });
+test('ledger migration command preserves attempts and history and rejects a different payload',t=>{
+  const s=setup(t);
+  const ledger={version:1,payloadHash:hash(s.payload),candidates:{candidate:{ops:{create:{status:'uncertain',receipt:null,startedAt:new Date().toISOString()}}}},history:[{previousHash:hash(s.payload),payloadHash:hash(s.payload),previousPayload:s.payload,review:{reason:'Retained prior review'},provenance:'Trusted review'}]};
+  save(s.statePath,ledger);
+  const path=join(s.dir,'migration-input.json');save(path,{...input(s)});
+  assert.equal(main(['migrate-ledger',path]).status,'verified');
+  const migrated=JSON.parse(readFileSync(s.statePath));
+  assert.deepEqual(migrated.candidates,ledger.candidates);
+  assert.deepEqual(resolveHistoryPayload(s.statePath,migrated.history[0]),s.payload);
+  s.c.title='Different approved task';save(path,{...input(s)});
+  const bytes=readFileSync(s.statePath);
+  assert.throws(()=>main(['migrate-ledger',path]),/another payload/);
+  assert.deepEqual(readFileSync(s.statePath),bytes);
+});
+function legacySerialRecoverySetup(t) {
+  const {s,gh,options}=recoverySetup(t);
+  const other={...structuredClone(s.c),id:'other',title:'area: another screen',body:'Other approved screen body'};
+  s.payload.candidates.push(other);
+  const ledger=JSON.parse(readFileSync(s.statePath));
+  const op=ledger.candidates.candidate.ops.create;delete op.finishedAt;op.error='Write outcome uncertain';
+  const nextStart=new Date(Date.parse(op.startedAt)+4000).toISOString();
+  const issue=gh.addIssue(other.body,other.title);issue.created_at=new Date(Date.parse(op.startedAt)+2000).toISOString();
+  ledger.payloadHash=hash(s.payload);
+  ledger.candidates.other={issueUrl:issue.html_url,ops:{create:{status:'verified',startedAt:nextStart,receipt:issue.html_url}},outcome:{complete:true}};
+  save(s.statePath,ledger);
+  return {s,gh,options,issue,other,ledger,request:{...input(s),candidateId:s.c.id}};
+}
+test('legacy failed command uses a following serial journal without inventing completion or dropping another receipt',t=>{
+  const {s,gh,options,request,ledger,issue}=legacySerialRecoverySetup(t);
+  assert.equal(recoverCreate(request,options).retryReleased,true);
+  const after=JSON.parse(readFileSync(s.statePath));
+  const attempt=after.candidates.candidate.creationAttempts[0];
+  assert.equal(attempt.operation.finishedAt,undefined);
+  assert.equal(attempt.recovery.completion.kind,'following-journal');
+  assert.equal(attempt.recovery.completion.finishedBy,ledger.candidates.other.ops.create.startedAt);
+  assert.deepEqual(attempt.recovery.excludedVerifiedReceipts,[issue.html_url]);
+  assert.deepEqual(after.candidates.other,ledger.candidates.other);
+  assert.equal(attempt.recovery.completeReads,2);assert.equal(gh.writes().length,0);
+});
+test('legacy journal bound requires a persisted command error and two-minute quiet period',t=>{
+  const {s,gh,options,request,ledger}=legacySerialRecoverySetup(t);
+  delete ledger.candidates.candidate.ops.create.error;save(s.statePath,ledger);
+  assert.throws(()=>recoverCreate(request,options),/persisted command error/);
+  ledger.candidates.candidate.ops.create.error='Write outcome uncertain';
+  ledger.candidates.other.ops.create.startedAt=new Date(Date.now()+180000).toISOString();save(s.statePath,ledger);
+  assert.throws(()=>recoverCreate(request,options),/two minutes/);assert.equal(gh.writes().length,0);
+});
+test('other-screen exclusion requires complete unchanged exact receipt proof',t=>{
+  const {s,gh,options,request,ledger,issue}=legacySerialRecoverySetup(t);
+  const unchanged=readFileSync(s.statePath,'utf8');
+  issue.body='Changed approved body';assert.equal(recoverCreate(request,options).status,'blocked');
+  assert.equal(readFileSync(s.statePath,'utf8'),unchanged);
+  issue.body='Other approved screen body';ledger.candidates.other.outcome.complete=false;save(s.statePath,ledger);
+  assert.equal(recoverCreate(request,options).status,'blocked');assert.equal(gh.writes().length,0);
+});
+test('recovering candidate exact body cannot be excluded as another completed screen',t=>{
+  const {s,gh,options,request,ledger,issue,other}=legacySerialRecoverySetup(t);
+  other.body=s.c.body;issue.body=s.c.body;ledger.payloadHash=hash(s.payload);save(s.statePath,ledger);
+  assert.equal(recoverCreate(request,options).status,'blocked');assert.equal(gh.writes().length,0);
+});
 test('write-ahead journal survives interruption and locks/changed payload prevent new writes',t=>{
   const s=setup(t),gh=new FakeGh();assert.throws(()=>record(input(s),{client:gh.client(),afterJournal:()=>{throw new Error('process interrupted');}}),/interrupted/);assert.equal(gh.writes().length,0);assert.equal(record(input(s),{client:gh.client()}).status,'uncertain');
   const journal=JSON.parse(readFileSync(s.statePath));assert.equal(journal.candidates.candidate.ops.create.status,'uncertain');s.c.title='changed';assert.throws(()=>record(input(s),{client:gh.client()}),/another payload/);s.c.title='area: maintain behavior';mkdirSync(`${s.statePath}.lock`);assert.equal(record(input(s),{client:gh.client()}).status,'blocked');
@@ -464,7 +525,7 @@ test('unrelated search changes and edited duplicate text resume through reviewed
     assert.equal(gh.writes().length, existingTarget ? 0 : 1);
     const ledger = JSON.parse(readFileSync(s.statePath));
     assert.equal(ledger.history[0].previousHash, hash(request.previousPayload));
-    assert.deepEqual(ledger.history[0].previousPayload, request.previousPayload);
+    assert.deepEqual(resolveHistoryPayload(s.statePath, ledger.history[0]), request.previousPayload);
   }
 });
 test('new matching duplicate routes to one missing-content comment instead of creation', t => {

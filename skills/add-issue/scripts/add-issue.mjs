@@ -9,6 +9,7 @@ import { preflight } from './preflight.mjs';
 import { verifyRecording } from './verify-recording.mjs';
 import { record } from './record.mjs';
 import { refresh } from './refresh.mjs';
+import { migrateLedger } from './ledger-storage.mjs';
 import { recoverCreate } from './recover-create.mjs';
 
 export function dispatch(command, input) {
@@ -20,6 +21,7 @@ export function dispatch(command, input) {
   if (command === 'collect') return collect(input);
   if (command === 'record') return record(input);
   if (command === 'recover-create') return recoverCreate(input);
+  if (command === 'migrate-ledger') return migrateLedger(input);
   if (command === 'refresh') return refresh(input);
   if (command === 'preflight' || command === 'verify') {
     validatePayload(input.payload);
@@ -31,7 +33,7 @@ export function dispatch(command, input) {
 }
 export function main(args) {
   const [command, path, output] = args;
-  if (command === '--help') return { help: 'node add-issue.mjs snapshot|compare|validate|images|collect|preflight|refresh|recover-create|record|verify /absolute/input.json [/absolute/output.json]' };
+  if (command === '--help') return { help: 'node add-issue.mjs snapshot|compare|validate|images|collect|preflight|refresh|recover-create|migrate-ledger|record|verify /absolute/input.json [/absolute/output.json]' };
   check(command && path && args.length <= 3, 'Expected command and absolute JSON input path');
   const input = readJson(path);
   if (output) {

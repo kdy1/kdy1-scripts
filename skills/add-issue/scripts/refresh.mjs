@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs';
-import { check, hash, lock, outside, readJson, save, same, result, version, text } from './common.mjs';
+import { readLedger, saveLedger } from './ledger-storage.mjs';
+import { check, hash, lock, outside, same, result, version, text } from './common.mjs';
 import { validatePayload, executionGate, expectedValue } from './payload.mjs';
 import { preflight } from './preflight.mjs';
 import { GitHub } from './github.mjs';
@@ -40,7 +41,7 @@ export function refresh(input, { client = new GitHub(input.payload.target) } = {
   if (!release) return result('blocked', ['Recording ledger is locked']);
   try {
     const oldHash = hash(previous), newHash = hash(next);
-    const ledger = existsSync(statePath) ? readJson(statePath) : { version: 1, payloadHash: oldHash, candidates: {} };
+    const ledger = existsSync(statePath) ? readLedger(statePath) : { version: 1, payloadHash: oldHash, candidates: {} };
     version(ledger);
     // A lost refresh response may be recovered by repeating the identical request.
     if (ledger.payloadHash === newHash && ledger.history?.some(x => x.previousHash === oldHash && x.payloadHash === newHash && same(x.review, review))) return result('verified', [], { payloadHash: newHash });
@@ -71,7 +72,7 @@ export function refresh(input, { client = new GitHub(input.payload.target) } = {
     ledger.history.push({ previousHash: oldHash, payloadHash: newHash, previousPayload: previous, review, provenance: context.duplicateReview.evidence });
     ledger.payloadHash = newHash;
     ledger.candidates[old.id] = updatedState;
-    save(statePath, ledger);
+    saveLedger(statePath, ledger);
     return result('verified', [], { payloadHash: newHash, candidateId: old.id, action: candidate.action, issueUrl: updatedState.issueUrl });
   } finally { release(); }
 }

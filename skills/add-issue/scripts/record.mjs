@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs';
-import { check, hash, lock, outside, readJson, save, same, result, version } from './common.mjs';
+import { readLedger, saveLedger } from './ledger-storage.mjs';
+import { check, hash, lock, outside, same, result, version } from './common.mjs';
 import { validatePayload, executionGate, issueNumber, apiCreationRequired } from './payload.mjs';
 import { preflight, expectedValue } from './preflight.mjs';
 import { verifyRecording, exactText, reconcileImages } from './verify-recording.mjs';
@@ -39,9 +40,9 @@ export function record(input, { client = new GitHub(input.payload.target), after
   if (!release) return result('blocked', ['Recording ledger is locked; never steal a lock from an active or unverified recorder']);
   try {
     const payloadHash = hash(p);
-    const ledger = existsSync(input.statePath) ? readJson(input.statePath) : { version: 1, payloadHash, candidates: {} };
+    const ledger = existsSync(input.statePath) ? readLedger(input.statePath) : { version: 1, payloadHash, candidates: {} };
     version(ledger); check(ledger.payloadHash === payloadHash, 'Ledger belongs to another payload');
-    const persist = () => save(input.statePath, ledger);
+    const persist = () => saveLedger(input.statePath, ledger);
     const outcomes = [];
     for (const c of p.candidates) {
       const state = ledger.candidates[c.id] ??= { ops: {}, omissions: [], issueUrl: c.issueUrl, imageRoutes: {}, attachments: {} };

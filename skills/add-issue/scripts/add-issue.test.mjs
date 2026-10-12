@@ -10,6 +10,7 @@ import { validatePayload, images } from './payload.mjs';
 import { GitHub, collect, definition } from './github.mjs';
 import { preflight, metadataPlan } from './preflight.mjs';
 import { record } from './record.mjs';
+import { refresh } from './refresh.mjs';
 import { verifyRecording, reconcileImages } from './verify-recording.mjs';
 import { main } from './add-issue.mjs';
 
@@ -145,10 +146,10 @@ test('permission loss/definition conflict block required metadata and omit optio
   const plan=metadataPlan(s.c,{label:{available:true,value:{definition:{different:true},value:false,capable:true}}},s.context);assert.equal(plan.omissions.length,1);
 });
 test('new duplicate, closed target, account change and source head/merged/thread changes stop writes',t=>{
-  const s=setup(t),gh=new FakeGh();gh.addIssue();assert.equal(record(input(s),{client:gh.client()}).status,'blocked');assert.equal(gh.writes().length,0);
+  const s=setup(t),gh=new FakeGh();gh.addIssue();assert.equal(record(input(s),{client:gh.client()}).status,'needs-review');assert.equal(gh.writes().length,0);
   gh.issues.clear();gh.account='another';assert.equal(record(input(s),{client:gh.client()}).status,'blocked');gh.account='tester';
   s.statePath=join(s.dir,'source-ledger.json');s.c.source={head:gh.pr.head.sha,number:5,url:gh.pr.html_url,threadId:'thread'};gh.pr.head.sha='b'.repeat(40);assert.equal(record(input(s),{client:gh.client()}).status,'blocked');gh.pr.head.sha=s.c.source.head;gh.pr.merged=false;assert.equal(record(input(s),{client:gh.client()}).status,'blocked');gh.pr.merged=true;gh.thread.isResolved=true;const r=record(input(s),{client:gh.client()});assert.equal(r.outcomes[0].skip,true);assert.equal(gh.writes().length,0);
-  const s2=setup(t),gh2=new FakeGh();const issue=existing(s2,gh2);label(s2);issue.state='closed';assert.equal(record(input(s2),{client:gh2.client()}).status,'blocked');
+  const s2=setup(t),gh2=new FakeGh();const issue=existing(s2,gh2);label(s2);issue.state='closed';assert.equal(record(input(s2),{client:gh2.client()}).status,'needs-review');
 });
 test('uncertain creation needs a verified receipt and never recreates the issue',t=>{
   const s=setup(t),gh=new FakeGh();gh.loseNext=true;assert.equal(record(input(s),{client:gh.client()}).status,'uncertain');const writes=gh.writes().length;
@@ -234,7 +235,7 @@ test('missing project item, wrong-project field and project permission loss bloc
 });
 test('changed duplicate thread stops a second implementation-handoff comment',t=>{
   const s=setup(t),gh=new FakeGh();existing(s,gh,'duplicate comment');s.c.comment='Approved missing evidence';gh.comments.push({id:1,html_url:`${s.c.issueUrl}#issuecomment-1`,body:'New independently supplied evidence',user:{login:'other'}});
-  assert.equal(record(input(s),{client:gh.client()}).status,'blocked');assert.equal(gh.writes().length,0);
+  assert.equal(record(input(s),{client:gh.client()}).status,'needs-review');assert.equal(gh.writes().length,0);
 });
 test('independently audited candidates continue after an uncertain write or draft-only restriction',t=>{
   for(const draft of [false,true]) {
@@ -333,4 +334,163 @@ test('Collect Review recording preflight enforces every related source without c
   gh.thread.isResolved=true;assert.equal(preflight(s.payload,s.c,gh.client(),s.context).skip,true);
   gh.thread.isResolved=false;gh.thread.pullRequest.headRefOid='b'.repeat(40);assert.equal(preflight(s.payload,s.c,gh.client(),s.context).complete,false);
   s.c.source.relatedSources[0].relatedSources=[];assert.throws(()=>validatePayload(s.payload),/Nested/);
+});
+
+
+function reviewInput(s, gh, revise) {
+  const previousPayload = structuredClone(s.payload);
+  const ledger = JSON.parse(readFileSync(s.statePath));
+  const flight = preflight(previousPayload, previousPayload.candidates[0], gh.client(), s.context, ledger.candidates.candidate);
+  assert.equal(flight.status, 'needs-review');
+  const payload = structuredClone(previousPayload), c = payload.candidates[0];
+  c.duplicate.issues = flight.duplicateReview.issues;
+  if (c.action !== 'new issue') {
+    c.duplicate.issue = gh.client().issue(c.issueUrl);
+    const receipts = new Set(Object.values(ledger.candidates.candidate.ops).map(x => x.receipt));
+    c.duplicate.comments = gh.client().comments(c.issueUrl).filter(x => !receipts.has(x.url));
+  }
+  revise?.(c);
+  return { version: 1, previousPayload, payload, statePath: s.statePath,
+    review: { candidateId: c.id, reason: 'Coordinator reviewed latest evidence against retained implementation boundary', observations: flight.duplicateReview },
+    context: { ...s.context, duplicateReview: { confirmed: true, evidence: 'Trusted coordinator semantic review in current invocation' } } };
+}
+function applyReview(s, gh, revise) {
+  const request = reviewInput(s, gh, revise);
+  const r = refresh(request, { client: gh.client() });
+  assert.equal(r.status, 'verified', JSON.stringify(r));
+  s.payload = request.payload; s.c = s.payload.candidates[0];
+  return request;
+}
+function selectExisting(c, gh, issue, action = 'existing issue') {
+  c.action = action; c.issueUrl = issue.html_url; c.title = issue.title;
+  c.body = ''; c.comment = ''; c.metadata = []; c.allowedActions = [action];
+  c.duplicate.issue = gh.client().issue(c.issueUrl);
+  c.duplicate.comments = gh.client().comments(c.issueUrl);
+}
+test('unrelated search changes and edited duplicate text resume through reviewed observations', t => {
+  for (const existingTarget of [false, true]) {
+    const s = setup(t), gh = new FakeGh();
+    if (existingTarget) { const x = existing(s, gh, 'existing issue'); x.title = 'Updated title'; x.body = 'Same maintenance outcome, clarified'; }
+    else gh.addIssue('Unrelated outcome');
+    assert.equal(record(input(s), { client: gh.client() }).status, 'needs-review');
+    assert.equal(gh.writes().length, 0);
+    const request = applyReview(s, gh);
+    assert.equal(refresh(request, { client: gh.client() }).status, 'verified');
+    assert.equal(record(input(s), { client: gh.client() }).status, 'verified');
+    assert.equal(gh.writes().length, existingTarget ? 0 : 1);
+    const ledger = JSON.parse(readFileSync(s.statePath));
+    assert.equal(ledger.history[0].previousHash, hash(request.previousPayload));
+    assert.deepEqual(ledger.history[0].previousPayload, request.previousPayload);
+  }
+});
+test('new matching duplicate routes to one missing-content comment instead of creation', t => {
+  const s = setup(t), gh = new FakeGh(), x = gh.addIssue('Matching outcome missing retained evidence');
+  assert.equal(record(input(s), { client: gh.client() }).status, 'needs-review');
+  applyReview(s, gh, c => { selectExisting(c, gh, x, 'duplicate comment'); c.comment = 'Retained evidence needed by implementer'; });
+  assert.equal(record(input(s), { client: gh.client() }).status, 'verified');
+  assert.equal(gh.issues.size, 1); assert.equal(gh.comments.length, 1);
+  assert.equal(record(input(s), { client: gh.client() }).status, 'verified');
+  assert.equal(gh.comments.length, 1);
+});
+test('independently completed thread becomes existing issue without another comment', t => {
+  const s = setup(t), gh = new FakeGh(), x = existing(s, gh, 'duplicate comment');
+  s.c.comment = 'Previously missing evidence';
+  gh.comments.push({ id: 1, html_url: `${x.html_url}#issuecomment-1`, body: s.c.comment, user: { login: 'other' } });
+  assert.equal(record(input(s), { client: gh.client() }).status, 'needs-review');
+  applyReview(s, gh, c => selectExisting(c, gh, x));
+  assert.equal(record(input(s), { client: gh.client() }).status, 'verified');
+  assert.equal(gh.writes().length, 0);
+});
+test('closed duplicate routes to another open issue or creates the retained handoff', t => {
+  for (const replacement of [false, true]) {
+    const s = setup(t), gh = new FakeGh(), x = existing(s, gh, 'existing issue'); x.state = 'closed';
+    const other = replacement ? gh.addIssue('Same outcome') : null;
+    gh.search = other ? [other] : [];
+    assert.equal(record(input(s), { client: gh.client() }).status, 'needs-review');
+    applyReview(s, gh, c => {
+      if (other) selectExisting(c, gh, other);
+      else { c.action = 'new issue'; c.issueUrl = null; c.title = 'Retained work'; c.body = 'Retained complete handoff'; c.allowedActions = ['new issue']; }
+    });
+    assert.equal(record(input(s), { client: gh.client() }).status, 'verified');
+    assert.equal(gh.writes().length, replacement ? 0 : 1);
+  }
+});
+test('verified creation and comments survive refresh without duplicate writes or target changes', t => {
+  for (const comment of [false, true]) {
+    const s = setup(t), gh = new FakeGh();
+    if (comment) { existing(s, gh, 'duplicate comment'); s.c.comment = 'Exact handoff'; }
+    assert.equal(record(input(s), { client: gh.client() }).status, 'verified');
+    const ledger = JSON.parse(readFileSync(s.statePath)), writes = gh.writes().length;
+    gh.addIssue('Another result');
+    assert.equal(record(input(s), { client: gh.client() }).status, 'needs-review');
+    const request = reviewInput(s, gh);
+    const invalid = structuredClone(request); invalid.payload.candidates[0].title = 'Different publication';
+    assert.throws(() => refresh(invalid, { client: gh.client() }), /Completed operations/);
+    applyReview(s, gh);
+    assert.equal(record(input(s), { client: gh.client() }).status, 'verified');
+    assert.equal(gh.writes().length, writes);
+    assert.deepEqual(JSON.parse(readFileSync(s.statePath)).candidates.candidate.ops, ledger.candidates.candidate.ops);
+  }
+});
+test('refresh rejects uncertain writes, expanded scope, metadata, or changed latest observations', t => {
+  const s = setup(t), gh = new FakeGh(); gh.addIssue('Unrelated');
+  assert.equal(record(input(s), { client: gh.client() }).status, 'needs-review');
+  const request = reviewInput(s, gh);
+  const bad = structuredClone(request); bad.payload.candidates[0].revision = 'b'.repeat(40);
+  assert.throws(() => refresh(bad, { client: gh.client() }), /investigation/);
+  const old = readFileSync(s.statePath, 'utf8');
+  gh.addIssue('More drift'); const drift = refresh(request, { client: gh.client() });
+  assert.equal(drift.status, 'needs-review'); assert.equal(drift.duplicateReview.issues.length, 2);
+  assert.equal(readFileSync(s.statePath, 'utf8'), old);
+  gh.issues.delete(2);
+  const ledger = JSON.parse(old); ledger.candidates.candidate.ops.create = { status: 'uncertain', receipt: null }; save(s.statePath, ledger);
+  assert.throws(() => refresh(request, { client: gh.client() }), /Reconcile uncertain/);
+  assert.equal(gh.writes().length, 0);
+});
+test('unavailable reads and account or source changes stay blocked despite duplicate drift', t => {
+  for (const cause of ['search','identity','source']) {
+    const s = setup(t), gh = new FakeGh(); gh.addIssue('New result');
+    if (cause === 'search') gh.unavailable = args => args.some(x => x.startsWith('search/issues'));
+    if (cause === 'identity') gh.account = 'other';
+    if (cause === 'source') { s.c.source = { head: gh.pr.head.sha, number: 5, url: gh.pr.html_url, threadId: 'thread' }; gh.pr.head.sha = 'b'.repeat(40); }
+    const r = record(input(s), { client: gh.client() });
+    assert.equal(r.status, 'blocked'); assert.equal(gh.writes().length, 0);
+  }
+});
+
+test('refresh preserves completed image attachments without reuploading', t => {
+  const s = setup(t), gh = new FakeGh(); approvedImage(s);
+  assert.equal(record(input(s), { client: gh.client() }).status, 'verified');
+  const before = JSON.parse(readFileSync(s.statePath)), writes = gh.writes().length;
+  gh.addIssue('Unrelated result');
+  assert.equal(record(input(s), { client: gh.client() }).status, 'needs-review');
+  applyReview(s, gh);
+  assert.equal(record(input(s), { client: gh.client() }).status, 'verified');
+  assert.equal(gh.writes().length, writes);
+  assert.deepEqual(JSON.parse(readFileSync(s.statePath)).candidates.candidate.attachments, before.candidates.candidate.attachments);
+});
+test('refresh rejects unaudited metadata and changed approved images before updating ledger', t => {
+  const s = setup(t), gh = new FakeGh(); label(s); approvedImage(s); gh.addIssue('Unrelated');
+  assert.equal(record(input(s), { client: gh.client() }).status, 'needs-review');
+  const request = reviewInput(s, gh), before = readFileSync(s.statePath, 'utf8');
+  const badMetadata = structuredClone(request); badMetadata.payload.candidates[0].metadata[0].value = 'other';
+  assert.throws(() => refresh(badMetadata, { client: gh.client() }), /expand audited metadata/);
+  const badImage = structuredClone(request); badImage.payload.candidates[0].images[0].approval = 'Replacement approval';
+  assert.throws(() => refresh(badImage, { client: gh.client() }), /approved images/);
+  assert.equal(readFileSync(s.statePath, 'utf8'), before); assert.equal(gh.writes().length, 0);
+});
+test('refresh keeps other candidates unchanged and preserves their completed ledger state', t => {
+  const s = setup(t), gh = new FakeGh(); gh.search = [];
+  const second = structuredClone(s.c); second.id = 'second'; second.title = 'Other candidate'; s.payload.candidates.push(second);
+  assert.equal(record(input(s), { client: gh.client() }).status, 'verified');
+  const before = JSON.parse(readFileSync(s.statePath)).candidates.second, writes = gh.writes().length;
+  gh.search = [gh.addIssue('New search result')];
+  assert.equal(record(input(s), { client: gh.client() }).status, 'needs-review');
+  const request = reviewInput(s, gh), invalid = structuredClone(request);
+  invalid.payload.candidates[1].title = 'Unauthorized other candidate edit';
+  assert.throws(() => refresh(invalid, { client: gh.client() }), /another candidate/);
+  applyReview(s, gh);
+  assert.deepEqual(JSON.parse(readFileSync(s.statePath)).candidates.second, before);
+  assert.equal(record(input(s), { client: gh.client() }).outcomes[0].status, 'verified');
+  assert.equal(gh.writes().length, writes);
 });

@@ -144,7 +144,7 @@ export function record(input, { client = new GitHub(input.payload.target), after
       state.attachments = verified.attachments; state.outcome = verified; persist();
       outcomes.push({ ...verified, candidateId: c.id });
     }
-    const status = outcomes.every(x => x.complete) ? 'verified' : outcomes.some(x => x.status === 'uncertain') ? 'uncertain' : outcomes.some(x => x.status === 'failed') ? 'failed' : 'blocked';
+    const status = outcomes.every(x => x.complete) ? 'verified' : outcomes.some(x => x.status === 'uncertain') ? 'uncertain' : outcomes.some(x => x.status === 'failed') ? 'failed' : outcomes.some(x => x.status === 'blocked') ? 'blocked' : 'needs-review';
     return result(status, [], { payloadHash, outcomes });
   } finally { release(); }
 }

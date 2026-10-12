@@ -31,7 +31,7 @@ export function metadataPlan(c, observations, context, completed = {}) {
   return { errors, omissions, apply };
 }
 export function preflight(p, c, client, context, state = {}) {
-  const errors = [], observations = {}, skips = [];
+  const errors = [], observations = {}, skips = [], changes = [];
   const attempt = (name, fn) => { try { return fn(); } catch (e) { errors.push(`${name}: ${e.message}`); return undefined; } };
   const workspace = attempt('workspace', () => compare(c.workspace.baseline));
   if (workspace && !workspace.complete) errors.push(...workspace.errors);
@@ -45,7 +45,8 @@ export function preflight(p, c, client, context, state = {}) {
   if (c.action !== 'new issue' && url !== c.issueUrl) errors.push('Retained recording target changed');
   if (c.action === 'new issue' && url && (state.ops?.create?.status !== 'verified' || state.ops.create.receipt !== url)) errors.push('Retained creation receipt mismatch');
   const issue = url ? attempt('issue', () => client.issue(url)) : null;
-  if (url && (!issue || issue.state !== 'open')) errors.push('Audited issue is closed or unavailable');
+  if (url && !issue) errors.push('Audited issue unavailable');
+  if (issue && issue.state !== 'open' && (c.action === 'new issue' || Object.keys(state.ops ?? {}).length)) errors.push('Retained issue with completed operations is closed');
   if (c.action === 'new issue' && issue && (issue.author !== p.account || issue.title !== c.title || !exactText(c.body, issue.body, c.images, p.target.host))) errors.push('Retained created issue content or author changed');
   const existingImages = c.images.filter(i => i.destination === 'existing');
   if (existingImages.length && issue) {
@@ -56,10 +57,13 @@ export function preflight(p, c, client, context, state = {}) {
     errors.push(...reconcileImages({ images: existingImages }, surfaces, p.target.host).errors);
   }
   if (c.action !== 'new issue' && issue) {
-    for (const key of ['url','title','body','state']) if (!same(issue[key], c.duplicate.issue[key])) errors.push(`Duplicate target ${key} changed`);
+    for (const key of ['url','title','body','state']) if (!same(issue[key], c.duplicate.issue[key])) changes.push({ surface: `issue.${key}`, before: c.duplicate.issue[key], after: issue[key] });
     const comments = attempt('duplicate thread', () => client.comments(url));
     const receipts = new Set(Object.values(state.ops ?? {}).filter(op => op.status === 'verified').map(op => op.receipt));
-    if (comments && !same(comments.filter(x => !receipts.has(x.url)), c.duplicate.comments)) errors.push('Duplicate thread changed; coordinator semantic review required');
+    if (comments) {
+      const retained = comments.filter(x => !receipts.has(x.url));
+      if (!same(retained, c.duplicate.comments)) changes.push({ surface: 'comments', before: c.duplicate.comments, after: retained });
+    }
   }
   for (const retained of c.source ? [c.source,...c.source.relatedSources ?? []] : []) {
     const source = attempt('source', () => client.source(retained));
@@ -67,7 +71,8 @@ export function preflight(p, c, client, context, state = {}) {
     if (!source || source.head !== retained.head || source.threadHead !== retained.head || source.merged !== true || source.threadMerged !== true) errors.push('Source PR revision or merged state changed/unverifiable');
   }
   const duplicates = attempt('duplicates', () => client.duplicates(c.duplicate.query, c.duplicate.limit));
-  if (duplicates && !same(duplicates.filter(x => !(c.action === 'new issue' && state.ops?.create?.status === 'verified' && x.url === state.issueUrl)), c.duplicate.issues)) errors.push('Duplicate observations changed; coordinator semantic review required');
+  const retainedDuplicates = duplicates?.filter(x => !(c.action === 'new issue' && state.ops?.create?.status === 'verified' && x.url === state.issueUrl));
+  if (retainedDuplicates && !same(retainedDuplicates, c.duplicate.issues)) changes.push({ surface: 'search', before: c.duplicate.issues, after: retainedDuplicates });
   const capabilities = attempt('capabilities', () => client.capabilities());
   for (const m of c.metadata) {
     try { observations[m.id] = { available: true, value: client.metadata(m, url) }; }
@@ -80,6 +85,6 @@ export function preflight(p, c, client, context, state = {}) {
   if (c.action === 'new issue' && bodyImages.length && (!capabilities?.create?.attach || typeNeedsApi)) {
     if (!c.imageComment || !c.allowedActions.includes('image-comment')) errors.push('Audited image handoff comment required for attachment fallback');
   }
-  return result(errors.length || skips.length ? 'blocked' : 'verified', errors.length ? errors : skips,
-    { skip: skips.length > 0 && errors.length === 0, issue, metadata, capabilities, browserRequired: pendingImages.length > 0 && !capabilities?.comment?.attach && (!capabilities?.create?.attach || !!url || typeNeedsApi) });
+  return result(errors.length || skips.length ? 'blocked' : changes.length ? 'needs-review' : 'verified', errors.length ? errors : skips,
+    { duplicateReview: changes.length ? { changes, issues: retainedDuplicates, issue } : null, skip: skips.length > 0 && errors.length === 0, issue, metadata, capabilities, browserRequired: pendingImages.length > 0 && !capabilities?.comment?.attach && (!capabilities?.create?.attach || !!url || typeNeedsApi) });
 }

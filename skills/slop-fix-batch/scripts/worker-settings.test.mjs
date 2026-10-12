@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { renderHandoff } from './render-handoff.mjs';
 import { workerSettings } from './worker-settings.mjs';
 
 const script = fileURLToPath(new URL('./worker-settings.mjs', import.meta.url));
@@ -13,7 +14,6 @@ const expected = {
   maintenance: ['gpt-6.1-sol', 'medium'],
   inventory: ['gpt-6-luna', 'low'],
   repair: ['gpt-6-luna', 'high'],
-  publication: ['gpt-6.1-sol', 'medium'],
 };
 
 test('every role exposes its approved spawn arguments through the function and CLI', () => {
@@ -29,10 +29,10 @@ test('every role exposes its approved spawn arguments through the function and C
 });
 
 test('invalid roles and CLI arguments fail without emitting usable settings', () => {
-  for (const role of ['unknown', 'toString', '__proto__', undefined]) {
+  for (const role of ['publication', 'unknown', 'toString', '__proto__', undefined]) {
     assert.throws(() => workerSettings(role), /Unknown worker role/);
   }
-  for (const args of [[], ['unknown'], ['repair', 'extra']]) {
+  for (const args of [[], ['publication'], ['unknown'], ['repair', 'extra']]) {
     const result = spawnSync(process.execPath, [script, ...args], { encoding: 'utf8' });
     assert.equal(result.status, 1);
     assert.equal(result.stdout, '');
@@ -78,4 +78,8 @@ test('invalid and duplicate complexity options never emit settings', () => {
     const result = spawnSync(process.execPath, [script, 'implementation', ...flags], { encoding: 'utf8' });
     assert.equal(result.status, 1); assert.equal(result.stdout, '');
   }
+});
+
+test('removed publication role cannot render a handoff', () => {
+  assert.throws(() => renderHandoff({ version: 1, role: 'publication' }), /Unknown handoff role/);
 });

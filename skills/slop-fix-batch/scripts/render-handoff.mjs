@@ -7,7 +7,7 @@ import { check, version, nonempty, sha, absolute, readJson, save, cli } from './
 import { workerSettings } from './worker-settings.mjs';
 import { ledgerRuntime, matchRuntime } from './runtime.mjs';
 import { validateLedger } from './batch-ledger.mjs';
-const roles = ['investigation', 'preparation', 'implementation', 'publication', 'stack-execution', 'maintenance', 'inventory', 'repair'];
+const roles = ['investigation', 'preparation', 'implementation', 'stack-execution', 'maintenance', 'inventory', 'repair'];
 function placeholders(value) {
   const text = JSON.stringify(value);
   check(!/<[^>\n]+>|\{\{[^}]+\}\}|\b(?:TODO|TBD)\b/.test(text), 'Unresolved placeholder in assignment');
@@ -19,7 +19,6 @@ const instructions = {
   investigation: 'Read every assigned issue body, complete discussion, relevant code/history and existing fixing PRs. Report each assessment as available, with acceptance criteria, evidence, affected code, root causes, directed dependencies, estimates and missing decisions. Finish with complete assigned coverage. Do not edit source, refs or GitHub.',
   preparation: 'Perform read-only preparation. Do not edit source, refs or GitHub. Source changes require a later implementation START at the exact integration SHA containing checked prerequisites. Reconcile findings with those prerequisite changes.',
   implementation: 'Verify checkout, branch, stack and exact starting SHA before editing. Implement the complete group requirements in the assigned clean worktree, run retained targeted and repository-wide commands and required execution times, preserve hooks, and commit coherent verified units. Do not publish PRs, write issues/comments, run gh stack, change another checkout or independently update the base. Return commits, coverage at exact SHAs, skipped validation and stage timing.',
-  publication: 'Explicitly invoke the installed $create-pr skill. Use only the frozen integration checkout for the assigned prefix. Verify exact head/base and scope. Publish non-draft; include each fully implemented issue on its own Closes line, preserving Closes despite skipped real-world validation. Disclose worker coverage at the original SHA separately from publication head and integration-change checks. Reuse recorded PRs, apply the runtime attachment policy, and return verified URLs. Do not commit, switch branches, mutate source/local layer refs or run gh stack. Do not merge or register maintenance.',
   repair: 'Read the installed $repair-pr skill and repair only the assigned published PR. Claim the recorded whole-stack reservation only after START identity verification. For building stacks, use the recorded build-repair handoff and align affected published upper layers under the same token. Never merge, enable auto-merge, extend construction or release a building lock. Return final heads, inherited boundaries, validation, push/thread outcomes and retained token to the coordinator for build resumption.',
   maintenance: 'Continue $slop-fix-batch’s internal batch maintenance procedure and read only the assigned maintenance sections. Do not recollect issues or restart construction. Manage only the ledger PR set. Return results to the direct coordinator loop; never register automation. Building stacks permit only coordinator-recorded published-prefix repairs under transferred build ownership; held stacks remain protected. Construction pauses until verified repair results return build ownership. Honor stopped management state, whole-stack ownership, two-phase repair START and fresh review/CI/membership gates. Process merges then repairs then publication then implementation, including the scheduler progress exception. Only the coordinator in legacy mode or the recorded maintenance actor in delegated mode merges under original conditional authorization; implementation and repair children never merge. Maintenance actors consume a slot; nested repairs require coordinator-reserved additional slots. Candidate hints are not authority. In a fully published ready stack with a confirmed middle-layer conflict, follow batch maintenance’s Merge below a confirmed conflict: merge the contiguous passing lower prefix first, reconcile results, then align only affected open descendants. Every selected PR must pass fresh gates; never merge a building prefix. Reconcile uncertain requests before retry and retain original standalone eligibility. Do not wait for unrelated workers or CI/reviews during a bounded pass.',
 };
@@ -86,7 +85,7 @@ export function renderHandoff(input) {
     absolute(a.checkout); sha(a.inspectedSha);
     check(Array.isArray(a.issueKeys) && a.issueKeys.length && a.issueKeys.every(key => ledger.fixedIssues.some(i => i.key === key)), 'Assignment outside fixed list');
   }
-  if (['implementation', 'publication', 'preparation', 'stack-execution'].includes(input.role)) {
+  if (['implementation', 'preparation', 'stack-execution'].includes(input.role)) {
     check(ledger.stacks[a.stackId], 'Unknown stack'); nonempty(a.groupId, 'group id');
     check(ledger.stacks[a.stackId].groups.includes(a.groupId), 'Group outside stack'); nonempty(a.acceptance, 'acceptance requirements');
     absolute(a.integrationWorktree); nonempty(a.dependencyEvidence, 'prerequisite/independence evidence');
@@ -106,16 +105,6 @@ export function renderHandoff(input) {
     check(a.requirementsSatisfied === true && a.commits?.length && a.commits.every(c => sha(c)), 'Checked implementation handoff required');
     check(a.checks?.length && a.checks.every(c => c.status === 'passed' && c.sha === a.commits.at(-1) && c.command), 'Original worker coverage required');
     check(Array.isArray(a.integrationCheckCommands), 'Explicit integration-change check commands required');
-  }
-  if (input.role === 'publication') {
-    check(a.checkout === a.integrationWorktree, 'Publisher must use frozen integration checkout');
-    sha(a.headSha); sha(a.baseSha); absolute(a.createPrSkill); nonempty(a.headBranch, 'head branch'); nonempty(a.baseBranch, 'base branch');
-    check(Array.isArray(a.checks) && a.checks.length && a.checks.every(c => c.status === 'passed' && c.command && sha(c.sha)), 'Missing original check coverage');
-    const requiredCloses = ledger.groups[a.groupId].issues.map(key => ledger.fixedIssues.find(i => i.key === key).url).sort();
-    check(Array.isArray(a.closes) && JSON.stringify([...a.closes].sort()) === JSON.stringify(requiredCloses), 'Publication must cover every group member');
-    check(a.realWorldValidation === 'not-performed', 'Missing skipped validation disclosure');
-    check(typeof a.integrationChanged === 'boolean', 'Missing integration observation');
-    if (a.integrationChanged) check(a.integrationChecks?.length && a.integrationChecks.every(c => c.status === 'passed' && c.sha === a.headSha && c.command), 'Missing integration-change coverage');
   }
   if (input.role === 'repair') {
     sha(a.startSha); absolute(a.repairSkill); absolute(a.coordinationHelper); nonempty(a.prUrl, 'exact repair PR');

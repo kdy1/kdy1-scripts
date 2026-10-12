@@ -10,7 +10,6 @@ const settings = new Map([
   ['maintenance', ['gpt-6.1-sol', 'medium']],
   ['inventory', ['gpt-6-luna', 'low']],
   ['repair', ['gpt-6-luna', 'high']],
-  ['publication', ['gpt-6.1-sol', 'medium']],
 ]);
 
 export function workerSettings(role, runtime = 'codex', complexity = 'standard') {

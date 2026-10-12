@@ -186,7 +186,7 @@ test('handoff distinguishes Plan Mode, preparation and recorded START; rejects p
   assert.match(renderHandoff(i), /Read-only preparation only/);
   const renderedSettings = JSON.parse(renderHandoff(i).match(/```json\n([\s\S]*?)\n```/)[1]);
   assert.deepEqual(renderedSettings, workerSettings(i.role));
-  assert.throws(() => renderHandoff({ ...i, role: 'publication' }), /Plan Mode/);
+  assert.throws(() => renderHandoff({ ...i, role: 'stack-execution' }), /Plan Mode/);
   assert.throws(() => renderHandoff({ ...i, assignment: { ...assignment(), scope: '<scope>' } }), /placeholder/);
   assert.throws(() => renderHandoff({ ...i, mode: 'execution', phase: 'start' }), /persisted assignment/);
   assert.throws(() => renderHandoff({ ...i, assignment: { ...assignment(), inspectedSha: 'main' } }), /SHA/);
@@ -259,7 +259,7 @@ test('stale or missing head/base inventory cannot qualify as current full covera
     assert.equal(checkpoint(c, { type: 'finish', passId: 'p', at: 2000, inventory: { complete: true, prs: [pr] } }).inventory.complete, false);
   }
 });
-test('implementation and publication START validate actual worker, separate/frozen checkout and SHA coverage', () => {
+test('implementation START validates actual worker, separate checkout and SHA coverage', () => {
   let l = building();
   const recorded = { id: 'a', taskId: 'implement', lane: 'implementation', stackId: 's', status: 'reserved', slots: 1, worker: 'child', worktree: '/tmp/worker', startSha: sha };
   l = apply(l, 'assignment', { value: recorded });
@@ -267,9 +267,7 @@ test('implementation and publication START validate actual worker, separate/froz
   assert.match(renderHandoff({ version: 1, mode: 'execution', role: 'implementation', phase: 'start', ledger: l, assignment: a }), /START only/);
   assert.throws(() => renderHandoff({ version: 1, mode: 'execution', role: 'implementation', phase: 'start', ledger: l, assignment: { ...a, worker: 'wrong' } }), /worker identity/);
   assert.throws(() => renderHandoff({ version: 1, mode: 'execution', role: 'implementation', phase: 'start', ledger: l, assignment: { ...a, startSha: head } }), /SHA differs/);
-  const p = { ...a, checkout: '/tmp/stack', headSha: head, baseSha: sha, headBranch: 'kdy1/fix', baseBranch: 'main', createPrSkill: '/skills/create-pr/SKILL.md', checks: layer.checks, closes: [issue.url], realWorldValidation: 'not-performed', integrationChanged: false };
-  const text = renderHandoff({ version: 1, mode: 'execution', role: 'publication', phase: 'prepare', ledger: l, assignment: p });
-  assert.match(text, /Read-only preparation/); assert.ok(text.includes(sha)); assert.ok(text.includes(head));
+
 });
 test('coordinator maintenance handoff consumes no child slot and preserves conditional gates', () => {
   const l = apply(ready(), 'maintenance', { value: { mode: 'batch', management: 'direct', state: 'active' } }); const a = { ...assignment(), worker: 'root', batchSkill: '/skills/slop-fix-batch/SKILL.md', batchReference: '/skills/slop-fix-batch/references/batch-maintenance.md', coordinationRoot: '/repo/.git/coordination', capacityAccounting: 'one free slot' };

@@ -11,6 +11,7 @@ import { GitHub, collect, definition } from './github.mjs';
 import { preflight, metadataPlan } from './preflight.mjs';
 import { record } from './record.mjs';
 import { refresh } from './refresh.mjs';
+import { recoverCreate } from './recover-create.mjs';
 import { verifyRecording, reconcileImages } from './verify-recording.mjs';
 import { main } from './add-issue.mjs';
 
@@ -38,7 +39,7 @@ function setup(t) {
 }
 class FakeGh {
   constructor() { this.issues = new Map(); this.next=1; this.calls=[]; this.nextComment=1; this.comments=[]; this.values=[]; this.labels=[{id:10,name:'maintenance',description:'Maintenance'}]; this.attach=true; this.type=true; this.pr={number:5,html_url:`${rootUrl}/pull/5`,head:{sha:'a'.repeat(40)},merged:true}; this.thread={isResolved:false,pullRequest:{url:this.pr.html_url,headRefOid:this.pr.head.sha,merged:true}}; }
-  addIssue(body='existing',title='Existing') { const n=this.next++; const x={html_url:`${rootUrl}/issues/${n}`,number:n,node_id:`I_${n}`,title,body,state:'open',user:{login:'tester'},labels:[],assignees:[],milestone:null}; this.issues.set(n,x); return x; }
+  addIssue(body='existing',title='Existing') { const n=this.next++; const x={html_url:`${rootUrl}/issues/${n}`,number:n,node_id:`I_${n}`,title,body,state:'open',created_at:new Date().toISOString(),user:{login:'tester'},labels:[],assignees:[],milestone:null}; this.issues.set(n,x); return x; }
   transport = (program,args,options={}) => {
     assert.equal(program,'gh'); this.calls.push({args:[...args],input:options.input});
     const ok = x => ({ok:true,stdout:typeof x === 'string'?x:JSON.stringify(x)});
@@ -63,6 +64,7 @@ class FakeGh {
     if(endpoint==='user') return ok({login:this.account??'tester'});
     if(endpoint==='repos/owner/repo') return ok({full_name:'owner/repo',html_url:rootUrl,archived:false,has_issues:true,permissions:{push:true}});
     if(endpoint.startsWith('search/issues')) return ok({incomplete_results:false,total_count:this.search?.length??this.issues.size,items:this.search??[...this.issues.values()]});
+    if(endpoint.startsWith('repos/owner/repo/issues?state=all') && method==='GET') return ok(this.recoveryInventory ?? [...this.issues.values()]);
     if(endpoint==='repos/owner/repo/issues' && method==='POST') {
       const x=this.addIssue(body.body,body.title); x.labels=(body.labels??[]).map(name=>({name})); x.assignees=(body.assignees??[]).map(login=>({login})); if(body.type)x.type={name:body.type};
       if(this.loseNext){this.loseNext=false;return failure();} return ok(x);
@@ -159,6 +161,55 @@ test('uncertain creation needs a verified receipt and never recreates the issue'
 });
 test('metadata applied before response loss is reconciled through reads',t=>{
   const s=setup(t),gh=new FakeGh();existing(s,gh);label(s);gh.loseMetadata=true;assert.equal(record(input(s),{client:gh.client()}).status,'uncertain');const writes=gh.writes().length;assert.equal(record(input(s),{client:gh.client()}).status,'verified');assert.equal(gh.writes().length,writes);
+});
+function recoverySetup(t) {
+  const s=setup(t),gh=new FakeGh();
+  assert.throws(()=>record(input(s),{client:gh.client(),afterJournal:()=>{throw new Error('interrupted before launch');}}));
+  s.context.creationRetry={confirmed:true,originalRecorderFinished:true,evidence:'Human explicitly requests retry; original recorder terminal state verified'};
+  const request={...input(s),candidateId:s.c.id};
+  const options={client:gh.client(),now:()=>Date.now()+180000};
+  return {s,gh,request,options};
+}
+test('absent creation recovery preserves attempts and permits one fresh preflight and creation',t=>{
+  const {s,gh,request,options}=recoverySetup(t);
+  assert.equal(recoverCreate(request,options).retryReleased,true);
+  const journal=JSON.parse(readFileSync(s.statePath));
+  assert.equal(journal.candidates.candidate.creationAttempts[0].operation.status,'uncertain');
+  assert.equal(journal.candidates.candidate.creationAttempts[0].recovery.completeReads,2);
+  assert.equal(journal.candidates.candidate.ops.create,undefined);
+  assert.equal(gh.writes().length,0);
+  assert.equal(record(input(s),{client:gh.client()}).status,'verified');
+  assert.equal(gh.issues.size,1);
+  assert.throws(()=>recoverCreate(request,options),/Only an uncertain creation/);
+});
+test('creation recovery finds an existing receipt without another write even when search is empty',t=>{
+  const {s,gh,request,options}=recoverySetup(t);
+  const issue=gh.addIssue(s.c.body,s.c.title);gh.search=[];
+  const r=recoverCreate(request,options);
+  assert.equal(r.recoveredReceipt,true);assert.equal(r.issueUrl,issue.html_url);
+  assert.equal(gh.writes().length,0);
+  assert.equal(JSON.parse(readFileSync(s.statePath)).candidates.candidate.ops.create.status,'verified');
+});
+test('creation recovery blocks unavailable or bounded inventory, changed content, missing authorization and premature retry',t=>{
+  const {s,gh,request,options}=recoverySetup(t),original=readFileSync(s.statePath,'utf8');
+  delete s.context.creationRetry;assert.throws(()=>recoverCreate(request,options),/authorization/);
+  s.context.creationRetry={confirmed:true,originalRecorderFinished:true,evidence:'Explicit human retry'};
+  assert.throws(()=>recoverCreate(request,{...options,now:()=>Date.now()}),/two minutes/);
+  gh.unavailable=args=>args.some(x=>x.startsWith('repos/owner/repo/issues?state=all'));
+  assert.throws(()=>recoverCreate(request,options),/unavailable/);delete gh.unavailable;
+  gh.recoveryInventory=Array.from({length:100},()=>({created_at:new Date().toISOString(),title:'Unrelated',user:{login:'tester'}}));
+  assert.throws(()=>recoverCreate(request,options),/pagination bound/);delete gh.recoveryInventory;
+  gh.addIssue('changed after creation',s.c.title);
+  assert.equal(recoverCreate(request,options).status,'blocked');
+  assert.equal(readFileSync(s.statePath,'utf8'),original);assert.equal(gh.writes().length,0);
+});
+test('creation recovery never treats an edited title or unrelated authored issue as proven absence',t=>{
+  const {s,gh,request,options}=recoverySetup(t),original=readFileSync(s.statePath,'utf8');
+  const issue=gh.addIssue(s.c.body,'Title edited after a lost response');
+  assert.equal(recoverCreate(request,options).status,'blocked');
+  issue.body='Both title and body edited';
+  assert.equal(recoverCreate(request,options).status,'blocked');
+  assert.equal(readFileSync(s.statePath,'utf8'),original);assert.equal(gh.writes().length,0);
 });
 test('write-ahead journal survives interruption and locks/changed payload prevent new writes',t=>{
   const s=setup(t),gh=new FakeGh();assert.throws(()=>record(input(s),{client:gh.client(),afterJournal:()=>{throw new Error('process interrupted');}}),/interrupted/);assert.equal(gh.writes().length,0);assert.equal(record(input(s),{client:gh.client()}).status,'uncertain');

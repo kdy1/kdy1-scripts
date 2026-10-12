@@ -19,7 +19,7 @@ function context(input) {
   const ledger = validateLedger(readJson(input.ledgerPath)), g = ledger.delegation?.grants[input.grantId];
   check(g?.status === 'active' && g.role === 'stack-execution' && g.worker === input.worker && g.generation === input.generation, 'Active stack-execution grant required');
   const a = ledger.assignments[g.assignmentId], s = ledger.stacks[a.stackId];
-  check(a.status === 'active' && s.phase === 'building', 'START and building stack required');
+  check(a.status === 'active' && s.phase === 'building' && !s.buildRepair, 'START and building stack required');
   absolute(a.worktree); absolute(a.coordinationRoot); absolute(a.coordinationHelper); absolute(a.requestState);
   nonempty(a.coordinationId, 'coordination id'); nonempty(a.stackOwner, 'stable stack build owner'); nonempty(a.branch, 'assigned layer branch');
   return { ledger, g, a, s };
@@ -60,6 +60,17 @@ export function stepCommands(kind, a, s, runtime = 'codex') {
     default: throw new Error('Unsupported stack step');
   }
 }
+export function verifyIntegrationPrerequisites(a, s, group, tip, run = runCommand) {
+  const ancestor = run('git', ['merge-base', a.workerStartSha, tip], a.worktree) === a.workerStartSha;
+  const repairedPrerequisite = s.repairHistory?.length && group.requires.length && a.workerStartSha !== tip;
+  if (!ancestor || repairedPrerequisite) {
+    const revalidation = a.prerequisiteRevalidation;
+    check(s.repairHistory?.length && revalidation?.oldStartSha === a.workerStartSha && revalidation.newStartSha === tip,
+      'Stale prerequisite requires revalidation against repaired tip');
+    nonempty(revalidation.evidence, 'changed prerequisite and acceptance revalidation');
+    check(revalidation.integrationChanged === true, 'Stale prerequisite requires integration-change checks before publication');
+  }
+}
 export function runStep(input, { run = runCommand } = {}) {
   const { ledger, a, s } = context(input);
   check(/^[\w.-]+$/.test(input.operationId ?? ''), 'Unique safe operation id required'); sha(input.expectedHead);
@@ -83,7 +94,7 @@ export function runStep(input, { run = runCommand } = {}) {
     const commands = stepCommands(kind, a, s, ledgerRuntime(ledger)); // validates handoff before any mutation
     check(isDeepStrictEqual(run('git', ['rev-list', '--reverse', `${a.workerStartSha}..${a.commits.at(-1)}`], a.worktree).split('\n'), a.commits), 'Commit range includes missing or unrelated commits');
     for (const id of ledger.groups[a.groupId].requires) check(s.layers.some(l => l.groupId === id), 'Missing integrated prerequisite');
-    run('git', ['merge-base', '--is-ancestor', a.workerStartSha, tip], a.worktree);
+    verifyIntegrationPrerequisites(a, s, ledger.groups[a.groupId], tip, run);
     check(commands.length === 1, 'Unexpected integration command');
   }
   if (kind === 'ready') {

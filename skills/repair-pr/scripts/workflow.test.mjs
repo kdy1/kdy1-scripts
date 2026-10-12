@@ -370,3 +370,22 @@ test('review thread inventory accepts opaque legacy GitHub node IDs', t => {
   assert.equal(f.record({problem:{id:'wrong',kind:'review',evidence:'invariant',threads:[{id,disposition:'incorrect',evidence:'invariant'}]}}).status,0);assert.equal(f.record({validation:f.validation(f.start)}).status,0);
   assert.equal(f.ok('finish-threads','--session',f.session).outcomes[id].resolve.state,'verified');
 });
+
+test('building repair session accepts only the transferred claimed token', t => {
+  const f = fixture(t);
+  const pr = 'https://github.com/owner/repo/pull/1';
+  const layers = [{ pr, branch: 'fix', headRepository: 'github.com/owner/repo', headSha: f.start, baseBranch: 'main' }];
+  const dir = join(f.repo, '.git', 'codex-stack-coordination'); mkdirSync(dir);
+  const state = { version: 1, recoveries: [], stacks: [{ id: 's', phase: 'building', layers,
+    buildRepair: { pr, assignmentId: 'r', buildOwner: 'builder' }, lock: { owner: 'child', token: 'claimed', mode: 'repair' } }] };
+  writeFileSync(join(dir, 'state.json'), JSON.stringify(state));
+  const snapshotPath = join(f.root, 'snapshot.json'), ownership = join(f.root, 'owner.json');
+  writeFileSync(snapshotPath, JSON.stringify({ layers }));
+  writeFileSync(ownership, JSON.stringify({ owner: 'child', token: 'claimed', snapshotPath }));
+  assert.match(f.run('preflight', '--pr', '1').stdout, /Stack is building/);
+  const init = f.run('session', 'init', '--file', f.session, '--pr', '1', '--stack-file', ownership);
+  assert.equal(init.status, 0, init.stdout + init.stderr);
+  assert.equal(JSON.parse(init.stdout).stack.token, 'claimed');
+  writeFileSync(ownership, JSON.stringify({ owner: 'child', token: 'wrong', snapshotPath }));
+  assert.match(f.run('preflight', '--pr', '1', '--stack-file', ownership).stdout, /Stack is building/);
+});

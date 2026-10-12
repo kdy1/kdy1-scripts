@@ -58,7 +58,8 @@ export function validateLedger(ledger) {
       if (layer.integrationChanged) check(layer.integrationChecks?.length && layer.integrationChecks.every(c => c.status === 'passed' && c.sha === layer.headSha && c.command), 'Missing integration-change checks');
       for (const parent of ledger.groups[layer.groupId].requires) check(stack.layers.slice(0, i).some(l => l.groupId === parent), 'Layer before prerequisite');
     });
-    if (stack.phase === 'ready') check(stack.layers.length === stack.groups.length && stack.layers.every(l => l.publication?.complete === true) && stack.readyEvidence && stack.coordination?.phase === 'ready' && stack.detachedSha === stack.layers.at(-1).headSha, 'Incomplete ready handoff');
+    if (stack.buildRepair) check(stack.phase === 'building' && ledger.assignments[stack.buildRepair.assignmentId]?.lane === 'repair', 'Invalid building repair assignment');
+    if (stack.phase === 'ready') check(!stack.buildRepair && stack.layers.length === stack.groups.length && stack.layers.every(l => l.publication?.complete === true) && stack.readyEvidence && stack.coordination?.phase === 'ready' && stack.detachedSha === stack.layers.at(-1).headSha, 'Incomplete ready handoff');
   }
   for (const a of Object.values(ledger.assignments)) {
     if (a.complexity !== undefined) {
@@ -139,21 +140,24 @@ export function applyEvent(ledger, event, owner) {
     }
     case 'layer': {
       const s = next.stacks[event.stackId]; check(s?.phase === 'building', 'Stack is protected or handed off');
+      check(!s.buildRepair, 'Building repair blocks integration');
       check(!unresolvedOperations(s), 'Uncertain operation blocks integration');
       check(!s.publicationAttempt || s.publicationAttempt.reconciled === true, 'Uncertain or active publication blocks integration');
       check(!s.layers.some(l => l.publication && !l.publication.complete), 'Uncertain publication blocks integration');
+      const executor = Object.values(next.assignments).find(a => a.stackId === s.id && a.groupId === event.value.groupId && a.status === 'active' && a.role === 'stack-execution');
+      if (executor?.prerequisiteRevalidation) check(event.value.integrationChanged === true, 'Revalidated prerequisite requires integration-change coverage');
       const old = s.layers.findIndex(l => l.groupId === event.value.groupId);
       check(old === -1 || (old === s.layers.length - 1 && !s.layers[old].publication), 'Published or lower layer cannot change');
       if (old === -1) { check(!s.layers.length || s.layers.at(-1).publication?.complete === true, 'Verify published prefix before integrating next layer'); s.layers.push(event.value); } else s.layers[old] = event.value; break;
     }
     case 'publication-attempt': {
-      const s = next.stacks[event.stackId]; check(s?.phase === 'building', 'Only building stack may publish');
+      const s = next.stacks[event.stackId]; check(s?.phase === 'building' && !s.buildRepair, 'Only idle building stack may publish');
       if (s.publicationAttempt && !s.publicationAttempt.reconciled) check(event.reconciled === true && event.evidence, 'Reconcile previous publication attempt first');
       nonempty(event.value?.id, 'publication attempt id');
       s.publicationAttempt = { ...event.value, reconciled: event.reconciled === true, evidence: event.evidence }; break;
     }
     case 'publication': {
-      const s = next.stacks[event.stackId]; check(s?.phase === 'building', 'Only construction may record publication');
+      const s = next.stacks[event.stackId]; check(s?.phase === 'building' && !s.buildRepair, 'Only idle construction may record publication');
       const expected = event.verification?.expected;
       check(expected?.baseBranch === ledger.baseBranch, 'Publication bottom base differs from selected target');
       check(expected?.stackId === s.id && expected.layers.length === s.layers.length, 'Publication must cover current prefix');
@@ -170,11 +174,57 @@ export function applyEvent(ledger, event, owner) {
       if (s.publicationAttempt) s.publicationAttempt.reconciled = true;
       next.checkpoints = checkpoint(next.checkpoints, { type: 'enqueue', id: event.id, stackId: s.id, reason: 'publication', at: Date.parse(event.at) }); break;
     }
+    case 'build-repair-start': {
+      const s = next.stacks[event.stackId], a = next.assignments[event.assignmentId];
+      check(s?.phase === 'building' && !s.buildRepair && s.layers.length && s.layers.every(l => l.publication?.complete), 'Verified published prefix required');
+      check(a?.lane === 'repair' && a.stackId === s.id && a.status === 'reserved', 'Coordinator-reserved repair required');
+      check(!Object.values(next.assignments).some(x => x.stackId === s.id && x.id !== a.id && x.status !== 'finished'), 'Construction must be idle before repair');
+      check(!unresolvedOperations(s) && !s.outstandingEffects && !s.alignmentPending && (!s.publicationAttempt || s.publicationAttempt.reconciled), 'Reconcile construction effects before repair');
+      check(s.layers.some(l => l.url === event.pr), 'Repair must target a published member');
+      nonempty(event.evidence, 'build repair handoff evidence'); nonempty(event.buildOwner, 'return build owner');
+      check(event.coordination?.phase === 'building' && event.coordination.mode === 'reserved', 'Verified building reservation required');
+      nonempty(event.coordination.owner, 'reservation owner'); nonempty(event.coordination.token, 'reservation token');
+      s.buildRepair = { assignmentId: a.id, pr: event.pr, buildOwner: event.buildOwner, evidence: event.evidence };
+      s.coordination = event.coordination;
+      break;
+    }
+    case 'build-repair-result': {
+      const s = next.stacks[event.stackId], a = next.assignments[s?.buildRepair?.assignmentId];
+      check(s?.phase === 'building' && s.buildRepair && a?.status === 'finished', 'Reconciled finished build repair required');
+      check(!unresolvedOperations(s) && !s.outstandingEffects && !s.alignmentPending && event.reconciled === true, 'Repair effects remain');
+      nonempty(event.evidence, 'repair alignment and thread outcome evidence');
+      const proof = event.verification, expected = proof?.expected;
+      check(expected?.stackId === s.id && expected.baseBranch === next.baseBranch && expected.layers.length === s.layers.length, 'Repair verification must cover existing prefix');
+      const result = verifyPublication(proof, ledgerRuntime(next)); check(result.complete, result.errors.join('; '));
+      check(event.coordination?.phase === 'building' && event.coordination.mode === 'build' && event.coordination.owner === s.buildRepair.buildOwner, 'Verified returned build ownership required');
+      nonempty(event.coordination.token, 'returned build token');
+      s.repairHistory ??= [];
+      s.repairHistory.push({ ...s.buildRepair, layers: structuredClone(s.layers), evidence: event.evidence, at: event.at });
+      for (const [i, l] of s.layers.entries()) {
+        const current = expected.layers[i], old = l.publication.layer;
+        const identity = x => { const { headSha, baseSha, ...rest } = x; return rest; };
+        check(isDeepStrictEqual(identity(current), identity(old)), 'Repair cannot replace membership, metadata or issue scope');
+        if (current.headSha !== l.headSha) {
+          const coverage = event.coverage?.find(c => c.groupId === l.groupId);
+          check(coverage?.checks?.length && coverage.checks.every(c => c.status === 'passed' && c.sha === current.headSha && c.command), 'Missing repair/replay coverage at new head');
+          nonempty(coverage.oldParentSha, 'saved inherited parent boundary'); sha(coverage.oldParentSha); sha(coverage.newParentSha);
+          check(coverage.newParentSha === (i ? expected.layers[i - 1].headSha : current.baseSha), 'Repair parent boundary mismatch');
+          l.repairCoverage = coverage;
+          if (l.integrationChanged) l.integrationChecks = coverage.checks;
+          l.headSha = current.headSha;
+        }
+        l.publication = { complete: true, runtime: result.runtime, attachmentStatus: result.attachmentStatus, layer: current, observedAt: event.at };
+      }
+      s.coordination = event.coordination; delete s.buildRepair;
+      next.checkpoints = checkpoint(next.checkpoints, { type: 'invalidate', stackId: s.id, at: Date.parse(event.at) });
+      next.checkpoints = checkpoint(next.checkpoints, { type: 'enqueue', id: event.id, stackId: s.id, reason: 'repair-result', at: Date.parse(event.at) });
+      break;
+    }
     case 'coordination':
       check(next.stacks[event.stackId], 'Unknown stack'); nonempty(event.value?.evidence, 'coordination verification');
       next.stacks[event.stackId].coordination = event.value; break;
     case 'ready': {
-      const s = next.stacks[event.stackId]; check(s?.phase === 'building', 'Stack not building');
+      const s = next.stacks[event.stackId]; check(s?.phase === 'building' && !s.buildRepair, 'Stack not building or repair remains');
       check(!unresolvedOperations(s), 'Uncertain operation blocks ready');
       check(!Object.values(next.assignments).some(a => a.stackId === s.id && a.status !== 'finished' && a.id !== event.delegated?.assignmentId), 'Active or uncertain stack assignment remains');
       nonempty(event.evidence, 'clean worktree/detach and ready evidence'); sha(event.detachedSha);
@@ -195,6 +245,7 @@ export function applyEvent(ledger, event, owner) {
         if (old.worker) check(old.worker === a.worker, 'Worker identity changed');
         check((old.complexity ?? 'standard') === (a.complexity ?? 'standard') && old.complexityReason === a.complexityReason, 'Worker complexity changed');
       } else check(a.status === 'reserved', 'Persist reservation before start');
+      if (next.stacks[a.stackId]?.buildRepair && !['repair', 'inventory'].includes(a.lane) && a.status !== 'finished') check(false, 'Construction cannot start during build repair');
       if (a.status === 'active') { nonempty(a.worker, 'actual worker identity'); absolute(a.worktree); sha(a.startSha); }
       next.assignments[a.id] = a; break;
     }
@@ -214,7 +265,7 @@ export function applyEvent(ledger, event, owner) {
       next.implementationEnded = true;
       next.checkpoints = checkpoint(next.checkpoints, { type: 'enqueue', id: event.id, reason: 'final', at: Date.parse(event.at) }); break;
     case 'stack-observation': {
-      const s = next.stacks[event.stackId]; check(s?.phase === 'ready', 'Maintenance observations require ready stack');
+      const s = next.stacks[event.stackId]; check(['ready', 'building'].includes(s?.phase), 'Maintenance observations require ready or building stack');
       nonempty(event.value?.evidence, 'fresh maintenance observation evidence');
       if (s.outstandingEffects && event.value.outstandingEffects === false) check(event.reconciled === true && event.evidence, 'Reconcile remote effects first');
       s.maintenance = event.value;

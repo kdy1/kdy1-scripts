@@ -61,7 +61,10 @@ export function preflight(prArg, ownership = null) {
     if (report.stack) {
       const layer = report.stack.layers.find(l => l.pr === pr.url);
       assert(layer?.branch === pr.headBranch && layer.headRepository === pr.headRepository, 'Registered PR/head mismatch');
-      if (report.stack.phase !== 'ready') report.blockers.push('Stack is building');
+      const buildRepair = report.stack.phase === 'building' && report.stack.buildRepair?.pr === pr.url
+        && ownership && report.stack.lock?.mode === 'repair' && report.stack.lock.owner === ownership.owner
+        && report.stack.lock.token === ownership.token;
+      if (report.stack.phase !== 'ready' && !buildRepair) report.blockers.push('Stack is building');
       if (report.stack.lock && !(ownership && report.stack.lock.owner === ownership.owner && report.stack.lock.token === ownership.token && ['repair', 'edit'].includes(report.stack.lock.mode))) report.blockers.push('Stack has another owner or an unclaimed reservation');
       if (registry.catalog?.stack === report.stack.id) report.blockers.push('Stack catalog operation must be reconciled first');
     }

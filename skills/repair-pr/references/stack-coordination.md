@@ -40,6 +40,24 @@ Existing layers cannot be removed, reordered, moved between stacks, or assigned 
 
 For an already published, unregistered stack, verify its full membership with authenticated GitHub and gh-stack reads, record a task snapshot, and use `register --file <json> --owner <task-owner> --published`. Use a unique task ID as `batch` outside a Slop batch. Do not use `--published` to bypass a build: the helper rejects overlapping branches or PRs. A registered stack cannot be re-registered as a new ready stack. Do not add unrelated standalone PRs to a batch.
 
+## Repair a published prefix during construction
+
+For an authorized Slop batch, the coordinator can pause construction at an idle verified-prefix boundary without marking the stack ready. Finish same-stack assignments and reconcile effects first. Every registered layer must have a verified PR; future unintegrated groups need not finish. Detach the clean integration checkout at the verified tip. Reserve the repair assignment in the batch ledger before transferring ownership.
+
+```sh
+node "<helper>" suspend-build --stack <id> --owner <build-owner> --token <build-token> --pr <published-pr-url> --repair-owner <reservation-owner> --evidence-file <json>
+```
+
+The evidence object contains the matching absolute `ledger`, `assignmentId`, `constructionIdle: true`, `gitOperationsClear: true`, `remoteReconciled: true`, `cleanDetached: true`, `effectsClear: true` and a concrete `summary`. These statements must be supported by actual worktree, worker and remote observations. The helper atomically replaces the build lock with a fresh reservation and records the build return owner and assignment. It keeps phase `building`, rejects unpublished targets/layers and catalog contention, and invalidates the old build token. Record `build-repair-start` in the batch ledger before the assigned child's two-phase START and `claim`.
+
+The assigned repair may claim that reservation and reuse its fresh repair token in `$manage-stacked-prs`. Registration extensions, `ready`, direct `acquire` and ordinary `release` remain prohibited. Preserve the saved parent boundaries through affected upper-layer replay. The child returns its retained token, remote prefix verification, per-layer covered SHAs, thread outcomes and uncertain effects to the coordinator.
+
+```sh
+node "<helper>" resume-build --stack <id> --owner <current-reservation-or-repair-owner> --token <current-token> --evidence-file <json>
+```
+
+Resume evidence has the same fields plus `repairStopped: true` and the original `assignmentId`. Use it only after the child is confirmed stopped and all Git, catalog, remote and thread effects are known. A known rejected spawn or no-op uses the same return procedure. The helper retains handoff history and atomically restores a fresh build token for the recorded build owner, never an unlocked interval. Record the returned token and verified changed heads through batch ledger `build-repair-result` before construction resumes. Keep uncertain outcomes protected and reconcile both stores on continuation. Recovery preserves `buildRepair`; recovering a token alone does not end the handoff.
+
 ## Reserve, claim, and release repairs
 
 Before spawning a repair subagent, reserve its entire ready stack and record the attempt, PR, reservation token, and intended child in the coordinator ledger:
@@ -59,7 +77,7 @@ node "<helper>" claim --stack <id> --token <reservation-token> --pr <url> --owne
 node "<helper>" release --stack <id> --owner <child-attempt-owner> --token <claimed-token>
 ```
 
-Claim consumes the reservation token and creates a fresh repair token. A direct authorized repair or stack edit with no reservation uses `acquire --mode repair` or `acquire --mode edit`, with `--stack`, `--owner`, and the member `--pr`. A `build` lock blocks every direct repair/edit, regardless of which PR was requested. An unregistered ordinary PR retains its ordinary workflow after a successful read-only lookup and ownership checks.
+Claim consumes the reservation token and creates a fresh repair token. A direct authorized repair or stack edit with no reservation uses `acquire --mode repair` or `acquire --mode edit`, with `--stack`, `--owner`, and the member `--pr`. A `build` lock blocks every direct repair/edit, regardless of which PR was requested. Only its batch build owner may use the explicit published-prefix handoff above; `acquire` remains ready-only. An unregistered ordinary PR retains its ordinary workflow after a successful read-only lookup and ownership checks.
 
 Hold the stack token from before checkout/ref changes through code changes, validation, all required upper-layer replay and pushes, remote verification, and review-thread handling. `manage-stacked-prs` invoked inside that repair reuses the same owner/token; it must not acquire or release a second stack lock. If results or alignment are uncertain, retain ownership for reconciliation. A known no-op can release after verification. A coordinator may release an unclaimed reservation only after creation is definitively rejected or the assigned child is confirmed stopped without uncertain effects. Record every release before the next assignment.
 
@@ -119,4 +137,4 @@ For a complete authenticated inventory of the batch's recorded PRs, prepare the 
 node "<helper>" plan --batch <batch-id> --file <inventory-json>
 ```
 
-The helper rejects unrelated/duplicate PRs and chooses at most one repair per free ready stack, in bottom-to-top order. It includes upper PRs without an author or default-base filter. Missing required PR data yields `complete: false` and no assignments. An active stack includes queued/preparing/running/uncertain creations not yet represented by a claimed lock. Re-run planning with refreshed remote signals after a lower repair; an old snapshot does not authorize the next layer. Reserve each candidate before dispatch because a plan snapshot is not a lock. `stop: true` requires implementation ended, complete terminal PR states, and no active/locked/incomplete stacks. This is a scheduling aid, not GitHub inventory, automation registration, or proof of authorization.
+The helper rejects unrelated/duplicate PRs and chooses at most one repair per free ready stack or idle published building prefix listed in optional `safeBuildingStackIds`, in bottom-to-top order. It includes upper PRs without an author or default-base filter. Missing required PR data yields `complete: false` and no assignments. An active stack includes queued/preparing/running/uncertain creations not yet represented by a claimed lock. Re-run planning with refreshed remote signals after a lower repair; an old snapshot does not authorize the next layer. Building candidates carry `requiresBuildHandoff: true` and require fresh idle-boundary evidence plus `suspend-build`; a hint never transfers ownership. Reserve each candidate before dispatch because a plan snapshot is not a lock. `stop: true` requires implementation ended, complete terminal PR states, and no active/locked/incomplete stacks. This is a scheduling aid, not GitHub inventory, automation registration, or proof of authorization.

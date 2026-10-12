@@ -121,7 +121,7 @@ export class CoordinationStore {
       const previous = state.stacks.find((stack) => stack.id === id);
       if (previous) {
         this.assertOwner(previous.lock, owner, token);
-        if (previous.phase !== "building" || previous.repository !== repository || previous.batch !== batch || previous.ledger !== ledger) {
+        if (previous.phase !== "building" || previous.lock.mode !== "build" || previous.buildRepair || previous.repository !== repository || previous.batch !== batch || previous.ledger !== ledger) {
           throw new CoordinationError("Only the building owner may extend the same registration");
         }
         if (layers.length < previous.layers.length || previous.layers.some((old, i) =>
@@ -173,11 +173,53 @@ export class CoordinationStore {
     });
   }
 
+  buildEvidence(stack, input) {
+    if (input?.ledger !== stack.ledger || input.constructionIdle !== true || input.gitOperationsClear !== true ||
+        input.remoteReconciled !== true || input.cleanDetached !== true || input.effectsClear !== true) {
+      throw new CoordinationError("Build handoff requires matching ledger, idle construction, clean detached checkout and reconciled effects");
+    }
+    requireValue(input.summary, "build handoff evidence");
+  }
+
+  suspendBuild(id, owner, token, pr, repairOwner, input) {
+    pr = canonicalPr(pr);
+    return this.transaction((state) => {
+      const stack = this.stack(state, id);
+      this.assertOwner(stack.lock, owner, token);
+      this.buildEvidence(stack, input);
+      if (stack.phase !== "building" || stack.lock.mode !== "build" || stack.buildRepair ||
+          state.catalog?.stack === id || stack.layers.some(l => !l.pr) || !stack.layers.some(l => l.pr === pr)) {
+        throw new CoordinationError("Build repair requires an idle verified published prefix and build ownership", 75);
+      }
+      requireValue(input.assignmentId, "reserved repair assignment");
+      stack.buildRepair = { buildOwner: owner, assignmentId: input.assignmentId, pr, evidence: input, at: new Date().toISOString() };
+      stack.lock = this.newLock(repairOwner, "reserved", pr);
+      return stack;
+    });
+  }
+
+  resumeBuild(id, owner, token, input) {
+    return this.transaction((state) => {
+      const stack = this.stack(state, id);
+      this.assertOwner(stack.lock, owner, token);
+      this.buildEvidence(stack, input);
+      if (stack.phase !== "building" || !stack.buildRepair || !["repair", "reserved"].includes(stack.lock.mode) ||
+          state.catalog?.stack === id || input.assignmentId !== stack.buildRepair.assignmentId || input.repairStopped !== true) {
+        throw new CoordinationError("Reconcile and stop the assigned repair before resuming construction", 75);
+      }
+      stack.buildRepairHistory ??= [];
+      stack.buildRepairHistory.push({ ...stack.buildRepair, result: input, completedAt: new Date().toISOString() });
+      stack.lock = this.newLock(stack.buildRepair.buildOwner, "build");
+      delete stack.buildRepair;
+      return stack;
+    });
+  }
+
   claim(id, token, pr, owner) {
     pr = canonicalPr(pr);
     return this.transaction((state) => {
       const stack = this.stack(state, id);
-      if (stack.phase !== "ready" || stack.lock?.mode !== "reserved" || stack.lock.token !== token || stack.lock.pr !== pr) {
+      if ((stack.phase !== "ready" && !(stack.phase === "building" && stack.buildRepair?.pr === pr)) || stack.lock?.mode !== "reserved" || stack.lock.token !== token || stack.lock.pr !== pr) {
         throw new CoordinationError("Reservation does not match this PR/token", 75);
       }
       stack.lock = this.newLock(owner, "repair", pr);
@@ -189,7 +231,7 @@ export class CoordinationStore {
     return this.transaction((state) => {
       const stack = this.stack(state, id);
       this.assertOwner(stack.lock, owner, token);
-      if (stack.lock.mode !== "build" || stack.layers.some((layer) => !layer.pr)) throw new CoordinationError("Ready requires building ownership and all published PRs");
+      if (stack.buildRepair || stack.lock.mode !== "build" || stack.layers.some((layer) => !layer.pr)) throw new CoordinationError("Ready requires building ownership and all published PRs");
       if (state.catalog?.stack === id) throw new CoordinationError("Release the catalog lock first");
       stack.phase = "ready";
       stack.lock = null;
@@ -265,6 +307,11 @@ export function planBatch(state, batch, inventory) {
   if (typeof inventory.implementationEnded !== "boolean" || !Array.isArray(inventory.prs) || !Array.isArray(inventory.activeStackIds)) {
     throw new CoordinationError("Inventory requires implementationEnded, prs, and activeStackIds");
   }
+  if (inventory.safeBuildingStackIds !== undefined && (!Array.isArray(inventory.safeBuildingStackIds) ||
+      new Set(inventory.safeBuildingStackIds).size !== inventory.safeBuildingStackIds.length ||
+      inventory.safeBuildingStackIds.some(id => !stacks.some(s => s.id === id && s.phase === "building")))) {
+    throw new CoordinationError("safeBuildingStackIds must name unique building members of this batch");
+  }
   const urls = stacks.flatMap((stack) => stack.layers.map((layer) => layer.pr).filter(Boolean));
   const snapshots = new Map();
   for (const pr of inventory.prs) {
@@ -280,9 +327,11 @@ export function planBatch(state, batch, inventory) {
   });
   const candidates = [];
   if (complete) for (const stack of stacks) {
-    if (stack.phase !== "ready" || stack.lock || inventory.activeStackIds.includes(stack.id)) continue;
+    const building = stack.phase === "building" && stack.lock?.mode === "build" && !stack.buildRepair
+      && stack.layers.every(l => l.pr) && inventory.safeBuildingStackIds?.includes(stack.id);
+    if ((!building && (stack.phase !== "ready" || stack.lock)) || inventory.activeStackIds.includes(stack.id)) continue;
     const layer = stack.layers.find((item) => item.pr && snapshots.get(item.pr).state === "OPEN" && snapshots.get(item.pr).repairSignal);
-    if (layer) candidates.push({ stack: stack.id, pr: layer.pr, headSha: snapshots.get(layer.pr).headSha, baseSha: snapshots.get(layer.pr).baseSha });
+    if (layer) candidates.push({ ...(building ? { requiresBuildHandoff: true } : {}), stack: stack.id, pr: layer.pr, headSha: snapshots.get(layer.pr).headSha, baseSha: snapshots.get(layer.pr).baseSha });
   }
   const stop = complete && inventory.implementationEnded && stacks.every((stack) =>
     stack.phase === "ready" && !stack.lock && !inventory.activeStackIds.includes(stack.id)) &&
@@ -302,6 +351,8 @@ function parseArgs(args) {
   const allowed = {
     status: [], lookup: ["pr", "branch", "repository"], register: ["file", "owner", "token", "published"],
     acquire: ["stack", "owner", "mode", "pr"], claim: ["stack", "token", "pr", "owner"],
+    "suspend-build": ["stack", "owner", "token", "pr", "repair-owner", "evidence-file"],
+    "resume-build": ["stack", "owner", "token", "evidence-file"],
     ready: ["stack", "owner", "token"], release: ["stack", "owner", "token"],
     "catalog-acquire": ["stack", "owner", "token"], "catalog-release": ["owner", "token"],
     recover: ["stack", "token", "owner", "evidence-file", "catalog"],
@@ -314,7 +365,7 @@ function parseArgs(args) {
 
 function main() {
   if (process.argv.length === 2 || process.argv.includes("--help")) {
-    process.stdout.write("Usage: stack-coordination.mjs <status|lookup|register|acquire|claim|ready|release|catalog-acquire|catalog-release|recover|recover-transaction|plan> [options]\nSee ../references/stack-coordination.md for arguments and recovery rules.\n");
+    process.stdout.write("Usage: stack-coordination.mjs <status|lookup|register|acquire|suspend-build|resume-build|claim|ready|release|catalog-acquire|catalog-release|recover|recover-transaction|plan> [options]\nSee ../references/stack-coordination.md for arguments and recovery rules.\n");
     return;
   }
   const { command, options: o } = parseArgs(process.argv.slice(2));
@@ -336,6 +387,8 @@ function main() {
     }
     case "register": result = store.register(jsonFile(o.file), o.owner, o.token, o.published); break;
     case "acquire": result = store.acquire(o.stack, o.owner, o.mode, o.pr); break;
+    case "suspend-build": result = store.suspendBuild(o.stack, o.owner, o.token, o.pr, o["repair-owner"], jsonFile(o["evidence-file"])); break;
+    case "resume-build": result = store.resumeBuild(o.stack, o.owner, o.token, jsonFile(o["evidence-file"])); break;
     case "claim": result = store.claim(o.stack, o.token, o.pr, o.owner); break;
     case "ready": result = store.ready(o.stack, o.owner, o.token); break;
     case "release": result = store.release(o.stack, o.owner, o.token); break;

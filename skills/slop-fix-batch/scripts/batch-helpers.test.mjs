@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process';
 import { request, control } from './github-request.mjs';
 import { canonicalIssues, collectIssues } from './collect-issues.mjs';
 import { initialize, validateLedger, applyEvent, updateLedger, schedulingSnapshot, resumeSummary } from './batch-ledger.mjs';
-import { stepCommands } from './batch-stack.mjs';
+import { stepCommands, verifyIntegrationPrerequisites, runCommand } from './batch-stack.mjs';
 import { verifyPublication } from './verify-publication.mjs';
 import { checkpoint, emptyCheckpoints, checkpointPlan } from './batch-checkpoints.mjs';
 import { renderHandoff, renderReport } from './render-handoff.mjs';
@@ -389,3 +389,93 @@ test('Claude prepare and START retain the same worker, checkout and SHA checks',
   }
   assert.throws(() => renderHandoff({ ...i, mode: 'plan' }), /Plan Mode/);
 });
+
+function repairablePrefix() {
+  const issues = [1, 2, 3].map((n, i) => ({ key: `github.com/o/r/${n}`, number: n, url: `https://github.com/o/r/issues/${n}`, canonicalOrder: i }));
+  let l = initialize({ version: 1, batchId: 'batch', coordinator: 'root', query: selection.query, repository: 'github.com/o/r',
+    baseBranch: 'main', remote: 'origin', authorization: 'Fix selected issues', inspectedSha: sha, selection: { ...selection, issues } });
+  const groups = issues.map((x, i) => ({ ...group, id: `g${i}`, issues: [x.key], requires: i ? [`g${i - 1}`] : [] }));
+  l = apply(l, 'groups', { groups }); l = apply(l, 'stack', { value: { ...stack, groups: groups.map(g => g.id) } });
+  const entries = issues.map((x, i) => ({ ...publication().expected.layers[0], groupId: `g${i}`, url: `https://github.com/o/r/pull/${i + 4}`,
+    headBranch: `fix-${i}`, baseBranch: i ? `fix-${i - 1}` : 'main', headSha: String(i + 1).repeat(40), baseSha: i ? String(i).repeat(40) : sha,
+    body: `Fix behavior\n\nCloses ${x.url}`, closes: [x.url] }));
+  const proof = entries => ({ version: 1, expected: { stackId: 's', baseBranch: 'main', layers: entries },
+    observed: { complete: true, attachmentComplete: true, stackId: 's', layers: entries.map(e => ({ ...e, state: 'OPEN', isDraft: false })), attachments: entries.map(e => e.url) } });
+  for (let i = 0; i < 2; i++) {
+    l = apply(l, 'layer', { stackId: 's', value: { ...layer, groupId: `g${i}`, headSha: entries[i].headSha } });
+    l = apply(l, 'publication', { stackId: 's', verification: proof(entries.slice(0, i + 1)) });
+  }
+  const assignment = { id: 'r', taskId: 'repair-task', lane: 'repair', stackId: 's', status: 'reserved', slots: 1, worker: 'child', worktree: '/tmp/repair', startSha: entries[0].headSha };
+  l = apply(l, 'assignment', { value: assignment });
+  const start = { stackId: 's', assignmentId: 'r', pr: entries[0].url, buildOwner: 'builder', evidence: 'Idle detached published prefix and known effects',
+    coordination: { phase: 'building', mode: 'reserved', owner: 'reservation', token: 'reserved-token', evidence: 'Verified suspend-build result' } };
+  return { l, entries, proof, assignment, start };
+}
+test('lower repair and upper replay update prefix evidence before construction resumes', () => {
+  const f = repairablePrefix(); let l = apply(f.l, 'build-repair-start', f.start);
+  assert.throws(() => apply(l, 'layer', { stackId: 's', value: { ...layer, groupId: 'g2' } }), /repair blocks integration/);
+  assert.throws(() => apply(l, 'publication', { stackId: 's', verification: f.proof(f.entries.slice(0, 2)) }), /idle construction/);
+  assert.throws(() => apply(l, 'ready', { stackId: 's', detachedSha: l.stacks.s.layers[1].headSha, evidence: 'detached' }), /repair remains/);
+  assert.throws(() => apply(l, 'assignment', { value: { id: 'next', taskId: 'next', lane: 'implementation', stackId: 's', status: 'reserved', slots: 1 } }), /Construction cannot start/);
+  l = apply(l, 'assignment', { value: { ...f.assignment, status: 'finished', slots: 0, outcome: 'succeeded', evidence: 'Remote heads, alignment and threads verified' } });
+  const updated = f.entries.slice(0, 2).map((e, i) => ({ ...e, headSha: String(i + 7).repeat(40), baseSha: i ? '7'.repeat(40) : sha }));
+  const result = { stackId: 's', reconciled: true, evidence: 'Verified target repair and upper replay; parent diffs retained', verification: f.proof(updated),
+    coordination: { phase: 'building', mode: 'build', owner: 'builder', token: 'new-build-token', evidence: 'resume-build verified' },
+    coverage: updated.map((e, i) => ({ groupId: e.groupId, oldParentSha: f.entries[i].baseSha, newParentSha: e.baseSha, checks: [{ command: 'node --test relevant', sha: e.headSha, status: 'passed' }] })) };
+  assert.throws(() => apply(l, 'build-repair-result', { ...result, coverage: [] }), /Missing repair\/replay coverage/);
+  const changed = structuredClone(result); changed.verification.expected.layers[0].url = 'https://github.com/o/r/pull/999';
+  assert.throws(() => apply(l, 'build-repair-result', changed));
+  const unknown = apply(l, 'operation', { stackId: 's', value: { id: 'uncertain-push', kind: 'repair-push', owner: 'child', headSha: updated[0].headSha, status: 'uncertain' } });
+  assert.throws(() => apply(unknown, 'build-repair-result', result), /Repair effects remain/);
+  l = apply(l, 'build-repair-result', result);
+  assert.equal(l.stacks.s.phase, 'building'); assert.equal(l.stacks.s.buildRepair, undefined);
+  assert.equal(l.stacks.s.layers[0].workerSha, sha); assert.deepEqual(l.stacks.s.layers[0].checks, layer.checks);
+  assert.equal(l.stacks.s.repairHistory[0].layers[0].headSha, f.entries[0].headSha);
+  assert.equal(l.stacks.s.layers[1].publication.layer.baseSha, updated[0].headSha);
+  assert.equal(l.checkpoints.refresh.s, 0);
+  const last = { ...f.entries[2], baseSha: updated[1].headSha };
+  l = apply(l, 'layer', { stackId: 's', value: { ...layer, groupId: 'g2', headSha: last.headSha } });
+  l = apply(l, 'publication', { stackId: 's', verification: f.proof([...updated, last]) });
+  l = apply(l, 'coordination', { stackId: 's', value: { phase: 'ready', evidence: 'Final full membership verified and detached' } });
+  l = apply(l, 'ready', { stackId: 's', detachedSha: last.headSha, evidence: 'clean final tip' });
+  assert.equal(l.stacks.s.phase, 'ready');
+});
+test('building repair handoff requires idle work and published target; START checks reservation', () => {
+  const f = repairablePrefix();
+  assert.throws(() => apply(f.l, 'build-repair-start', { ...f.start, pr: f.entries[2].url }), /published member/);
+  const busy = apply(f.l, 'assignment', { value: { id: 'busy', taskId: 'busy', lane: 'publication', stackId: 's', status: 'reserved', slots: 1 } });
+  assert.throws(() => apply(busy, 'build-repair-start', f.start), /Construction must be idle/);
+  const handoff = { ...assignment(), issueKeys: [f.l.fixedIssues[0].key], worker: 'child', assignmentId: 'r', checkout: '/tmp/repair', stackId: 's', startSha: f.entries[0].headSha,
+    prUrl: f.entries[0].url, repairSkill: '/skills/repair-pr/SKILL.md', coordinationHelper: '/skills/stack-coordination.mjs', reservationOwner: 'reservation', reservationToken: 'reserved-token' };
+  const input = { version: 1, mode: 'execution', role: 'repair', phase: 'start', ledger: f.l, assignment: handoff };
+  assert.throws(() => renderHandoff(input), /recorded published-member handoff/);
+  const paused = apply(f.l, 'build-repair-start', f.start);
+  assert.match(renderHandoff({ ...input, ledger: paused }), /Never merge/);
+  assert.throws(() => renderHandoff({ ...input, ledger: paused, assignment: { ...handoff, reservationToken: 'wrong' } }), /recorded published-member handoff/);
+});
+
+
+test('completed worker result is revalidated after parent repair and rewritten ancestry', () => scratch(dir => {
+  const git = (...args) => runCommand('git', args, dir);
+  git('init', '-b', 'main'); git('config', 'user.name', 'Test'); git('config', 'user.email', 'test@example.invalid');
+  save(join(dir, 'base.json'), { value: 'base' }); git('add', '.'); git('commit', '-m', 'base');
+  const base = git('rev-parse', 'HEAD');
+  git('switch', '-c', 'parent'); save(join(dir, 'parent.json'), { value: 'old' }); git('add', '.'); git('commit', '-m', 'parent');
+  const oldParent = git('rev-parse', 'HEAD');
+  git('switch', '-c', 'worker'); save(join(dir, 'child.json'), { value: 'child' }); git('add', '.'); git('commit', '-m', 'worker');
+  const worker = git('rev-parse', 'HEAD');
+  git('switch', 'parent'); save(join(dir, 'parent.json'), { value: 'fixed' }); git('add', '.'); git('commit', '-m', 'repair');
+  const appended = git('rev-parse', 'HEAD');
+  const a = { workerStartSha: oldParent, worktree: dir }, s = { repairHistory: [{ evidence: 'parent fixed' }] }, g = { requires: ['parent'] };
+  assert.throws(() => verifyIntegrationPrerequisites(a, s, g, appended), /Stale prerequisite/);
+  a.prerequisiteRevalidation = { oldStartSha: oldParent, newStartSha: appended, integrationChanged: true, evidence: 'Compared contracts and child acceptance against fixed parent' };
+  verifyIntegrationPrerequisites(a, s, g, appended);
+  git('switch', '-c', 'replayed-parent', base); save(join(dir, 'parent.json'), { value: 'fixed' }); git('add', '.'); git('commit', '-m', 'replayed fixed parent');
+  const rewritten = git('rev-parse', 'HEAD');
+  assert.throws(() => verifyIntegrationPrerequisites(a, s, g, rewritten), /Stale prerequisite/);
+  a.prerequisiteRevalidation.newStartSha = rewritten;
+  verifyIntegrationPrerequisites(a, s, g, rewritten);
+  git('cherry-pick', worker);
+  assert.equal(JSON.parse(readFileSync(join(dir, 'child.json'))).value, 'child');
+  assert.equal(JSON.parse(readFileSync(join(dir, 'parent.json'))).value, 'fixed');
+}));

@@ -7,7 +7,7 @@ import { check, version, nonempty, sha, absolute, readJson, save, cli } from './
 import { workerSettings } from './worker-settings.mjs';
 import { ledgerRuntime, matchRuntime } from './runtime.mjs';
 import { validateLedger } from './batch-ledger.mjs';
-const roles = ['investigation', 'preparation', 'implementation', 'publication', 'stack-execution', 'maintenance', 'inventory'];
+const roles = ['investigation', 'preparation', 'implementation', 'publication', 'stack-execution', 'maintenance', 'inventory', 'repair'];
 function placeholders(value) {
   const text = JSON.stringify(value);
   check(!/<[^>\n]+>|\{\{[^}]+\}\}|\b(?:TODO|TBD)\b/.test(text), 'Unresolved placeholder in assignment');
@@ -20,7 +20,8 @@ const instructions = {
   preparation: 'Perform read-only preparation. Do not edit source, refs or GitHub. Source changes require a later implementation START at the exact integration SHA containing checked prerequisites. Reconcile findings with those prerequisite changes.',
   implementation: 'Verify checkout, branch, stack and exact starting SHA before editing. Implement the complete group requirements in the assigned clean worktree, run retained targeted and repository-wide commands and required execution times, preserve hooks, and commit coherent verified units. Do not publish PRs, write issues/comments, run gh stack, change another checkout or independently update the base. Return commits, coverage at exact SHAs, skipped validation and stage timing.',
   publication: 'Explicitly invoke the installed $create-pr skill. Use only the frozen integration checkout for the assigned prefix. Verify exact head/base and scope. Publish non-draft; include each fully implemented issue on its own Closes line, preserving Closes despite skipped real-world validation. Disclose worker coverage at the original SHA separately from publication head and integration-change checks. Reuse recorded PRs, apply the runtime attachment policy, and return verified URLs. Do not commit, switch branches, mutate source/local layer refs or run gh stack. Do not merge or register maintenance.',
-  maintenance: 'Continue $slop-fix-batch’s internal batch maintenance procedure and read only the assigned maintenance sections. Do not recollect issues or restart construction. Manage only the ledger PR set. Return results to the direct coordinator loop; never register automation. Building/held stacks remain protected. Honor stopped management state, whole-stack ownership, two-phase repair START and fresh review/CI/membership gates. Process merges then repairs then publication then implementation, including the scheduler progress exception. Only the coordinator in legacy mode or the recorded maintenance actor in delegated mode merges under original conditional authorization; implementation and repair children never merge. Maintenance actors consume a slot; nested repairs require coordinator-reserved additional slots. Candidate hints are not authority. Reconcile uncertain requests before retry and retain original standalone eligibility. Do not wait for unrelated workers or CI/reviews during a bounded pass.',
+  repair: 'Read the installed $repair-pr skill and repair only the assigned published PR. Claim the recorded whole-stack reservation only after START identity verification. For building stacks, use the recorded build-repair handoff and align affected published upper layers under the same token. Never merge, enable auto-merge, extend construction or release a building lock. Return final heads, inherited boundaries, validation, push/thread outcomes and retained token to the coordinator for build resumption.',
+  maintenance: 'Continue $slop-fix-batch’s internal batch maintenance procedure and read only the assigned maintenance sections. Do not recollect issues or restart construction. Manage only the ledger PR set. Return results to the direct coordinator loop; never register automation. Building stacks permit only coordinator-recorded published-prefix repairs under transferred build ownership; held stacks remain protected. Construction pauses until verified repair results return build ownership. Honor stopped management state, whole-stack ownership, two-phase repair START and fresh review/CI/membership gates. Process merges then repairs then publication then implementation, including the scheduler progress exception. Only the coordinator in legacy mode or the recorded maintenance actor in delegated mode merges under original conditional authorization; implementation and repair children never merge. Maintenance actors consume a slot; nested repairs require coordinator-reserved additional slots. Candidate hints are not authority. Reconcile uncertain requests before retry and retain original standalone eligibility. Do not wait for unrelated workers or CI/reviews during a bounded pass.',
 };
 // Evidence files hold long findings, never identity, acceptance or execution authority.
 const evidenceFields = new Set(['investigationEvidence', 'preparationFindings', 'priorFindings', 'observations',
@@ -116,6 +117,12 @@ export function renderHandoff(input) {
     check(typeof a.integrationChanged === 'boolean', 'Missing integration observation');
     if (a.integrationChanged) check(a.integrationChecks?.length && a.integrationChecks.every(c => c.status === 'passed' && c.sha === a.headSha && c.command), 'Missing integration-change coverage');
   }
+  if (input.role === 'repair') {
+    sha(a.startSha); absolute(a.repairSkill); absolute(a.coordinationHelper); nonempty(a.prUrl, 'exact repair PR');
+    nonempty(a.reservationOwner, 'reservation owner'); nonempty(a.reservationToken, 'reservation token');
+    const s = ledger.stacks[a.stackId];
+    check(s && s.layers.some(l => l.url === a.prUrl), 'Repair outside published membership');
+  }
   if (input.role === 'maintenance') { absolute(a.batchSkill); absolute(a.batchReference); absolute(a.coordinationRoot); nonempty(a.capacityAccounting, 'shared capacity accounting'); }
   const delegatedRole = ['stack-execution', 'inventory'].includes(input.role) || (input.role === 'maintenance' && Boolean(ledger.delegation));
   if (input.phase === 'start' && input.mode === 'execution' && delegatedRole) {
@@ -124,7 +131,7 @@ export function renderHandoff(input) {
     check(recorded?.status === 'active' && recorded.worker === a.worker && recorded.role === input.role, 'START requires active actor assignment');
     if (input.role !== 'inventory') check(g.stackIds.length === 1 && g.stackIds[0] === a.stackId, 'START stack differs from grant');
     check(recorded.worktree === a.checkout && recorded.startSha === a.startSha, 'Actor checkout/starting SHA mismatch');
-    if (input.role === 'stack-execution') check(recorded.groupId === a.groupId && recorded.branch === a.branch && recorded.coordinationId === a.coordinationId && recorded.stackOwner === a.stackOwner && JSON.stringify(recorded.commits) === JSON.stringify(a.commits), 'START execution facts differ from recorded assignment');
+    if (input.role === 'stack-execution') check(recorded.groupId === a.groupId && recorded.branch === a.branch && recorded.coordinationId === a.coordinationId && recorded.stackOwner === a.stackOwner && JSON.stringify(recorded.commits) === JSON.stringify(a.commits) && isDeepStrictEqual(recorded.prerequisiteRevalidation, a.prerequisiteRevalidation), 'START execution facts differ from recorded assignment');
   }
   if (input.phase === 'start' && input.mode === 'execution' && input.role === 'maintenance' && !ledger.delegation) check(a.worker === ledger.coordinator && Object.values(ledger.stacks).some(s => s.phase === 'ready'), 'Maintenance START requires coordinator identity and ready handoff');
   if (input.phase === 'start' && input.mode === 'execution' && !['maintenance', 'inventory', 'stack-execution'].includes(input.role)) {
@@ -132,7 +139,18 @@ export function renderHandoff(input) {
     check(recorded && ['reserved', 'active'].includes(recorded.status), 'START requires persisted assignment');
     check(recorded.worker === a.worker && recorded.worker, 'Actual worker identity must be recorded before START');
     if (!['maintenance', 'inventory'].includes(input.role)) check(recorded.worktree === a.checkout, 'START checkout differs from assignment');
-    if (input.role === 'implementation') check(recorded.startSha === a.startSha, 'START SHA differs from assignment');
+    if (input.role === 'implementation') {
+      check(recorded.startSha === a.startSha, 'START SHA differs from assignment');
+      check(!ledger.stacks[recorded.stackId]?.buildRepair, 'Repair blocks new implementation START');
+    }
+    if (input.role === 'repair') {
+      check(recorded.lane === 'repair' && recorded.stackId === a.stackId && recorded.startSha === a.startSha, 'Repair assignment scope or SHA differs');
+    }
+    if (input.role === 'repair' && ledger.stacks[recorded.stackId]?.phase === 'building') {
+      const s = ledger.stacks[recorded.stackId];
+      check(s.buildRepair?.assignmentId === recorded.id && s.buildRepair.pr === a.prUrl && s.coordination.owner === a.reservationOwner && s.coordination.token === a.reservationToken, 'Building repair START requires recorded published-member handoff');
+      check(recorded.startSha === a.startSha, 'Repair START SHA differs from assignment');
+    }
   }
   const complexity = a.complexity ?? 'standard';
   if (a.complexity !== undefined) nonempty(a.complexityReason, 'complexity reason');

@@ -210,3 +210,46 @@ test("real linked worktrees share state and concurrent CLI acquisitions have one
   assert.equal(final.transaction, null);
   assert.equal(JSON.parse(readFileSync(join(final.root, "state.json"), "utf8")).stacks.length, 1);
 });
+
+test('published building prefix transfers repair ownership and resumes without unlocking', t => {
+  const { store, registration } = fixture(t), input = registration('s1', [1]);
+  const build = store.register(input, 'builder');
+  const evidence = { ledger: input.ledger, assignmentId: 'repair-1', constructionIdle: true, gitOperationsClear: true,
+    remoteReconciled: true, cleanDetached: true, effectsClear: true, summary: 'Workers finished; prefix verified and detached' };
+  const inventory = { implementationEnded: false, activeStackIds: [], safeBuildingStackIds: ['s1'],
+    prs: [{ url: url(1), state: 'OPEN', headSha: 'head', baseSha: 'base', repairSignal: true, readComplete: true }] };
+  assert.equal(planBatch(store.read(), 'batch', { ...inventory, safeBuildingStackIds: [] }).candidates.length, 0);
+  assert.equal(planBatch(store.read(), 'batch', inventory).candidates[0].requiresBuildHandoff, true);
+  assert.throws(() => store.suspendBuild('s1', 'builder', build.lock.token, url(2), 'reservation', evidence), /published prefix/);
+  assert.throws(() => store.suspendBuild('s1', 'builder', 'wrong', url(1), 'reservation', evidence), /token mismatch/);
+  assert.throws(() => store.suspendBuild('s1', 'builder', build.lock.token, url(1), 'reservation', { ...evidence, constructionIdle: false }), /idle construction/);
+  const catalog = store.catalogAcquire('s1', 'builder', build.lock.token);
+  assert.throws(() => store.suspendBuild('s1', 'builder', build.lock.token, url(1), 'reservation', evidence), /published prefix/);
+  store.catalogRelease('builder', catalog.token);
+  const paused = store.suspendBuild('s1', 'builder', build.lock.token, url(1), 'reservation', evidence);
+  assert.equal(paused.phase, 'building'); assert.equal(paused.lock.mode, 'reserved');
+  assert.equal(planBatch(store.read(), 'batch', inventory).candidates.length, 0);
+  assert.throws(() => store.register(input, 'reservation', paused.lock.token), /building owner/);
+  assert.throws(() => store.ready('s1', 'reservation', paused.lock.token), /building ownership/);
+  assert.throws(() => store.acquire('s1', 'merge', 'edit', url(1)), /owned/);
+  const repair = store.claim('s1', paused.lock.token, url(1), 'child');
+  assert.throws(() => store.release('s1', 'child', repair.token), /incomplete build/);
+  assert.throws(() => store.resumeBuild('s1', 'child', repair.token, { ...evidence, repairStopped: true, effectsClear: false }), /reconciled effects/);
+  assert.throws(() => store.resumeBuild('s1', 'child', repair.token, { ...evidence, repairStopped: false }), /stop the assigned repair/);
+  const resumed = store.resumeBuild('s1', 'child', repair.token, { ...evidence, repairStopped: true });
+  assert.equal(resumed.phase, 'building'); assert.equal(resumed.lock.mode, 'build'); assert.equal(resumed.lock.owner, 'builder');
+  assert.notEqual(resumed.lock.token, build.lock.token); assert.equal(resumed.buildRepairHistory.length, 1);
+  assert.throws(() => store.ready('s1', 'builder', build.lock.token), /token mismatch/);
+  store.register(registration('s1', [1, 2]), 'builder', resumed.lock.token);
+  store.ready('s1', 'builder', resumed.lock.token);
+  assert.equal(store.read().stacks[0].phase, 'ready');
+});
+
+test('registered unpublished upper layer cannot enter build repair', t => {
+  const { store, registration } = fixture(t), input = registration(); input.layers[1].pr = null;
+  const build = store.register(input, 'builder');
+  const evidence = { ledger: input.ledger, assignmentId: 'r', constructionIdle: true, gitOperationsClear: true,
+    remoteReconciled: true, cleanDetached: true, effectsClear: true, summary: 'idle' };
+  assert.throws(() => store.suspendBuild('s1', 'builder', build.lock.token, url(1), 'r', evidence), /published prefix/);
+  assert.equal(store.read().stacks[0].lock.token, build.lock.token);
+});

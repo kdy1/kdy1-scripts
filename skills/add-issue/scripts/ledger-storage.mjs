@@ -11,6 +11,21 @@ const objectDir = path => `${absolute(path)}.objects`;
 const legacyLedgers = new WeakSet();
 const validatedObjects = new Map();
 const digestPattern = /^[a-f0-9]{64}$/;
+function objectStat(path) {
+  try { return lstatSync(path, { bigint: true }); }
+  catch (error) { if (error.code === 'ENOENT') return null; throw error; }
+}
+function checkedObjectDir(path, create = false) {
+  const directory = objectDir(path);
+  const info = objectStat(directory);
+  if (info) check(info.isDirectory() && !info.isSymbolicLink(), 'Ledger objects directory must be a real directory');
+  else if (create) {
+    mkdirSync(directory, { recursive: true, mode: 0o700 });
+    const created = objectStat(directory);
+    check(created?.isDirectory() && !created.isSymbolicLink(), 'Ledger objects directory must be a real directory');
+  } else throw new Error('Missing ledger objects directory');
+  return directory;
+}
 function fileHash(path) {
   const h = createHash('sha256'), fd = openSync(path, 'r'), chunk = Buffer.alloc(1024 * 1024);
   try { let count; while ((count = readSync(fd, chunk, 0, chunk.length, null))) h.update(chunk.subarray(0, count)); }
@@ -19,8 +34,10 @@ function fileHash(path) {
 }
 function syncFile(path) { const fd = openSync(path, 'r'); try { fsyncSync(fd); } finally { closeSync(fd); } }
 function installObject(path, destination, bytes) {
-  if (existsSync(destination)) { check(fileHash(destination) === hash(bytes), 'Corrupt immutable ledger object'); return; }
-  mkdirSync(objectDir(path), { recursive: true, mode: 0o700 });
+  checkedObjectDir(path, true);
+  const existing = objectStat(destination);
+  if (existing) check(existing.isFile() && !existing.isSymbolicLink(), 'Ledger object must be a regular file');
+  if (existing) { check(fileHash(destination) === hash(bytes), 'Corrupt immutable ledger object'); return; }
   chmodSync(objectDir(path), 0o700);
   const temp = `${destination}.${randomUUID()}.tmp`;
   try {
@@ -57,7 +74,7 @@ function verifyHistoryPayload(path, entry, materialize = false) {
   check(ref?.version === 1 && digestPattern.test(ref.sha256) && digestPattern.test(ref.payloadHash), 'Invalid ledger payload reference');
   check(ref.payloadHash === entry.previousHash, 'Ledger reference does not match history hash');
   check(ref.file === `${ref.sha256}.json`, 'Invalid ledger object path');
-  return verifyObject(join(objectDir(path), ref.file), ref.sha256, ref.payloadHash, materialize);
+  return verifyObject(join(checkedObjectDir(path), ref.file), ref.sha256, ref.payloadHash, materialize);
 }
 export function resolveHistoryPayload(path, entry) { return verifyHistoryPayload(path, entry, true); }
 export function readLedger(path) {
@@ -69,10 +86,12 @@ export function readLedger(path) {
 }
 function verifyLegacyArchive(path, ref) {
   check(ref?.version === 1 && digestPattern.test(ref.sha256) && ref.file === `legacy-${ref.sha256}.json`, 'Invalid legacy archive reference');
-  verifyObject(join(objectDir(path), ref.file), ref.sha256);
+  verifyObject(join(checkedObjectDir(path), ref.file), ref.sha256);
 }
 export function saveLedger(path, ledger, { beforeCommit = () => {} } = {}) {
   absolute(path); version(ledger);
+  // Reject redirects before touching payload files or directory permissions.
+  if (objectStat(objectDir(path))) checkedObjectDir(path);
   // Build a new manifest without altering the caller's evidence if preparation
   // fails. Successfully installed objects remain harmless retained evidence.
   const history = (ledger.history ?? []).map(entry => {
@@ -90,7 +109,10 @@ export function saveLedger(path, ledger, { beforeCommit = () => {} } = {}) {
   for (const ref of archives) verifyLegacyArchive(path, ref);
   if (existsSync(path) && legacyLedgers.has(ledger)) {
     const digest = fileHash(path), destination = join(objectDir(path), `legacy-${digest}.json`);
-    if (existsSync(destination)) check(fileHash(destination) === digest, 'Corrupt legacy ledger archive');
+    checkedObjectDir(path, true);
+    const existing = objectStat(destination);
+    if (existing) check(existing.isFile() && !existing.isSymbolicLink(), 'Legacy ledger archive must be a regular file');
+    if (existing) check(fileHash(destination) === digest, 'Corrupt legacy ledger archive');
     else {
       const temp = `${destination}.${randomUUID()}.tmp`;
       try { copyFileSync(path, temp); chmodSync(temp, 0o600); syncFile(temp); check(fileHash(temp) === digest, 'Legacy ledger changed during migration'); renameSync(temp, destination); }

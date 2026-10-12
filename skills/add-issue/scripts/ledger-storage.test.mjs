@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, mkdirSync, chmodSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -85,4 +85,27 @@ test('cached validation detects same-size object changes before save or read', t
   assert.throws(() => resolveHistoryPayload(s.path, ledger.history[0]), /Corrupt ledger payload object/);
   writeFileSync(target, bytes);
   assert.deepEqual(resolveHistoryPayload(s.path, readLedger(s.path).history[0]), s.payload);
+});
+
+test('objects directory symlink rejects migration without touching user files or modes', t => {
+  const s = fixture(t), userDir = join(s.path, '..', 'user-data');
+  mkdirSync(userDir); chmodSync(userDir, 0o755);
+  const userFile = join(userDir, 'keep.txt'); writeFileSync(userFile, 'preserved');
+  symlinkSync(userDir, `${s.path}.objects`);
+  assert.throws(() => saveLedger(s.path, readLedger(s.path)), /must be a real directory/);
+  assert.deepEqual(readFileSync(s.path), s.original);
+  assert.deepEqual(readdirSync(userDir), ['keep.txt']);
+  assert.equal(readFileSync(userFile, 'utf8'), 'preserved');
+  assert.equal(statSync(userDir).mode & 0o777, 0o755);
+});
+
+test('payload object symlink is rejected for reading and installing without modifying its target', t => {
+  const s = fixture(t); saveLedger(s.path, readLedger(s.path));
+  const ledger = readLedger(s.path), ref = ledger.history[0].previousPayloadRef, object = join(`${s.path}.objects`, ref.file), userFile = join(s.path, '..', 'user-file.json'), bytes = readFileSync(object);
+  writeFileSync(userFile, bytes); chmodSync(userFile, 0o644);
+  rmSync(object); symlinkSync(userFile, object);
+  assert.throws(() => readLedger(s.path), /Missing ledger payload object/);
+  assert.throws(() => saveLedger(s.path, s.ledger), /must be a regular file/);
+  assert.deepEqual(readFileSync(userFile), bytes);
+  assert.equal(statSync(userFile).mode & 0o777, 0o644);
 });

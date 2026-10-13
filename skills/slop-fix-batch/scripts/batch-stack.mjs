@@ -192,9 +192,31 @@ export function prepareWorktree(input, { run = runCommand } = {}) {
   check(run('git', ['rev-parse', 'HEAD'], input.path) === input.startSha && !run('git', ['status', '--porcelain'], input.path), 'New worktree identity/status mismatch');
   return { version: 1, complete: true, path: input.path, startSha: input.startSha };
 }
-cli(import.meta.url, 'batch-stack.mjs <run|reconcile|worktree> input.json', ([command, path]) => {
+export function syncBase(input, { run = runCommand } = {}) {
+  version(input); absolute(input.checkout); nonempty(input.remote, 'verified remote');
+  check(/^[\w.-]+$/.test(input.remote), 'Invalid remote name');
+  check(input.targetBranch === 'main', 'Only main base synchronization is supported');
+  check(run('git', ['branch', '--show-current'], input.checkout) === 'main', 'Source checkout must be on main');
+  check(!run('git', ['status', '--porcelain'], input.checkout), 'Source checkout must be clean');
+
+  const localBefore = run('git', ['rev-parse', 'refs/heads/main'], input.checkout);
+  const remoteRef = `refs/remotes/${input.remote}/main`;
+  run('git', ['fetch', '--no-tags', input.remote, `refs/heads/main:${remoteRef}`], input.checkout);
+  const remoteSha = run('git', ['rev-parse', remoteRef], input.checkout);
+  check(run('git', ['rev-parse', 'refs/heads/main'], input.checkout) === localBefore, 'Local main moved during base synchronization');
+  check(run('git', ['merge-base', localBefore, remoteSha], input.checkout) === localBefore, 'Local main is ahead of or diverged from fetched main');
+
+  if (localBefore !== remoteSha) run('git', ['merge', '--ff-only', `${input.remote}/main`], input.checkout);
+  check(run('git', ['rev-parse', 'HEAD'], input.checkout) === remoteSha &&
+    run('git', ['rev-parse', 'refs/heads/main'], input.checkout) === remoteSha &&
+    run('git', ['rev-parse', remoteRef], input.checkout) === remoteSha &&
+    !run('git', ['status', '--porcelain'], input.checkout), 'Base synchronization needs reconciliation');
+  return { version: 1, complete: true, baseSha: remoteSha, previousSha: localBefore, updated: localBefore !== remoteSha };
+}
+cli(import.meta.url, 'batch-stack.mjs <run|reconcile|worktree|sync-base> input.json', ([command, path]) => {
   check(path, 'Missing input'); const input = readJson(path);
   if (command === 'run') return runStep(input);
   if (command === 'reconcile') return reconcileStep(input);
-  check(command === 'worktree', 'Unknown command'); return prepareWorktree(input);
+  if (command === 'worktree') return prepareWorktree(input);
+  check(command === 'sync-base', 'Unknown command'); return syncBase(input);
 });

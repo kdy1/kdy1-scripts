@@ -12,6 +12,7 @@ node /installed/slop-fix-batch/scripts/collect-issues.mjs /batch/selection-input
 node /installed/slop-fix-batch/scripts/batch-ledger.mjs init /batch/ledger.json /batch/init.json
 node /installed/slop-fix-batch/scripts/batch-ledger.mjs apply /batch/ledger.json /batch/event.json coordinator-id
 node /installed/slop-fix-batch/scripts/batch-ledger.mjs submit /batch/ledger.json /batch/submission.json
+node /installed/slop-fix-batch/scripts/batch-stack.mjs sync-base /batch/base-input.json
 node /installed/slop-fix-batch/scripts/batch-stack.mjs run /batch/step.json
 node /installed/slop-fix-batch/scripts/batch-stack.mjs reconcile /batch/step-reconciliation.json
 node /installed/slop-fix-batch/scripts/batch-ledger.mjs snapshot /batch/ledger.json > /batch/scheduling.json
@@ -25,6 +26,8 @@ node /installed/slop-fix-batch/scripts/batch-ledger.mjs resume /batch/ledger.jso
 ```
 
 `worker-settings.mjs <role>` takes a role name rather than a versioned input document and returns the three spawn settings as JSON. Unknown roles, incomplete options and duplicate options exit 1. Use these fields as actual spawn arguments under the [worker settings procedure](worker-prompts.md#worker-settings-and-context); the helper does not create an agent.
+
+Before pinning a new independent stack based on `main`, the coordinator runs `batch-stack.mjs sync-base` with `{"version":1,"checkout":"/absolute/source/checkout","remote":"origin","targetBranch":"main"}`. Verify the remote identity before calling it. The helper fetches the remote `main`, requires a clean source checkout on local `main`, and fast-forwards local `main` only when it is behind. Its `baseSha` is the SHA to pin and revalidate; `updated` reports whether local `main` moved. A dirty checkout, another checked-out branch, or ahead/diverged history blocks this new stack. Do not call it to change a base already pinned for an active stack.
 
 Capture the snapshot command's JSON outside source before passing it to the unchanged scheduler CLI. Record its allocation output, policy window and displacement counters in the next coordinator `scheduler` event before dispatch. The ledger reconciles active/reserved/uncertain assignments into the snapshot; `otherOccupiedSlots` in the stored scheduling observations covers only workers outside the ledger, avoiding double counting.
 

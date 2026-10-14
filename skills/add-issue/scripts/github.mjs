@@ -9,7 +9,7 @@ export const fieldFragments = `... on ProjectV2Field { id name dataType project 
 const valueFragments = `... on ProjectV2ItemFieldTextValue { text field { ${fieldFragments} } } ... on ProjectV2ItemFieldNumberValue { number field { ${fieldFragments} } } ... on ProjectV2ItemFieldDateValue { date field { ${fieldFragments} } } ... on ProjectV2ItemFieldSingleSelectValue { optionId field { ${fieldFragments} } } ... on ProjectV2ItemFieldIterationValue { iterationId field { ${fieldFragments} } }`;
 export function definition(value) {
   if (!value) return null;
-  const keys = ['id','name','title','description','data_type','dataType','enabled','state','number','options','configuration','visibility'];
+  const keys = ['id','name','title','description','data_type','dataType','enabled','is_enabled','state','number','options','configuration','visibility'];
   return Object.fromEntries(keys.filter(k => value[k] !== undefined).map(k => [k, value[k]]));
 }
 export class GitHub {
@@ -120,7 +120,7 @@ export class GitHub {
       }
     }
     check(def, 'Audited metadata definition unavailable');
-    check(def.enabled !== false && def.state !== 'closed', 'Audited metadata disabled or closed');
+    check(def.enabled !== false && def.is_enabled !== false && def.state !== 'closed', 'Audited metadata disabled or closed');
     if (m.kind === 'issue-field') { check(def.data_type === m.dataType, 'Native field type mismatch'); if (m.dataType === 'single_select') check(def.options?.some(x => x.name === m.value), 'Native field option unavailable'); }
     if (m.kind === 'project-field' && m.valueType === 'singleSelectOptionId') check(def.options?.some(x => x.id === m.value), 'Project option unavailable');
     if (m.kind === 'project-field' && m.valueType === 'iterationId') check([...def.configuration?.iterations ?? [], ...def.configuration?.completedIterations ?? []].some(x => x.id === m.value), 'Project iteration unavailable');

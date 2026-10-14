@@ -148,6 +148,19 @@ test('permission loss/definition conflict block required metadata and omit optio
   s.statePath=join(s.dir,'optional-ledger.json');s.c.metadata[0].required=false;s.c.metadata[0].omissionPolicy='skip-on-loss-or-conflict';const r=record(input(s),{client:gh.client()});assert.equal(r.status,'verified');assert.equal(r.outcomes[0].omissions.length,1);
   const plan=metadataPlan(s.c,{label:{available:true,value:{definition:{different:true},value:false,capable:true}}},s.context);assert.equal(plan.omissions.length,1);
 });
+test('raw audited metadata definitions use the same stable comparison as live definitions',t=>{
+  const s=setup(t),gh=new FakeGh();const m=label(s,false);
+  m.definition={...gh.labels[0],node_id:'LA_1',url:`${rootUrl}/labels/maintenance`,color:'a2eeef',default:false};
+  const first=record(input(s),{client:gh.client()});
+  assert.equal(first.status,'verified',JSON.stringify(first));
+  assert.deepEqual(first.outcomes[0].omissions,[]);
+  assert.deepEqual(gh.issues.get(1).labels,[{name:'maintenance'}]);
+  const writes=gh.writes().length;
+  assert.equal(record(input(s),{client:gh.client()}).status,'verified');
+  assert.equal(gh.writes().length,writes);
+  const changed=metadataPlan(s.c,{label:{available:true,value:{definition:{id:10,name:'maintenance',description:'Changed'},value:false,capable:true}}},s.context);
+  assert.deepEqual(changed.omissions,[{id:'label',reason:'Metadata definition changed'}]);
+});
 test('new duplicate, closed target, account change and source head/merged/thread changes stop writes',t=>{
   const s=setup(t),gh=new FakeGh();gh.addIssue();assert.equal(record(input(s),{client:gh.client()}).status,'needs-review');assert.equal(gh.writes().length,0);
   gh.issues.clear();gh.account='another';assert.equal(record(input(s),{client:gh.client()}).status,'blocked');gh.account='tester';

@@ -1,4 +1,5 @@
 import { same, result } from './common.mjs';
+import { definition } from './github.mjs';
 import { images, permission, apiCreationRequired } from './payload.mjs';
 import { exactText, reconcileImages } from './verify-recording.mjs';
 import { compare } from './workspace.mjs';
@@ -10,7 +11,7 @@ export function metadataPlan(c, observations, context, completed = {}) {
   for (const m of c.metadata) {
     const seen = observations[m.id]; let reason = null;
     if (!seen?.available) reason = seen?.reason ?? 'Metadata unavailable';
-    else if (!same(m.definition, seen.value.definition)) reason = 'Metadata definition changed';
+    else if (!same(definition(m.definition), definition(seen.value.definition))) reason = 'Metadata definition changed';
     else if (!seen.value.capable || !permission(context?.permissions?.[m.id])) reason = 'Current action permission not verified';
     else if (same(seen.value.value, expectedValue(m))) continue;
     else if (completed[`metadata:${m.id}`]?.status === 'verified') reason = 'Completed metadata no longer matches';

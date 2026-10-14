@@ -84,6 +84,8 @@ Structural validation does not prove causal evidence, complete implementation de
 
 Every entry has `id`, `kind`, `name`, `destination`, `value`, `observed`, `definition`, `required`, `overwrite`, `rationale`, and `permission: {confirmed, evidence, credentialEvidence}`. `definition` is the helper's normalized definition observation. `destination` is the selected issue URL, the repository URL for a new issue, or the exact project node ID for project operations. IDs must be unique. Optional entries require `omissionPolicy: "skip-on-loss-or-conflict"`. Overwrites require `overwriteAuthority` identifying explicit user instructions or an authoritative rule.
 
+Use the normalized `definition` returned by the helper when preparing a payload. At preflight, the helper normalizes retained and current definitions to the same stable fields, so raw GitHub response extras cannot produce a false definition change. Preserve the original payload and ledger; a shape-only failure before a write is retried once with the corrected helper, while a real field, option, enabled-state, or permission change is handled under the audited omission/conflict policy.
+
 | Kind | Value and extra fields |
 | --- | --- |
 | `label`, `assignee` | Exact supported name/login; `observed` is presence boolean. Addition only. |

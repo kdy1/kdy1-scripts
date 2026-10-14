@@ -92,7 +92,7 @@ test('summary excludes completed assignment history and large evidence', () => f
 
 test('prepare/start reuse settings, persist once, and require reconciliation on retries', () => fixture(({ path }) => {
   const p = preparation(path); p.assignment.findings = 'Full evidence '.repeat(1000);
-  const prepared = dispatch('prepare', p); assert.equal(prepared.revision, 1); assert.equal(prepared.settings.model, 'gpt-6.1-sol');
+  const prepared = dispatch('prepare', p); assert.equal(prepared.revision, 1); assert.equal(prepared.settings.model, 'gpt-6-sol');
   assert.equal(prepared.evidencePaths.length, 1); assert.equal(readJson(path).assignments.a.status, 'reserved');
   const retry = dispatch('prepare', p); assert.equal(retry.delivery, 'reconcile-before-send'); assert.equal(readJson(path).revision, 1);
   assert.throws(() => dispatch('prepare', { ...p, assignment: { ...p.assignment, scope: 'Different' } }), /Conflicting duplicate/);

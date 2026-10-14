@@ -7,13 +7,13 @@ import { workerSettings } from './worker-settings.mjs';
 
 const script = fileURLToPath(new URL('./worker-settings.mjs', import.meta.url));
 const expected = {
-  investigation: ['gpt-6.1-sol', 'high'],
-  preparation: ['gpt-6.1-sol', 'medium'],
-  implementation: ['gpt-6.1-sol', 'high'],
-  'stack-execution': ['gpt-6.1-sol', 'medium'],
-  maintenance: ['gpt-6.1-sol', 'medium'],
-  inventory: ['gpt-6-luna', 'low'],
-  repair: ['gpt-6-luna', 'high'],
+  investigation: ['gpt-6-sol', 'high'],
+  preparation: ['gpt-6-sol', 'medium'],
+  implementation: ['gpt-6-sol', 'high'],
+  'stack-execution': ['gpt-6-sol', 'medium'],
+  maintenance: ['gpt-6-sol', 'medium'],
+  inventory: ['gpt-5.6-luna', 'low'],
+  repair: ['gpt-5.6-luna', 'high'],
 };
 
 test('every role exposes its approved spawn arguments through the function and CLI', () => {

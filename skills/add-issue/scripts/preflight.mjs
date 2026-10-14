@@ -71,9 +71,13 @@ export function preflight(p, c, client, context, state = {}) {
     if (source?.resolved === true) skips.push('Source thread is now resolved');
     if (!source || source.head !== retained.head || source.threadHead !== retained.head || source.merged !== true || source.threadMerged !== true) errors.push('Source PR revision or merged state changed/unverifiable');
   }
-  const duplicates = attempt('duplicates', () => client.duplicates(c.duplicate.query, c.duplicate.limit));
-  const retainedDuplicates = duplicates?.filter(x => !(c.action === 'new issue' && state.ops?.create?.status === 'verified' && x.url === state.issueUrl));
-  if (retainedDuplicates && !same(retainedDuplicates, c.duplicate.issues)) changes.push({ surface: 'search', before: c.duplicate.issues, after: retainedDuplicates });
+  // A finalized Plan Mode payload already contains the duplicate decision.
+  // Recording verifies its selected target but does not search for new targets.
+  const planContinuation = p.preparationMode === 'plan';
+  const duplicates = planContinuation ? undefined : attempt('duplicates', () => client.duplicates(c.duplicate.query, c.duplicate.limit));
+  const retainedDuplicates = planContinuation ? c.duplicate.issues : duplicates?.filter(x => !(c.action === 'new issue' && state.ops?.create?.status === 'verified' && x.url === state.issueUrl));
+  if (!planContinuation && retainedDuplicates && !same(retainedDuplicates, c.duplicate.issues)) changes.push({ surface: 'search', before: c.duplicate.issues, after: retainedDuplicates });
+  if (planContinuation && changes.length) errors.push('Selected issue or thread changed since Plan Mode approval; do not route to another issue');
   const capabilities = attempt('capabilities', () => client.capabilities());
   for (const m of c.metadata) {
     try { observations[m.id] = { available: true, value: client.metadata(m, url) }; }
@@ -87,5 +91,5 @@ export function preflight(p, c, client, context, state = {}) {
     if (!c.imageComment || !c.allowedActions.includes('image-comment')) errors.push('Audited image handoff comment required for attachment fallback');
   }
   return result(errors.length || skips.length ? 'blocked' : changes.length ? 'needs-review' : 'verified', errors.length ? errors : skips,
-    { duplicateReview: changes.length ? { changes, issues: retainedDuplicates, issue } : null, skip: skips.length > 0 && errors.length === 0, issue, metadata, capabilities, browserRequired: pendingImages.length > 0 && !capabilities?.comment?.attach && (!capabilities?.create?.attach || !!url || typeNeedsApi) });
+    { duplicateReview: !planContinuation && changes.length ? { changes, issues: retainedDuplicates, issue } : null, skip: skips.length > 0 && errors.length === 0, issue, metadata, capabilities, browserRequired: pendingImages.length > 0 && !capabilities?.comment?.attach && (!capabilities?.create?.attach || !!url || typeNeedsApi) });
 }

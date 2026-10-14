@@ -32,6 +32,7 @@ export function images(manifest) {
 }
 export function validatePayload(p) {
   version(p); text(p.runId, 'run identity'); target(p.target); text(p.account, 'authenticated account');
+  check(p.preparationMode === undefined || ['plan', 'default'].includes(p.preparationMode), 'Invalid preparation mode');
   check(Array.isArray(p.candidates) && p.candidates.length, 'Missing candidates');
   const ids = new Set();
   for (const c of p.candidates) {

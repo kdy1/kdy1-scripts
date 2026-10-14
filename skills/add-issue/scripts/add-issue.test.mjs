@@ -167,6 +167,30 @@ test('new duplicate, closed target, account change and source head/merged/thread
   s.statePath=join(s.dir,'source-ledger.json');s.c.source={head:gh.pr.head.sha,number:5,url:gh.pr.html_url,threadId:'thread'};gh.pr.head.sha='b'.repeat(40);assert.equal(record(input(s),{client:gh.client()}).status,'blocked');gh.pr.head.sha=s.c.source.head;gh.pr.merged=false;assert.equal(record(input(s),{client:gh.client()}).status,'blocked');gh.pr.merged=true;gh.thread.isResolved=true;const r=record(input(s),{client:gh.client()});assert.equal(r.outcomes[0].skip,true);assert.equal(gh.writes().length,0);
   const s2=setup(t),gh2=new FakeGh();const issue=existing(s2,gh2);label(s2);issue.state='closed';assert.equal(record(input(s2),{client:gh2.client()}).status,'needs-review');
 });
+test('finalized Plan Mode payload records without a second duplicate search',t=>{
+  const s=setup(t),gh=new FakeGh();s.payload.preparationMode='plan';
+  gh.unavailable=args=>args.some(x=>x.startsWith('search/issues'));
+  const r=record(input(s),{client:gh.client()});
+  assert.equal(r.status,'verified',JSON.stringify(r));
+  assert.equal(gh.issues.size,1);
+  assert.equal(gh.calls.filter(x=>x.args.some(arg=>arg.startsWith('search/issues'))).length,0);
+  assert.equal(record(input(s),{client:gh.client()}).status,'verified');
+  assert.equal(gh.issues.size,1);
+});
+test('Plan Mode continuation blocks a changed selected issue without searching or rerouting',t=>{
+  const s=setup(t),gh=new FakeGh();s.payload.preparationMode='plan';
+  const issue=existing(s,gh,'duplicate comment');s.c.comment='Exact handoff';
+  const searchCount=gh.calls.filter(x=>x.args.some(arg=>arg.startsWith('search/issues'))).length;
+  issue.body='Changed after approval';
+  const r=record(input(s),{client:gh.client()});
+  assert.equal(r.status,'blocked');
+  assert.equal(r.outcomes[0].duplicateReview,null);
+  assert.equal(gh.comments.length,0);
+  assert.equal(gh.calls.filter(x=>x.args.some(arg=>arg.startsWith('search/issues'))).length,searchCount);
+  const request={version:1,previousPayload:s.payload,payload:structuredClone(s.payload),statePath:s.statePath,
+    review:{candidateId:s.c.id,reason:'Target changed',observations:{}},context:{...s.context,duplicateReview:{confirmed:true,evidence:'Trusted review'}}};
+  assert.throws(()=>refresh(request,{client:gh.client()}),/Plan Mode continuation/);
+});
 test('uncertain creation needs a verified receipt and never recreates the issue',t=>{
   const s=setup(t),gh=new FakeGh();gh.loseNext=true;assert.equal(record(input(s),{client:gh.client()}).status,'uncertain');const writes=gh.writes().length;
   assert.equal(record(input(s),{client:gh.client()}).status,'uncertain');assert.equal(gh.writes().length,writes);

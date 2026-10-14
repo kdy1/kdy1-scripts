@@ -15,6 +15,7 @@ export function refresh(input, { client = new GitHub(input.payload.target) } = {
   version(input);
   const { previousPayload: previous, payload: next, statePath, review, context } = input;
   validatePayload(previous); validatePayload(next);
+  check(previous.preparationMode !== 'plan', 'Plan Mode continuation does not repeat duplicate review');
   text(review?.candidateId, 'review candidate'); text(review?.reason, 'semantic review reason');
   check(context?.trustedAuthorization === true && context?.duplicateReview?.confirmed === true, 'Trusted coordinator duplicate review required');
   text(context.duplicateReview.evidence, 'trusted review provenance');

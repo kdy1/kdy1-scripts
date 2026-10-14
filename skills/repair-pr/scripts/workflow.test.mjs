@@ -37,7 +37,6 @@ if (a[0] === 'stack') {
  if(d.catalog) emit(d.catalog); else fail('unknown command "stack" for "gh"');
 }
 else if (a[0] === 'pr' && a[1] === 'view') emit({url:a[2]?.startsWith('https:')?a[2]:(d.prURL||'https://github.com/owner/repo/pull/1')});
-else if (a[0] === 'pr' && a[1] === 'checks') { if(d.checksRaw!==undefined) process.stdout.write(d.checksRaw); else emit(d.checks); if(d.checksError) process.stderr.write(d.checksError); process.exit(d.checksExit||0); }
 else if (a[0] === 'run') { if(d.logError) fail('logs unavailable'); process.stdout.write('failed step log'); }
 else if (a[0] === 'api') {
  const endpoint=a.at(-1);
@@ -62,7 +61,22 @@ else if (a[0] === 'api') {
        emit({data:{repository:{pullRequest:node}}});
      }
    } else emit({data:{viewer:{login:'Alice'},repository:{pullRequest:{reviewThreads:{nodes:d.threads,pageInfo:{hasNextPage:false}}}}}});
- } else if(/pulls\\/\\d+$/.test(endpoint)) emit(pr(Number(endpoint.split('/').at(-1))));
+ } else if(/pulls\\/\\d+$/.test(endpoint)) {
+   const item=pr(Number(endpoint.split('/').at(-1)));
+   if(d.headChangesAfterChecks && d.calls.some(x=>x.some(v=>v.includes('/check-runs?')))) item.head.sha='b'.repeat(40);
+   emit(item);
+ }
+ else if(endpoint.includes('/check-runs?')) {
+   if(d.checksError) fail(d.checksError);
+   if(d.checksRaw!==undefined) {process.stdout.write(d.checksRaw);process.exit(0);}
+   const page=Number(endpoint.match(/[?&]page=(\\d+)/)?.[1]||1);
+   const all=d.checkRuns??d.checks.map((c,i)=>({id:i+1,name:c.name,status:c.bucket==='pending'?'in_progress':'completed',conclusion:c.bucket==='pending'?null:(c.state||(c.bucket==='fail'?'FAILURE':'SUCCESS')).toLowerCase(),details_url:c.link||null,app:{id:1},started_at:'2026-10-11T00:00:00Z'}));
+   const pages=d.checkRunsPages??[all]; emit({total_count:d.checkRunTotal??pages.flat().length,check_runs:pages[page-1]??[]});
+ }
+ else if(endpoint.includes('/statuses/')) {
+   const page=Number(endpoint.match(/[?&]page=(\\d+)/)?.[1]||1);
+   emit((d.statusesPages??[d.statuses??[]])[page-1]??[]);
+ }
  else if(endpoint.includes('pulls?')) emit(d.relationships||[]);
  else if(endpoint.includes('actions/runs/')) emit({head_sha:d.runHead||d.remote,repository:{full_name:d.runRepo||'owner/repo'},run_attempt:1});
  else if(endpoint.includes('actions/jobs/')) emit({head_sha:d.remote,run_id:42,run_attempt:1});
@@ -189,11 +203,32 @@ test('registry transaction, corruption, building, and ownership block preflight'
   state.stacks[0].phase='ready';writeFileSync(join(dir,'state.json'),JSON.stringify(state));assert.match(f.run('preflight').stdout,/another owner/);
 });
 test('check inventory preserves failure and pending JSON but reports API/JSON errors', t => {
-  const f=fixture(t,{checks:[{name:'ci',bucket:'fail',state:'FAILURE'}],checksExit:1});
+  const f=fixture(t,{checks:[{name:'ci',bucket:'fail',state:'FAILURE'}]});
   let r=f.ok('status','--pr','1','--json');assert.equal(r.checks.failing.length,1);assert.equal(r.checks.complete,true);
-  f.update({checks:[{name:'ci',bucket:'pending',state:'PENDING'}],checksExit:8});r=f.ok('status','--json');assert.equal(r.checks.complete,true);
-  f.update({checks:[],checksExit:1,checksError:'authentication failed'});r=f.ok('status','--json');assert.equal(r.checks.complete,false);assert.match(r.checks.error,/authentication/);
-  f.update({checksRaw:'not JSON',checksExit:0,checksError:null});assert.equal(f.ok('status','--json').checks.complete,false);
+  f.update({checks:[{name:'ci',bucket:'pending',state:'PENDING'}]});r=f.ok('status','--json');assert.equal(r.checks.complete,true);
+  f.update({checks:[],checksError:'authentication failed'});r=f.ok('status','--json');assert.equal(r.checks.complete,false);assert.match(r.checks.error,/authentication/);
+  f.update({checksRaw:'not JSON',checksError:null});assert.equal(f.ok('status','--json').checks.complete,false);
+  assert(!f.read().calls.some(a=>a[0]==='pr'&&a[1]==='checks'));
+});
+test('REST checks paginate both sources and keep only the latest attempts', t => {
+  const run=(id,name,conclusion)=>({id,name,status:'completed',conclusion,app:{id:1},details_url:'https://github.com/owner/repo/actions/runs/42',started_at:'2026-10-11T00:00:00Z'});
+  const filler=Array.from({length:99},(_,i)=>run(i+1,`filler-${i}`,'success'));
+  const status=(id,context,state,time='2026-10-11T00:00:00Z')=>({id,context,state,created_at:time});
+  const statusFiller=Array.from({length:99},(_,i)=>status(i+10,`status-${i}`,'success'));
+  const f=fixture(t,{checkRunsPages:[[...filler,run(100,'ci','failure')],[run(101,'ci','success'),run(102,'cancelled','cancelled'),run(103,'skipped','skipped')]],
+    statusesPages:[[...statusFiller,status(1,'deploy','failure')],[status(2,'deploy','success','2026-10-11T00:01:00Z')]]});
+  const result=f.ok('status','--json');
+  assert.equal(result.checks.complete,true);
+  assert.equal(result.checks.total,202);
+  assert.deepEqual(result.checks.failing.map(x=>x.name),['cancelled']);
+  assert.equal(f.read().calls.filter(a=>a.some(x=>x.includes('page=2'))).length,2);
+});
+test('REST checks fail closed on missing pages and concurrent head changes', t => {
+  const run={id:1,name:'ci',status:'completed',conclusion:'success',app:{id:1}};
+  const f=fixture(t,{checkRunsPages:[[run]],checkRunTotal:2});
+  let result=f.ok('status','--json');assert.equal(result.checks.complete,false);assert.match(result.checks.error,/Missing check-run page/);
+  f.update({checkRunTotal:1,headChangesAfterChecks:true,calls:[]});
+  result=f.ok('status','--json');assert.equal(result.checks.complete,false);assert.match(result.checks.error,/head or base changed/);
 });
 test('session rejects source paths, preexisting ahead commits, duplicate and unrecorded commits', t => {
   const f=fixture(t);assert.equal(f.run('session','init','--file',join(f.repo,'session.json')).status,1);

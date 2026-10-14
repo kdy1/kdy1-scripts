@@ -43,13 +43,66 @@ export function readPR(pr) {
     baseSha: data.base.sha, headSlug: data.head.repo.full_name };
 }
 export function readChecks(pr) {
-  const r = run('gh', ['pr', 'checks', pr, '--json', 'bucket,completedAt,description,link,name,startedAt,state,workflow'], true);
-  let items;
-  try { items = JSON.parse(r.stdout); assert(Array.isArray(items) && items.every(x => x && typeof x === 'object' && typeof x.name === 'string' && typeof x.bucket === 'string'), 'Expected a check array'); }
-  catch (error) { return { items: [], error: r.stderr.trim() || `Could not parse gh pr checks JSON: ${error.message}`, complete: false, exitCode: r.status }; }
-  // gh uses 1 for failed checks and 8 for pending checks. Other errors remain incomplete.
-  const complete = r.status === 0 || (r.status === 1 && items.some(isFailingCheck)) || (r.status === 8 && items.some(x => x.bucket === 'pending'));
-  return { items, error: complete ? null : r.stderr.trim() || `Unexpected gh pr checks exit ${r.status}`, complete, exitCode: r.status };
+  try {
+    const identity = /^\d+$/.test(String(pr)) ? prIdentity(json('gh', ['pr', 'view', String(pr), '--json', 'url']).url) : prIdentity(pr);
+    const endpoint = `repos/${identity.slug}/pulls/${identity.number}`;
+    const before = api(identity.host, endpoint);
+    assert(prIdentity(before.html_url).url === identity.url && /^[a-f0-9]{40}$/i.test(before.head?.sha ?? '') && /^[a-f0-9]{40}$/i.test(before.base?.sha ?? ''), 'Incomplete PR head or base before checks');
+    const sha = before.head.sha;
+    const runs = [], statuses = [];
+    for (let page = 1, total = null; ; page++) {
+      assert(page <= 10000, 'Check-run pagination limit exceeded');
+      const data = api(identity.host, `repos/${identity.slug}/commits/${sha}/check-runs?filter=latest&per_page=100&page=${page}`);
+      assert(Number.isSafeInteger(data.total_count) && Array.isArray(data.check_runs), 'Incomplete check-run page');
+      assert(total === null || total === data.total_count, 'Check-run total changed during pagination');
+      total = data.total_count;
+      assert(runs.length + data.check_runs.length <= total, 'Check-run page exceeds reported total');
+      runs.push(...data.check_runs);
+      if (runs.length === total) break;
+      assert(data.check_runs.length === 100, 'Missing check-run page');
+    }
+    for (let page = 1; ; page++) {
+      assert(page <= 10000, 'Status pagination limit exceeded');
+      const data = api(identity.host, `repos/${identity.slug}/statuses/${sha}?per_page=100&page=${page}`);
+      assert(Array.isArray(data), 'Incomplete commit-status page');
+      statuses.push(...data);
+      if (data.length < 100) break;
+    }
+    const after = api(identity.host, endpoint);
+    assert(prIdentity(after.html_url).url === identity.url && after.head?.sha === sha && after.base?.sha === before.base?.sha, 'PR head or base changed while reading checks');
+    const latestRuns = new Map();
+    for (const run of runs) {
+      assert(typeof run.name === 'string' && run.name && Number.isSafeInteger(run.id) && typeof run.status === 'string', 'Incomplete check run');
+      const key = `${run.app?.id ?? 'unknown'}:${run.name}`;
+      if (!latestRuns.has(key) || latestRuns.get(key).id < run.id) latestRuns.set(key, run);
+    }
+    const latestStatuses = new Map();
+    for (const status of statuses) {
+      assert(typeof status.context === 'string' && status.context && typeof status.state === 'string'
+        && Number.isSafeInteger(status.id) && Number.isFinite(Date.parse(status.created_at)), 'Incomplete commit status');
+      const prior = latestStatuses.get(status.context);
+      if (!prior || Date.parse(status.created_at) > Date.parse(prior.created_at) || (status.created_at === prior.created_at && status.id > prior.id)) latestStatuses.set(status.context, status);
+    }
+    const items = [
+      ...[...latestRuns.values()].map(run => {
+        const state = run.status === 'completed' ? run.conclusion : run.status;
+        assert(typeof state === 'string' && state, 'Completed check run lacks a conclusion');
+        return { name: run.name, state: state.toUpperCase(), bucket: checkBucket(state), link: run.details_url ?? run.html_url ?? null,
+          workflow: null, startedAt: run.started_at ?? null, completedAt: run.completed_at ?? null, description: run.output?.title ?? null };
+      }),
+      ...[...latestStatuses.values()].map(status => ({ name: status.context, state: status.state.toUpperCase(), bucket: checkBucket(status.state),
+        link: status.target_url ?? null, workflow: null, startedAt: status.created_at ?? null, completedAt: status.updated_at ?? null, description: status.description ?? null })),
+    ];
+    const exitCode = items.some(isFailingCheck) ? 1 : items.some(x => x.bucket === 'pending') ? 8 : 0;
+    return { items, error: null, complete: true, exitCode };
+  } catch (error) { return { items: [], error: error.message, complete: false, exitCode: 1 }; }
+}
+function checkBucket(state) {
+  if (['failure', 'error', 'cancelled', 'timed_out', 'action_required', 'stale'].includes(state)) return 'fail';
+  if (['queued', 'pending', 'in_progress', 'waiting', 'requested'].includes(state)) return 'pending';
+  if (['skipped', 'neutral'].includes(state)) return 'skipping';
+  if (state === 'success') return 'pass';
+  throw new Error(`Unknown check state: ${state}`);
 }
 export function isFailingCheck(x) {
   return ['fail', 'failing', 'cancel'].includes(String(x.bucket).toLowerCase()) || ['failure', 'failed', 'error', 'cancelled', 'timed_out'].includes(String(x.state).toLowerCase());

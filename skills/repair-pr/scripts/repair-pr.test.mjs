@@ -32,8 +32,12 @@ let result;
 if (args[0] === "pr" && args[1] === "view") {
   result = { number: 1, title: "Example", url: "https://github.com/owner/repo/pull/1",
     baseRefName: "main", headRefName: "fix", mergeStateStatus: "CLEAN", isDraft: false };
-} else if (args[0] === "pr" && args[1] === "checks") {
-  result = [];
+} else if (args[0] === "api" && args[1] === "--hostname") {
+  const endpoint = args.at(-1);
+  if (endpoint.endsWith("/pulls/1")) result = { html_url: "https://github.com/owner/repo/pull/1", head: { sha: "a".repeat(40) }, base: { sha: "b".repeat(40) } };
+  else if (endpoint.includes("/check-runs?")) result = { total_count: 0, check_runs: [] };
+  else if (endpoint.includes("/statuses/")) result = [];
+  else throw new Error("Unexpected REST endpoint: " + endpoint);
 } else if (args[0] === "api" && args[1] === "graphql") {
   const query = args.find(arg => arg.startsWith("query=")) || "";
   if (query.includes("mutation")) throw new Error("Unexpected mutation");
@@ -67,6 +71,7 @@ test("status includes bot and @me inline threads once and preserves JSON compati
   const json = run("--json");
   assert.equal(json.status, 0, json.stderr);
   const report = JSON.parse(json.stdout);
+  assert.equal(report.checks.complete, true);
   assert.equal(report.reviewAuthor, bot);
   assert.deepEqual(report.reviewAuthors, [bot, "Alice"]);
   assert.deepEqual(report.unresolvedReviewThreads.map(x => x.id), ["bot", "bot-alias", "me", "mixed"]);

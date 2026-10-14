@@ -44,7 +44,7 @@ function statusCommand(rawArgs) {
   const unresolvedThreads = reviewThreads.filter((thread) =>
     isRelevantReviewThread(thread, viewerLogin),
   );
-  const checks = readChecks(options.pr ?? String(pr.number));
+  const checks = readChecks(pr.url);
   const failingChecks = checks.items.filter(isFailingCheck);
 
   const report = {

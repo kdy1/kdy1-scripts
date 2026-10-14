@@ -47,7 +47,7 @@ Repair the current or specified GitHub PR once, then stop. Handle merge conflict
    - Treat uncertain or ambiguous findings as blockers, not as incorrect findings. Leave their threads unresolved and report what evidence or decision is missing. Also leave a thread unresolved when applying its suggestion would cause a regression but the review's premise cannot be conclusively disproved.
 
 4. Fix CI failures.
-   - Use `gh pr checks <pr> --json name,state,bucket,link,workflow` to identify failing checks.
+   - Use the `status` and `ci-logs` helpers to read current-head check runs and commit statuses through REST. They paginate both sources, retain the latest attempts, and mark incomplete or changing reads as unknown. Do not use `gh pr checks` for this inventory.
    - Run `ci-logs --session <session> --output-dir <outside-source-directory>` to collect failing current-head Actions logs with repository/head/attempt checks and duplicate log removal. Inspect its per-check results; unavailable logs are not a successful CI result. Use job logs from `gh api` when additional evidence is needed.
    - Treat external checks as report-only unless their logs are available through `gh`.
    - Identify each independent root cause. Multiple failing checks caused by the same root cause are one problem; unrelated root causes are separate problems.

@@ -46,7 +46,7 @@ For multiple directly requested PRs without dependent-stack handoff constraints,
 
 ## Verify and Report
 
-The helper fetches `url,state,mergedAt,mergeCommit,autoMergeRequest` after each attempt, even when the merge command fails. Its JSON `results` preserve the input `target`, URL, `outcome`, `mergeCommitSha`, PR state, merge command exit code and output, and verification output/error.
+The helper reads the PR through REST after each attempt, even when the merge command fails. It verifies the REST `merged`, `merged_at`, `merge_commit_sha`, and `auto_merge` fields. A numeric target without `--repo` retains the current-repository PR lookup before that REST read. Its JSON `results` preserve the input `target`, URL, `outcome`, `mergeCommitSha`, PR state, merge command exit code and output, and verification output/error.
 
 - `merged`: GitHub confirms merged state and a merge commit SHA. Report completion with its URL and SHA.
 - `queued`: GitHub confirms open state and the CLI explicitly confirms queue registration. Report queued and pending.

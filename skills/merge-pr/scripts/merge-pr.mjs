@@ -2,7 +2,6 @@
 
 import { spawnSync } from "node:child_process";
 
-const fields = "url,state,mergedAt,mergeCommit,autoMergeRequest";
 const help = `Usage:
   node merge-pr.mjs resolve-current
   node merge-pr.mjs merge <PR_URL|number>... [--repo [HOST/]OWNER/REPO]
@@ -66,6 +65,14 @@ function pullRequestIdentity(value) {
   } catch { return null; }
 }
 
+function repositoryIdentity(value) {
+  if (!value) return null;
+  const parts = value.split("/");
+  return parts.length === 3
+    ? { host: parts[0], repo: `${parts[1]}/${parts[2]}` }
+    : { host: "github.com", repo: value };
+}
+
 function runGh(args) {
   const result = spawnSync("gh", args, {
     encoding: "utf8", stdio: ["ignore", "pipe", "pipe"],
@@ -105,27 +112,38 @@ function attempt(target, options) {
   if (options.auto) args.push("--auto");
   if (options.head) args.push("--match-head-commit", options.head);
   const merge = runGh([...args, ...repoArgs]);
-  const verification = runGh(["pr", "view", target, "--json", fields, ...repoArgs]);
+  let identity = pullRequestIdentity(target);
+  let lookup = null;
+  if (!identity && options.repo) identity = { ...repositoryIdentity(options.repo), number: target };
+  if (!identity) {
+    lookup = runGh(["pr", "view", target, "--json", "url"]);
+    try { identity = pullRequestIdentity(readJson(lookup).url); } catch { /* Preserve lookup failure as verification evidence. */ }
+  }
+  const verification = identity
+    ? runGh(["api", "--hostname", identity.host, `repos/${identity.repo}/pulls/${identity.number}`])
+    : lookup;
   const result = {
     target, url: pullRequestIdentity(target) ? target : null,
     outcome: "unverified", mergeCommitSha: null, state: null, mergedAt: null,
     autoMergeRequest: null, merge, verification: { ...verification, error: null },
   };
   try {
+    if (!identity) throw new Error(lookup?.error || lookup?.stderr.trim() || "Cannot identify PR repository");
     const pr = readJson(verification);
-    result.state = pr.state ?? null;
-    result.mergedAt = pr.mergedAt ?? null;
-    result.mergeCommitSha = typeof pr.mergeCommit?.oid === "string" && pr.mergeCommit.oid.trim() ? pr.mergeCommit.oid : null;
-    result.autoMergeRequest = pr.autoMergeRequest ?? null;
-    if (typeof pr.url !== "string" || !pullRequestIdentity(pr.url)) throw new Error("Missing or invalid PR URL");
-    result.url = pr.url;
-    if (!["OPEN", "CLOSED", "MERGED"].includes(pr.state)) throw new Error("Missing or invalid PR state");
-    if (pr.state === "MERGED") {
+    const actual = pullRequestIdentity(pr.html_url);
+    if (!actual || actual.host !== identity.host || actual.repo.toLowerCase() !== identity.repo.toLowerCase() || actual.number !== identity.number) throw new Error("Missing or mismatched PR URL");
+    result.url = pr.html_url;
+    if (typeof pr.merged !== "boolean" || !["open", "closed"].includes(pr.state)) throw new Error("Missing or invalid PR state");
+    result.state = pr.merged ? "MERGED" : pr.state.toUpperCase();
+    result.mergedAt = pr.merged_at ?? null;
+    result.mergeCommitSha = typeof pr.merge_commit_sha === "string" && pr.merge_commit_sha.trim() ? pr.merge_commit_sha : null;
+    result.autoMergeRequest = pr.auto_merge ?? null;
+    if (result.state === "MERGED") {
       if (!result.mergeCommitSha) throw new Error("Merged PR has no merge commit SHA");
       result.outcome = "merged";
-    } else if (pr.state === "OPEN" && confirmsQueue(merge, pr.url)) {
+    } else if (result.state === "OPEN" && confirmsQueue(merge, pr.html_url)) {
       result.outcome = "queued";
-    } else if (pr.state === "OPEN" && pr.autoMergeRequest != null) {
+    } else if (result.state === "OPEN" && pr.auto_merge != null) {
       result.outcome = "auto_merge_pending";
     } else throw new Error("PR result is not confirmed as merged, queued, or auto-merge pending");
   } catch (error) { result.verification.error = error.message; }

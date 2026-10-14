@@ -9,10 +9,9 @@ import test from "node:test";
 const helper = fileURLToPath(new URL("./merge-pr.mjs", import.meta.url));
 const url = "https://github.com/owner/repo/pull/1";
 const sha = "a".repeat(40);
-const fields = "url,state,mergedAt,mergeCommit,autoMergeRequest";
-const merged = { url, state: "MERGED", mergedAt: "2026-10-11T00:00:00Z", mergeCommit: { oid: sha }, autoMergeRequest: null };
-const open = { url, state: "OPEN", mergedAt: null, mergeCommit: null, autoMergeRequest: null };
-const view = (target = url, extra = []) => ["pr", "view", target, "--json", fields, ...extra];
+const merged = { html_url: url, state: "closed", merged: true, merged_at: "2026-10-11T00:00:00Z", merge_commit_sha: sha, auto_merge: null };
+const open = { html_url: url, state: "open", merged: false, merged_at: null, merge_commit_sha: null, auto_merge: null };
+const view = (target = url, repo = "owner/repo", host = "github.com") => ["api", "--hostname", host, `repos/${repo}/pulls/${target.match(/\d+$/)[0]}`];
 const merge = (target = url, extra = ["--auto"]) => ["pr", "merge", target, "--squash", ...extra];
 
 function fixture(t, steps) {
@@ -59,9 +58,18 @@ test("handoff passes the exact head and omits auto; repo applies to both command
   const repo = ["--repo", "github.example.com/owner/repo"];
   const run = fixture(t, [
     { args: merge("1", ["--match-head-commit", sha, ...repo]) },
-    { args: view("1", repo), json: merged },
+    { args: view("1", "owner/repo", "github.example.com"), json: { ...merged, html_url: "https://github.example.com/owner/repo/pull/1" } },
   ]);
   assert.equal(run("merge", "1", "--no-auto", "--match-head-commit", sha, ...repo).status, 0);
+});
+
+test("bare PR number keeps current-repository lookup before REST verification", (t) => {
+  const run = fixture(t, [
+    { args: merge("1") },
+    { args: ["pr", "view", "1", "--json", "url"], json: { url } },
+    { args: view(), json: merged },
+  ]);
+  assert.equal(run("merge", "1").report.results[0].outcome, "merged");
 });
 
 test("head matching alone retains auto", (t) => {
@@ -79,13 +87,13 @@ test("no-auto alone supports a single target", (t) => {
 
 test("multiple PRs preserve order and continue after an individual merge failure", (t) => {
   const run = fixture(t, [
-    { args: merge("2"), exitCode: 1, stderr: "Permission denied", stdout: "attempt output" },
-    { args: view("2"), json: { ...open, url: url.replace(/1$/, "2") } },
-    { args: merge("1") }, { args: view("1"), json: merged },
+    { args: merge(url.replace(/1$/, "2")), exitCode: 1, stderr: "Permission denied", stdout: "attempt output" },
+    { args: view(url.replace(/1$/, "2")), json: { ...open, html_url: url.replace(/1$/, "2") } },
+    { args: merge(url) }, { args: view(url), json: merged },
   ]);
-  const result = run("merge", "2", "1");
+  const result = run("merge", url.replace(/1$/, "2"), url);
   assert.equal(result.status, 1);
-  assert.deepEqual(result.report.results.map((pr) => pr.target), ["2", "1"]);
+  assert.deepEqual(result.report.results.map((pr) => pr.target), [url.replace(/1$/, "2"), url]);
   assert.deepEqual(result.report.results.map((pr) => pr.outcome), ["unverified", "merged"]);
   assert.equal(result.report.results[0].merge.stderr, "Permission denied");
   assert.equal(result.report.results[0].merge.stdout, "attempt output");
@@ -103,7 +111,7 @@ test("a failed command retains a separately verified merged outcome", (t) => {
 test("explicit queue confirmation takes precedence over auto-merge pending", (t) => {
   const run = fixture(t, [
     { args: merge(), stderr: "! Pull request owner/repo#1 is already queued to merge\n" },
-    { args: view(), json: { ...open, autoMergeRequest: { enabledAt: "today" } } },
+    { args: view(), json: { ...open, auto_merge: { enabled_at: "today" } } },
   ]);
   const result = run("merge", url);
   assert.equal(result.status, 0);
@@ -128,7 +136,7 @@ for (const [name, output] of [
 test("auto-merge request confirms pending despite future queue wording", (t) => {
   const run = fixture(t, [
     { args: merge(), stdout: "will be added to the merge queue when ready" },
-    { args: view(), json: { ...open, autoMergeRequest: { enabledAt: "today" } } },
+    { args: view(), json: { ...open, auto_merge: { enabled_at: "today" } } },
   ]);
   const result = run("merge", url);
   assert.equal(result.status, 0);
@@ -136,11 +144,11 @@ test("auto-merge request confirms pending despite future queue wording", (t) => 
 });
 
 for (const [name, response] of [
-  ["missing merge SHA", { json: { ...merged, mergeCommit: null } }],
-  ["empty merge SHA", { json: { ...merged, mergeCommit: { oid: "" } } }],
-  ["unreadable state", { json: { url } }],
-  ["missing URL", { json: { ...merged, url: null } }],
-  ["closed PR", { json: { ...open, state: "CLOSED" } }],
+  ["missing merge SHA", { json: { ...merged, merge_commit_sha: null } }],
+  ["empty merge SHA", { json: { ...merged, merge_commit_sha: "" } }],
+  ["unreadable state", { json: { html_url: url } }],
+  ["missing URL", { json: { ...merged, html_url: null } }],
+  ["closed PR", { json: { ...open, state: "closed" } }],
   ["verification command failure", { exitCode: 1, stderr: "Network unavailable" }],
   ["malformed JSON", { stdout: "not JSON" }],
   ["non-object JSON", { json: null }],
@@ -165,10 +173,10 @@ test("merged result takes precedence over historical queue output", (t) => {
 
 test("verification failure does not stop remaining targets", (t) => {
   const run = fixture(t, [
-    { args: merge("2") }, { args: view("2"), exitCode: 1, stderr: "Lookup failed" },
-    { args: merge("1") }, { args: view("1"), json: merged },
+    { args: merge(url.replace(/1$/, "2")) }, { args: view(url.replace(/1$/, "2")), exitCode: 1, stderr: "Lookup failed" },
+    { args: merge(url) }, { args: view(url), json: merged },
   ]);
-  const result = run("merge", "2", "1");
+  const result = run("merge", url.replace(/1$/, "2"), url);
   assert.equal(result.status, 1);
   assert.deepEqual(result.report.results.map((pr) => pr.outcome), ["unverified", "merged"]);
 });

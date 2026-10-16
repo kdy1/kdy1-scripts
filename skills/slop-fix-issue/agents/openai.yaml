@@ -1,7 +1,7 @@
 interface:
   display_name: "Slop Fix Issue"
-  short_description: "Generate AI slop for one issue through PR creation"
-  default_prompt: "Use $slop-fix-issue to generate AI slop for one GitHub issue: if already resolved, post the evidence, close it as completed, and stop; otherwise implement and verify it, open and attach a non-draft PR with a Closes reference, and stop."
+  short_description: "Generate AI slop for one issue as a PR or PR stack"
+  default_prompt: "Use $slop-fix-issue to generate AI slop for one GitHub issue: if already resolved, post the evidence, close it as completed, and stop; otherwise implement and verify it, publish, verify, and attach a non-draft PR or, for a large issue, a gh-stack PR stack with Refs on partial layers and Closes on the completing layer, and stop."
 
 policy:
   allow_implicit_invocation: false

@@ -27,6 +27,8 @@ Read a reference once, then reuse it unless its contents change. Locate headings
 
 In Plan Mode, use [planning investigation and handoff](references/planning.md) before collecting/assigning issues. It permits read-only investigation only and requires complete fixed-list coverage before the final plan.
 
+Large issues or groups should be split into reviewable, coherent PR units when each unit can be checked separately. Use construction’s [reviewable splits](references/construction.md#reviewable-splits) before assignment. Keep one group per PR, record complete issue coverage, and use `Refs` on intermediate parts and `Closes` only on the completion group. Do not impose a line/file threshold.
+
 ## Shared execution constraints
 
 Record `context.runtime` as `codex` or `claude-code`; an absent field in an old ledger means Codex. Resume that runtime without switching workers. Keep this skill in the coordinator conversation without `context: fork`. Resolve installed dependency/reference paths when needed; attachment requirements follow runtime policy and GitHub verification always applies.

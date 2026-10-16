@@ -147,7 +147,7 @@ Skip direct app launches, manual reproduction, real-environment validation, and
 screenshot capture for validation even when required by an issue. Automated tests,
 builds, and linters run in this worker and may exercise
 app behavior. Skipped real-world validation alone does not make the group partial or blocked and does
-not remove its issues from the coordinator's Closes list. Report it as not
+not change the coordinator’s recorded Closes/Refs allocation for its issues. Report it as not
 performed; never claim it passed.
 
 If a requirement is ambiguous or a prerequisite is missing, explain the blocker

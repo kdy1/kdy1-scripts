@@ -21,6 +21,14 @@ export function initialize(input) {
     events: [], checkpoints: emptyCheckpoints(), scheduler: null, maintenance: null, implementationEnded: false };
   validateLedger(ledger); return ledger;
 }
+export function groupReferences(ledger, groupId) {
+  const closes = [], refs = [];
+  for (const key of ledger.groups[groupId].issues) {
+    const plan = ledger.splitPlans?.[key];
+    (plan && plan.completionGroup !== groupId ? refs : closes).push(ledger.fixedIssues.find(i => i.key === key).url);
+  }
+  return { closes: closes.sort(), refs: refs.sort() };
+}
 export function validateLedger(ledger) {
   const runtime = ledgerRuntime(ledger);
   version(ledger); check(Number.isSafeInteger(ledger.revision) && ledger.revision >= 0, 'Invalid ledger revision');
@@ -31,20 +39,52 @@ export function validateLedger(ledger) {
   for (const key of ['groups', 'stacks', 'assignments', 'assessments']) check(ledger[key] && typeof ledger[key] === 'object' && !Array.isArray(ledger[key]), `Missing ${key}`);
   check(Array.isArray(ledger.events) && ledger.checkpoints && typeof ledger.implementationEnded === 'boolean', 'Missing ledger recovery state');
   validateCheckpoints(ledger.checkpoints);
-  const assignedIssues = new Set();
+  const assignedIssues = new Map();
+  check(ledger.splitPlans === undefined || (ledger.splitPlans && typeof ledger.splitPlans === 'object' && !Array.isArray(ledger.splitPlans)), 'Invalid split plans');
   for (const group of Object.values(ledger.groups)) {
     safeId(group.id); nonempty(group.acceptance, 'group acceptance'); nonempty(group.dependencyEvidence, 'dependency evidence'); check(group.confirmed === true, 'Unconfirmed group'); check(Array.isArray(group.issues) && group.issues.length && Array.isArray(group.requires), 'Missing group scope');
     for (const issue of group.issues) {
-      check(ledger.fixedIssues.some(i => i.key === issue) && !assignedIssues.has(issue), 'Issue outside fixed list or assigned twice'); assignedIssues.add(issue);
+      check(ledger.fixedIssues.some(i => i.key === issue), 'Issue outside fixed list');
+      const owners = assignedIssues.get(issue) ?? []; check(!owners.includes(group.id), 'Duplicate issue in group'); owners.push(group.id); assignedIssues.set(issue, owners);
     }
     for (const dependency of group.requires) check(ledger.groups[dependency], 'Missing group prerequisite');
   }
   const visiting = new Set(), visited = new Set();
   function visit(id) { check(!visiting.has(id), 'Group dependency cycle'); if (visited.has(id)) return; visiting.add(id); ledger.groups[id].requires.forEach(visit); visiting.delete(id); visited.add(id); }
   Object.keys(ledger.groups).forEach(visit);
+  for (const [issue, owners] of assignedIssues) check(owners.length === 1 || ledger.splitPlans?.[issue], 'Issue assigned twice without split plan');
+  for (const [issue, plan] of Object.entries(ledger.splitPlans ?? {})) {
+    nonempty(plan.reason, 'split reason'); nonempty(plan.coverageEvidence, 'complete issue requirement coverage evidence');
+    check(Array.isArray(plan.groups) && plan.groups.length >= 2 && new Set(plan.groups).size === plan.groups.length, 'Invalid split groups');
+    check(isDeepStrictEqual([...plan.groups].sort(), [...(assignedIssues.get(issue) ?? [])].sort()), 'Split membership differs from issue groups');
+    check(plan.groups.includes(plan.completionGroup), 'Missing completion group');
+    const ancestors = new Set();
+    function collect(id) { for (const parent of ledger.groups[id].requires) if (!ancestors.has(parent)) { ancestors.add(parent); collect(parent); } }
+    collect(plan.completionGroup);
+    check(plan.groups.every(id => id === plan.completionGroup || ancestors.has(id)), 'Completion group must depend on every split group');
+    check(Array.isArray(plan.requirements) && plan.requirements.length > 0, 'Missing split requirements');
+    const ids = new Set(), covered = new Set();
+    for (const requirement of plan.requirements) {
+      nonempty(requirement.id, 'requirement id'); nonempty(requirement.acceptance, 'requirement acceptance');
+      check(!ids.has(requirement.id), 'Duplicate requirement'); ids.add(requirement.id);
+      check(Array.isArray(requirement.groups) && requirement.groups.length > 0 && new Set(requirement.groups).size === requirement.groups.length && requirement.groups.every(id => plan.groups.includes(id)), 'Missing or invalid requirement owners');
+      requirement.groups.forEach(id => covered.add(id));
+    }
+    check(plan.groups.every(id => covered.has(id)), 'Split group has no mapped requirement');
+    const stacks = Object.values(ledger.stacks).filter(s => s.groups.some(id => plan.groups.includes(id)));
+    check(stacks.length === 0 || (stacks.length === 1 && plan.groups.every(id => stacks[0].groups.includes(id))), 'Split groups must share one complete stack');
+  }
   const assignedGroups = new Set();
   for (const stack of Object.values(ledger.stacks)) {
-    if (stack.publicationAttempt?.preparedPrefix) verifyPublication(stack.publicationAttempt.preparedPrefix, runtime);
+    if (stack.publicationAttempt?.preparedPrefix) {
+      const prepared = stack.publicationAttempt.preparedPrefix;
+      verifyPublication(prepared, runtime);
+      for (const layer of prepared.expected.layers) {
+        check(ledger.groups[layer.groupId], 'Unknown prepared group');
+        const refs = groupReferences(ledger, layer.groupId);
+        check(isDeepStrictEqual([...layer.closes].sort(), refs.closes) && isDeepStrictEqual([...(layer.refs ?? [])].sort(), refs.refs), 'Prepared publication references differ from group scope');
+      }
+    }
     safeId(stack.id); sha(stack.baseSha); check(Array.isArray(stack.groups) && stack.groups.length && Array.isArray(stack.layers), 'Missing stack membership');
     check(['building', 'held', 'ready'].includes(stack.phase), 'Invalid stack phase');
     for (const id of stack.groups) { check(ledger.groups[id] && !assignedGroups.has(id), 'Missing or duplicated stack group'); assignedGroups.add(id); ledger.groups[id].requires.forEach(parent => check(stack.groups.includes(parent), 'Dependency crosses stacks')); }
@@ -123,11 +163,23 @@ export function applyEvent(ledger, event, owner) {
       check(['already-closed', 'already-resolved', 'existing-pr', 'actionable', 'blocked'].includes(event.value?.classification), 'Invalid issue assessment');
       nonempty(event.value.evidence, 'assessment evidence'); next.assessments[event.issueKey] = event.value; break;
     case 'groups':
+      check(!Object.keys(ledger.splitPlans ?? {}).length, 'Cannot replace registered split groups');
       check(!Object.keys(ledger.stacks).length && !Object.keys(ledger.assignments).length, 'Group replacement requires untouched construction state');
       check(Array.isArray(event.groups), 'Missing groups'); next.groups = {};
       for (const group of event.groups) { safeId(group.id); nonempty(group.acceptance, 'group acceptance'); nonempty(group.dependencyEvidence, 'dependency evidence'); check(group.confirmed === true, 'Unconfirmed group'); check(!next.groups[group.id], 'Duplicate group'); nonempty(group.acceptance, 'acceptance requirements'); nonempty(group.dependencyEvidence, 'dependency/independence evidence'); check(group.confirmed === true, 'Unconfirmed group'); next.groups[group.id] = group; } break;
+    case 'split-plan': {
+      check(Array.isArray(event.groups) && event.groups.length > 0 && event.splitPlans && Object.keys(event.splitPlans).length > 0, 'Missing atomic split registration');
+      for (const group of event.groups) { safeId(group.id); check(!next.groups[group.id], 'Split registration cannot replace existing groups'); next.groups[group.id] = group; }
+      next.splitPlans ??= {};
+      for (const [issue, plan] of Object.entries(event.splitPlans)) {
+        safeId(issue); check(!next.splitPlans[issue] && !Object.values(ledger.groups).some(g => g.issues.includes(issue)), 'Split registration cannot change assigned issues');
+        next.splitPlans[issue] = plan;
+      }
+      break;
+    }
     case 'group': {
       const g = event.value; safeId(g?.id);
+      check(!Object.values(ledger.splitPlans ?? {}).some(p => p.groups.includes(g.id)), 'Split groups require immutable atomic registration');
       check(!Object.values(ledger.stacks).some(s => s.groups.includes(g.id)), 'Constructed group scope cannot change');
       check(g.confirmed === true, 'Unconfirmed group'); nonempty(g.acceptance, 'acceptance requirements'); nonempty(g.dependencyEvidence, 'dependency evidence');
       next.groups[g.id] = g; break;
@@ -163,8 +215,9 @@ export function applyEvent(ledger, event, owner) {
       check(expected?.stackId === s.id && expected.layers.length === s.layers.length, 'Publication must cover current prefix');
       s.layers.forEach((layer, i) => {
         check(expected.layers[i].headSha === layer.headSha && expected.layers[i].groupId === layer.groupId, 'Publication differs from integration ledger');
-        const closes = ledger.groups[layer.groupId].issues.map(key => ledger.fixedIssues.find(issue => issue.key === key).url).sort();
-        check(isDeepStrictEqual([...expected.layers[i].closes].sort(), closes), 'Publication must close every group member');
+        const { closes, refs } = groupReferences(ledger, layer.groupId);
+        check(isDeepStrictEqual([...expected.layers[i].closes].sort(), closes), 'Publication closes differ from group completion');
+        check(isDeepStrictEqual([...(expected.layers[i].refs ?? [])].sort(), refs), 'Publication refs differ from split scope');
       });
       const result = verifyPublication(event.verification, ledgerRuntime(ledger)); check(result.complete, result.errors.join('; '));
       for (const [i, layer] of s.layers.entries()) {
@@ -324,6 +377,7 @@ export function ledgerSummary(path, ledger, previous = ledger, appliedEventIds =
     .filter(id => !isDeepStrictEqual(before[id], after[id]));
   return { version: 1, complete: true, ledgerPath: path, revision: ledger.revision, appliedEventIds,
     changed: { issueIds: [...new Set([...changedIds(previous.assessments, ledger.assessments),
+      ...changedIds(previous.splitPlans ?? {}, ledger.splitPlans ?? {}),
       ...changedIds(Object.fromEntries((previous.fixedIssues ?? []).map(i => [i.key, i])), Object.fromEntries(ledger.fixedIssues.map(i => [i.key, i])))])],
       groupIds: changedIds(previous.groups, ledger.groups), stackIds: changedIds(previous.stacks, ledger.stacks),
       assignmentIds: changedIds(previous.assignments, ledger.assignments) } };

@@ -16,6 +16,8 @@ export function verifyPublication(input, expectedRuntime) {
   expected.layers.forEach((layer, i) => {
     sha(layer.headSha); sha(layer.baseSha);
     check(Array.isArray(layer.closes) && typeof layer.body === 'string' && typeof layer.title === 'string', 'Missing expected publication content');
+    check(layer.refs === undefined || Array.isArray(layer.refs), 'Invalid expected refs');
+    check(!(layer.refs ?? []).some(issue => layer.closes.includes(issue)), 'Conflicting issue references');
     check(layer.baseBranch === (i === 0 ? expected.baseBranch : expected.layers[i - 1].headBranch), 'Invalid expected base chain');
     if (i > 0) check(layer.baseSha === expected.layers[i - 1].headSha, 'Invalid expected base SHA chain');
     const actual = layers[i];
@@ -26,6 +28,16 @@ export function verifyPublication(input, expectedRuntime) {
     if (urls.has(actual.url)) errors.push('Duplicate PR identity'); urls.add(actual.url);
     if (actual.state !== 'OPEN' || actual.isDraft !== false) errors.push(`Layer ${i + 1}: expected open non-draft PR`);
     if (runtime === 'codex' && !(observed.attachments ?? []).includes(actual.url)) errors.push(`Layer ${i + 1}: missing attachment`);
+    for (const issue of layer.refs ?? []) {
+      if (!actual.body?.split('\n').some(line => line.trim() === `Refs ${issue}`)) errors.push(`Layer ${i + 1}: missing standalone Refs ${issue}`);
+      const number = issue.match(/\/issues\/(\d+)$/)?.[1];
+      const repository = issue.match(/^https?:\/\/[^/]+\/(.+)\/issues\/\d+$/)?.[1];
+      const targets = [issue, ...(number ? [`#${number}`, `${repository}#${number}`] : [])];
+      const closing = /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s*:?\s+([^\n]+)/gi;
+      for (const match of (actual.body ?? '').matchAll(closing)) {
+        if (targets.some(target => new RegExp('(?:^|[\\s,(\\[<])' + target.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?=$|[\\s),.;\\]>])').test(match[1]))) errors.push(`Layer ${i + 1}: premature closure of ${issue}`);
+      }
+    }
     for (const issue of layer.closes) if (!actual.body?.split('\n').some(line => line.trim() === `Closes ${issue}`)) errors.push(`Layer ${i + 1}: missing standalone Closes ${issue}`);
   });
   return { version: 1, runtime, attachmentStatus: runtime === 'claude-code' ? 'not-applicable' : (errors.length ? 'unverified' : 'verified'), complete: errors.length === 0, status: errors.length ? 'blocked' : 'verified', publicationOnly: true, stackId: expected.stackId, errors, verifiedLayers: errors.length ? [] : structuredClone(expected.layers) };

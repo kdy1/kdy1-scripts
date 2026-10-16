@@ -6,7 +6,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { check, version, nonempty, sha, absolute, readJson, save, cli } from './helper-common.mjs';
 import { workerSettings } from './worker-settings.mjs';
 import { ledgerRuntime, matchRuntime } from './runtime.mjs';
-import { validateLedger } from './batch-ledger.mjs';
+import { validateLedger, groupReferences } from './batch-ledger.mjs';
 const roles = ['investigation', 'preparation', 'implementation', 'stack-execution', 'maintenance', 'inventory', 'repair'];
 function placeholders(value) {
   const text = JSON.stringify(value);
@@ -155,7 +155,12 @@ export function renderHandoff(input) {
     ? 'Codex chat attachment is not applicable. Record attachmentStatus: "not-applicable" and attachments: []; report verified PR URLs. Do not claim an attachment succeeded.'
     : 'Verify Codex chat attachment for every published PR.';
   const roleInstructions = runtime === 'claude-code' ? instructions[input.role].replaceAll('$create-pr', '/create-pr').replaceAll('$slop-fix-batch', '/slop-fix-batch') : instructions[input.role];
-  return `# Slop Fix Batch: ${input.role} (${input.phase})\n\nMode: ${input.mode}\nRuntime: ${runtime}\nBatch: ${ledger.batchId}\nRepository: ${ledger.repository}\nOriginal human authorization: ${ledger.authorization}\nExact query: ${ledger.query}\n\n## Agent creation settings\n\nPass these fields to ${spawnTool} when creating this role. Keep the same agent for prepare and START.\n\n\x60\x60\x60json\n${JSON.stringify(spawnSettings, null, 2)}\n\x60\x60\x60\n\n${phase}\n\n${policy}\n\n${roleInstructions}\n\n${attachmentPolicy}\n\n## Recorded assignment\n\n${compactAssignment(a, referenced)}\n\nRead each referenced JSON field before acting; do not treat its summary as acceptance evidence. Report new facts, changes and blockers; keep complete results in batch-state files.\n`;
+  const issueKeys = new Set([...(a.issueKeys ?? []), ...(ledger.groups[a.groupId]?.issues ?? []),
+    ...(ledger.stacks[a.stackId]?.groups ?? []).flatMap(id => ledger.groups[id].issues)]);
+  const splitPlans = Object.fromEntries(Object.entries(ledger.splitPlans ?? {}).filter(([key]) => issueKeys.has(key)));
+  const splitContext = Object.keys(splitPlans).length ? `\n\n## Issue split context\n\n${JSON.stringify({ splitPlans,
+    ...(a.groupId && ledger.groups[a.groupId] ? { publicationReferences: groupReferences(ledger, a.groupId) } : {}) }, null, 2)}\n\nComplete only the assigned group scope. Intermediate split layers use Refs; only the completion group uses Closes. Report each split issue across all its groups before claiming full implementation or merge.` : '';
+  return `# Slop Fix Batch: ${input.role} (${input.phase})\n\nMode: ${input.mode}\nRuntime: ${runtime}\nBatch: ${ledger.batchId}\nRepository: ${ledger.repository}\nOriginal human authorization: ${ledger.authorization}\nExact query: ${ledger.query}\n\n## Agent creation settings\n\nPass these fields to ${spawnTool} when creating this role. Keep the same agent for prepare and START.\n\n\x60\x60\x60json\n${JSON.stringify(spawnSettings, null, 2)}\n\x60\x60\x60\n\n${phase}\n\n${policy}\n\n${roleInstructions}\n\n${attachmentPolicy}\n\n## Recorded assignment\n\n${compactAssignment(a, referenced)}${splitContext}\n\nRead each referenced JSON field before acting; do not treat its summary as acceptance evidence. Report new facts, changes and blockers; keep complete results in batch-state files.\n`;
 }
 // Package repeated long evidence without asking the coordinator to rebuild JSON/hash commands.
 export function packHandoff(input) {
@@ -184,14 +189,20 @@ const cell = value => String(value ?? 'not recorded').replaceAll('|', '\\|').rep
 export function renderReport(ledger) {
   validateLedger(ledger);
   const rows = ledger.fixedIssues.map(issue => {
-    const group = Object.values(ledger.groups).find(g => g.issues.includes(issue.key));
-    const stack = Object.values(ledger.stacks).find(s => s.groups.includes(group?.id));
-    const layer = stack?.layers.find(l => l.groupId === group?.id);
+    const groups = Object.values(ledger.groups).filter(g => g.issues.includes(issue.key));
+    const entries = groups.map(group => {
+      const stack = Object.values(ledger.stacks).find(s => s.groups.includes(group.id));
+      const layer = stack?.layers.find(l => l.groupId === group.id);
+      const merge = stack?.maintenance?.prs?.find(pr => pr.url === layer?.url);
+      return { group, stack, layer, merge };
+    });
     const assessment = ledger.assessments[issue.key];
-    const merge = stack?.maintenance?.prs?.find(pr => pr.url === layer?.url);
-    const outcome = assessment?.closure ? 'verified closure' : merge?.state === 'MERGED' && merge.mergeCommitSha ? `verified merged at ${merge.mergeCommitSha}; issue closure unverified` : layer?.publication ? 'implemented and published; closure unverified' : assessment?.classification ?? 'not assessed';
-    const coverage = layer ? [...layer.checks.map(c => `worker ${c.command}: ${c.status} at ${c.sha}`), ...(layer.integrationChecks ?? []).map(c => `integration change ${c.command}: ${c.status} at ${c.sha}`), `publication head ${layer.headSha}; real-world validation ${layer.realWorldValidation}`].join('; ') : null;
-    return [issue.url, outcome, group?.id, stack?.id, layer ? stack.layers.indexOf(layer) + 1 : null, layer?.url ?? assessment?.prUrl ?? assessment?.closure?.commentUrl, coverage, stack?.blocker ?? assessment?.blocker].map(cell).join(' | ');
+    const allMerged = entries.length > 0 && entries.every(e => e.merge?.state === 'MERGED' && e.merge.mergeCommitSha);
+    const allPublished = entries.length > 0 && entries.every(e => e.layer?.publication?.complete);
+    const partial = entries.some(e => e.layer?.publication);
+    const outcome = assessment?.closure ? 'verified closure' : allMerged ? `verified merged at ${entries.map(e => e.merge.mergeCommitSha).join(', ')}; issue closure unverified` : allPublished ? 'implemented and published; closure unverified' : partial ? 'partially published; issue incomplete' : assessment?.classification ?? 'not assessed';
+    const coverage = entries.map(({ group, layer }) => layer ? `${group.id}: ${[...layer.checks.map(c => `worker ${c.command}: ${c.status} at ${c.sha}`), ...(layer.integrationChecks ?? []).map(c => `integration change ${c.command}: ${c.status} at ${c.sha}`), `publication head ${layer.headSha}; real-world validation ${layer.realWorldValidation}`].join('; ')}` : `${group.id}: not integrated`).join('; ');
+    return [issue.url, outcome, groups.map(g => g.id).join(', '), [...new Set(entries.map(e => e.stack?.id).filter(Boolean))].join(', '), entries.map(e => e.layer ? e.stack.layers.indexOf(e.layer) + 1 : 'not integrated').join(', '), entries.map(e => e.layer?.url).filter(Boolean).join(', ') || assessment?.prUrl || assessment?.closure?.commentUrl, coverage, entries.map(e => e.stack?.blocker).filter(Boolean).join('; ') || assessment?.blocker].map(cell).join(' | ');
   });
   const stacks = Object.values(ledger.stacks).map(s => `- ${s.id}: ${s.phase}; base ${s.baseSha}; final integration tip ${s.layers.at(-1)?.headSha ?? 'not integrated'}; worktree ${s.worktree}\n  Bottom-to-top: ${s.layers.map(l => l.url ?? 'unpublished').join(' → ') || 'none'}\n  Merge/alignment observations: ${JSON.stringify(s.maintenance ?? { status: 'unverified' })}`);
   return `# Batch ${ledger.batchId}\n\nRuntime: ${ledgerRuntime(ledger)}\nPR chat attachment: ${ledgerRuntime(ledger) === 'claude-code' ? 'not-applicable' : 'required; see publication observations'}\n\n| Issue | Actual outcome | Group | Stack | Layer | PR/evidence | Worker coverage | Blocker |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n${rows.map(r => `| ${r} |`).join('\n')}\n\n${stacks.join('\n')}\n\nDelegation: ${JSON.stringify(ledger.delegation ? { capacity: ledger.delegation.capacity, grants: ledger.delegation.grants } : { status: 'legacy-coordinator-only' })}

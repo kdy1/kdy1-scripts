@@ -1,13 +1,20 @@
 ---
 name: repair-pr
-description: One-shot GitHub pull request repair workflow for the current or specified repository. Use when asked to resolve merge conflicts, handle unresolved feedback from chatgpt-codex-connector[bot] and the authenticated GitHub user (@me), fix failing CI, commit each distinct repair problem separately, perform final pushes under shared stack ownership, and resolve handled review threads. Post no PR comments by default, except optional English explanations of objectively incorrect bot findings.
+description: One-shot GitHub pull request repair workflow for the current or specified repository. Use when asked to resolve merge conflicts, handle unresolved feedback from chatgpt-codex-connector[bot] and the authenticated GitHub user (@me), fix failing CI within the PR scope, commit each distinct repair problem separately, perform final pushes under shared stack ownership, and resolve handled review threads. Post no PR comments by default, except optional English explanations of objectively incorrect bot findings.
 ---
 
 # Repair PR
 
 ## Goal
 
-Repair the current or specified GitHub PR once, then stop. Handle merge conflicts, unresolved review feedback from `chatgpt-codex-connector[bot]` and the authenticated GitHub user (`@me`), and CI failures in that order. Correct actionable findings, assess incorrect findings with concrete evidence, and resolve handled threads. Create a separate commit for each distinct repair problem that changes files, but publish only after all local changes are complete. Ordinary PRs push once; stacked PRs use the scoped final pushes owned by [$manage-stacked-prs](../manage-stacked-prs/SKILL.md).
+Repair only problems within the scope of the current or specified GitHub PR once, then stop. Handle merge conflicts, unresolved review feedback from `chatgpt-codex-connector[bot]` and the authenticated GitHub user (`@me`), and CI failures in that order. Correct actionable findings, assess incorrect findings with concrete evidence, and resolve handled threads. Create a separate commit for each distinct repair problem that changes files, but publish only after all local changes are complete. Ordinary PRs push once; stacked PRs use the scoped final pushes owned by [$manage-stacked-prs](../manage-stacked-prs/SKILL.md).
+
+## Repair scope
+
+- Before fixing a review finding or CI failure, establish its relationship to the PR's purpose and diff using the relevant implementation, logs, and tests. A failure outside the changed files is in scope when the PR changes caused it; file location alone does not determine scope.
+- Do not fix unrelated pre-existing bugs or CI/infrastructure failures. Report them with supporting evidence in the current chat. If the relationship to the PR is unclear, do not make a speculative fix; report what evidence is missing.
+- Record out-of-scope review findings as `blocked` and leave their threads unresolved. Being outside the PR scope does not make a finding `incorrect`.
+- Scope exclusions do not waive required validation or publication gates. Record required validation failures accurately, even when their causes are outside the PR scope.
 
 ## Comment policy
 
@@ -38,8 +45,8 @@ Repair the current or specified GitHub PR once, then stop. Handle merge conflict
 3. Apply review feedback.
    - Consider only unresolved, non-outdated review threads with at least one comment authored by `chatgpt-codex-connector[bot]` or the authenticated GitHub user (`@me`). Resolve `@me` from `viewer.login` at runtime; if the account cannot be identified, stop and report the failure.
    - Ignore approvals, resolved threads, outdated threads, duplicates, non-actionable notes, full-review bodies, and threads with no comment from either eligible author.
-   - Evaluate each finding against the current diff, applicable contracts, implementation behavior, and tests. Do not assume the review is correct because of its author.
-   - Handle each distinct actionable finding independently. Do not combine findings merely because they affect the same behavior or file. If multiple threads are duplicate reports of the same root cause, treat them as one problem.
+   - Evaluate each finding against the current diff, applicable contracts, implementation behavior, and tests. Apply **Repair scope** before making changes. Do not assume the review is correct because of its author.
+   - Handle each distinct actionable, in-scope finding independently. Do not combine findings merely because they affect the same behavior or file. If multiple threads are duplicate reports of the same root cause, treat them as one problem.
    - Implement the smallest correct fix for one problem, including any documentation or repository-instruction update required by that fix or its public-contract change.
    - Run focused tests for that problem, then commit and record it before starting the next problem. Record its commit, validation, evidence, and `fixed` thread IDs with `session record`. One commit may handle multiple review threads only when they are duplicate reports of the same root cause.
    - When a finding is objectively incorrect, do not change correct code to appease it. Record the thread id and report the review's incorrect assumption with concrete evidence in the current chat, such as the relevant behavior, invariant, or test. For an incorrect bot finding only, optionally prepare a concise English reply with that evidence for the same inline thread under **Comment policy**; do not merely state that the finding is wrong.
@@ -51,7 +58,8 @@ Repair the current or specified GitHub PR once, then stop. Handle merge conflict
    - Run `ci-logs --session <session> --output-dir <outside-source-directory>` to collect failing current-head Actions logs with repository/head/attempt checks and duplicate log removal. Inspect its per-check results; unavailable logs are not a successful CI result. Use job logs from `gh api` when additional evidence is needed.
    - Treat external checks as report-only unless their logs are available through `gh`.
    - Identify each independent root cause. Multiple failing checks caused by the same root cause are one problem; unrelated root causes are separate problems.
-   - Fix one root cause, run focused local verification, then commit and record that fix before starting the next root cause.
+   - Apply **Repair scope** to each root cause before fixing it. Report unrelated failures and failures whose relationship to the PR remains unclear with evidence in the current chat; do not record an unfixed failure as a `ci` problem, which requires a repair commit.
+   - Fix one in-scope root cause, run focused local verification, then commit and record that fix before starting the next root cause.
 
 5. Finish once.
    - Run the validation required by the repository instructions plus the closest relevant checks for every touched area. Derive commands from the target project instead of assuming a language, package manager, or directory layout.
@@ -63,6 +71,7 @@ Repair the current or specified GitHub PR once, then stop. Handle merge conflict
    - Run `finish-threads --session <session>` after publication verification, or immediately for a validated no-op. It rereads PR membership, publication, eligible authors, and, for stacks, remote heads/base chains and ownership. It sends only optional incorrect-bot replies recorded under **Comment policy**, then resolves every `fixed` and `incorrect` thread. It leaves `blocked` findings unresolved. An optional reply failure does not skip resolution.
    - Report each reply/resolution outcome accurately from the command's JSON. A failed or uncertain write is not completion. Reexecution reconciles actual remote state and skips completed writes; it does not blindly retry uncertain writes. Preserve session evidence and follow the reference's interrupted-operation procedure.
    - For a ready stack, release the stack token only after remote alignment and thread-handling outcomes are reconciled. For a building-stack repair, return the retained token and complete results to the coordinator; it records the results and uses `resume-build` instead of releasing protection. Report a known thread-write failure accurately without claiming resolution; interrupted or uncertain effects require reconciliation before release.
+   - In the final chat report, distinguish repaired problems from out-of-scope failures and problems whose scope remains unclear. Include evidence for exclusions and report any required validation or publication blockers without claiming that the remaining checks passed.
    - Do not start a monitoring loop or keep polling checks after the final status check.
 
 ## Helper

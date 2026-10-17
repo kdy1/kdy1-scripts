@@ -64,6 +64,8 @@ Each input contains exactly one of `problem`, `validation`, or `stackPublication
 
 `kind` is `merge`, `review`, or `ci`. Merge and CI problems require a commit; use an empty `threads` array. A review problem without changes omits `commit` and uses `incorrect` or `blocked` thread dispositions. Every problem/thread requires concrete evidence. `fixed` requires a commit. Only an `incorrect` thread may include `replyBodyFile`; the finish command also confirms its finding was authored by the bot. For threads with both bot and `@me` comments, supply `findingCommentId` to identify the exact bot finding. `status` includes comment IDs for this purpose. A selected human comment cannot receive an optional reply. Prepare any optional explanation in English. An `@me` finding cannot receive this optional reply. Explicitly requested comments outside this exception remain a separately scoped workflow; these commands do not publish them.
 
+Apply the skill's **Repair scope** rules before recording repairs. Report CI failures left unfixed because they are unrelated to the PR or their relationship is unclear in the current chat with supporting evidence; do not create a `ci` problem record for them, because that record requires a repair commit. Record out-of-scope review findings as `blocked`, not `incorrect`, and leave their threads unresolved. These exclusions do not waive final validation: record any required validation failure as `failed`, and preserve the existing publication/thread-write gates.
+
 After all repairs, record each required final validation at the final local head:
 
 ```json

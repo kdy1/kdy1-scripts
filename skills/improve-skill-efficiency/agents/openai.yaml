@@ -1,0 +1,4 @@
+interface:
+  display_name: "Improve Skill Efficiency"
+  short_description: "Optimize skills using local history and API token costs"
+  default_prompt: "Use $improve-skill-efficiency to optimize the specified skill using local session history while preserving quality and model settings."

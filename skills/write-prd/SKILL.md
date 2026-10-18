@@ -33,6 +33,14 @@ Read these files before asking PRD questions or writing the issue:
 - If the user asks to skip a category, record it as explicitly out of scope or not applicable with the user's stated reason.
 - Do not create the GitHub issue while any applicable ledger row remains open.
 
+## Question Presentation
+
+- In every mode, including T3 Code Build mode, present decision questions with concrete choices when meaningful alternatives exist. Offer a small set of distinct options and briefly explain each option's effect or tradeoff. Allow a custom answer; use free text when the decision requires an exact name, value, or detail that choices cannot capture.
+- Use a structured question tool when it is available and permitted in the active mode. In Build or Default mode, prefer `request_user_input_async` when available. Use `request_user_input` only when the active tool instructions permit it; do not switch to Plan Mode just to ask questions.
+- If no permitted question tool is available, or the tool rejects the active mode, ask in chat with numbered questions and lettered choices. Keep custom answers possible in this fallback too.
+- Follow the selected tool's schema and batch limits. A recommendation explains a candidate choice; it does not decide the ledger row. A preselected option, missing response, or elapsed wait is not a user answer.
+- With an asynchronous question tool, continue only independent investigation while the answer is pending. Keep dependent ledger rows open and resume collection when the user replies; do not submit duplicate questions while the same request is pending.
+
 ## Workflow
 
 1. Ground the request.
@@ -41,7 +49,7 @@ Read these files before asking PRD questions or writing the issue:
    - Determine feature-flag applicability and initialize a visible decision ledger using `references/question-ledger.md`.
 
 2. Collect decisions.
-   - Ask only questions that materially close open ledger rows.
+   - Ask only questions that materially close open ledger rows, following Question Presentation in the active mode.
    - Keep asking until every applicable row is answered, explicitly not applicable, or contract-determined.
    - After each user answer, update the ledger. If applicable rows remain open, perform any needed read-only investigation and ask the next small batch of questions in the same turn; do not wait for a separate request to continue.
    - Reconcile contradictions immediately and track evidence, open questions, and user answers separately. Partial or ambiguous answers leave the affected decisions open and require follow-up questions, not inferred defaults.
@@ -50,7 +58,7 @@ Read these files before asking PRD questions or writing the issue:
 
 3. Handle Plan Mode.
    - Plan Mode does not stop decision collection: continue read-only investigation and questions under step 2. Perform no GitHub write or other mutation prohibited by the active mode.
-   - Prefer `request_user_input` when available in Plan Mode. Waiting for a user answer is part of the collection loop; after the answer arrives, resume the loop automatically. If the tool is unavailable, ask the questions directly and resume when the user replies.
+   - Prefer `request_user_input` when available and permitted in Plan Mode, following Question Presentation for choices and fallbacks. Waiting for a user answer is part of the collection loop; after the answer arrives, resume the loop automatically.
    - Only when every applicable ledger row is closed, return a final plan containing the exact issue title, body, target, metadata to apply, and later `gh` action, following the active mode's required output format.
    - When later running outside Plan Mode from a complete prior plan, create the issue without asking for another confirmation.
 

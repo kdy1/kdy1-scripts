@@ -14,7 +14,7 @@ Repair only problems within the scope of the current or specified GitHub PR once
 - Before fixing a review finding or CI failure, establish its relationship to the PR's purpose and diff using the relevant implementation, logs, and tests. A failure outside the changed files is in scope when the PR changes caused it; file location alone does not determine scope.
 - Do not fix unrelated pre-existing bugs or CI/infrastructure failures. Report them with supporting evidence in the current chat. If the relationship to the PR is unclear, do not make a speculative fix; report what evidence is missing.
 - Record out-of-scope review findings as `blocked` and leave their threads unresolved. Being outside the PR scope does not make a finding `incorrect`.
-- Scope exclusions do not waive required validation or publication gates. Record required validation failures accurately, even when their causes are outside the PR scope.
+- Record required validation failures accurately, even when their causes are outside the PR scope. Failed or skipped validation does not block the final push or handling fixed and incorrect review threads; preserve those results in the repair record and final report.
 
 ## Comment policy
 

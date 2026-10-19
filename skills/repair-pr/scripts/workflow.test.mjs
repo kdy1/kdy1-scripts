@@ -350,7 +350,7 @@ test('PR URL case is normalized to the shared registry identity', t => {
 test('rerun validation replaces its failed final result and retains validation history', t => {
   const f=fixture(t);f.init();const revision=f.repair();
   assert.equal(f.record({validation:{command:'node --test',revision,result:'failed'}}).status,0);
-  assert.equal(f.run('publish','--session',f.session).status,1);
+  assert.equal(f.ok('session','verify','--file',f.session).valid,true);
   assert.equal(f.record({validation:f.validation(revision)}).status,0);assert.equal(f.ok('publish','--session',f.session).state,'verified');
   const s=JSON.parse(readFileSync(f.session));assert.equal(s.finalValidation.length,1);assert(s.validationHistory.some(v=>v.result==='failed'));
 });
@@ -423,4 +423,29 @@ test('building repair session accepts only the transferred claimed token', t => 
   assert.equal(JSON.parse(init.stdout).stack.token, 'claimed');
   writeFileSync(ownership, JSON.stringify({ owner: 'child', token: 'wrong', snapshotPath }));
   assert.match(f.run('preflight', '--pr', '1', '--stack-file', ownership).stdout, /Stack is building/);
+});
+
+for (const result of ['failed', 'skipped']) {
+  test(`publication and thread handling preserve ${result} validation without blocking`, t => {
+    const f = fixture(t);
+    f.update({ threads: [f.thread('PRRT_fixed')] });
+    f.init();
+    const revision = f.repair([{ id: 'PRRT_fixed', disposition: 'fixed', evidence: 'repair implemented' }]);
+    assert.equal(f.record({ validation: { command: 'node --test', revision, result } }).status, 0);
+    assert.equal(f.ok('publish', '--session', f.session).state, 'verified');
+    assert.equal(f.read().pushCount, 1);
+    assert.equal(f.ok('finish-threads', '--session', f.session).outcomes.PRRT_fixed.resolve.state, 'verified');
+    const session = JSON.parse(readFileSync(f.session, 'utf8'));
+    assert.equal(session.finalValidation[0].result, result);
+    assert(session.validationHistory.some(validation => validation.result === result));
+  });
+}
+
+test('failed validation still requires the covered revision', t => {
+  const f = fixture(t);
+  f.init();
+  f.repair();
+  const before = readFileSync(f.session, 'utf8');
+  assert.match(f.record({ validation: { command: 'test', revision: f.start, result: 'failed' } }).stderr, /revision differs/);
+  assert.equal(readFileSync(f.session, 'utf8'), before);
 });

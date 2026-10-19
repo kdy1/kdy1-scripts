@@ -64,7 +64,7 @@ Each input contains exactly one of `problem`, `validation`, or `stackPublication
 
 `kind` is `merge`, `review`, or `ci`. Merge and CI problems require a commit; use an empty `threads` array. A review problem without changes omits `commit` and uses `incorrect` or `blocked` thread dispositions. Every problem/thread requires concrete evidence. `fixed` requires a commit. Only an `incorrect` thread may include `replyBodyFile`; the finish command also confirms its finding was authored by the bot. For threads with both bot and `@me` comments, supply `findingCommentId` to identify the exact bot finding. `status` includes comment IDs for this purpose. A selected human comment cannot receive an optional reply. Prepare any optional explanation in English. An `@me` finding cannot receive this optional reply. Explicitly requested comments outside this exception remain a separately scoped workflow; these commands do not publish them.
 
-Apply the skill's **Repair scope** rules before recording repairs. Report CI failures left unfixed because they are unrelated to the PR or their relationship is unclear in the current chat with supporting evidence; do not create a `ci` problem record for them, because that record requires a repair commit. Record out-of-scope review findings as `blocked`, not `incorrect`, and leave their threads unresolved. These exclusions do not waive final validation: record any required validation failure as `failed`, and preserve the existing publication/thread-write gates.
+Apply the skill's **Repair scope** rules before recording repairs. Report CI failures left unfixed because they are unrelated to the PR or their relationship is unclear in the current chat with supporting evidence; do not create a `ci` problem record for them, because that record requires a repair commit. Record out-of-scope review findings as `blocked`, not `incorrect`, and leave their threads unresolved. Record any required validation failure as `failed`. Failed or skipped results do not block publication or handling fixed and incorrect threads; retain the ownership, revision and remote-publication checks.
 
 After all repairs, record each required final validation at the final local head:
 
@@ -78,7 +78,7 @@ After all repairs, record each required final validation at the final local head
 }
 ```
 
-Results can be `passed`, `failed`, or `skipped`; publication/thread writes require all final records to pass at the current head. Rerunning the same command replaces its final result and retains prior attempts in `validationHistory`. Adding a problem or recording stack publication clears older final validation. Verification checks commit existence/ancestry, first-parent repair inventory, duplicate commits/threads, and validation revisions. It does not execute recorded test commands or certify their coverage. Session identity and operation outcomes are helper-owned; do not edit them to bypass a blocker.
+Results can be `passed`, `failed`, or `skipped`; publication/thread writes require final records at the current head, but do not require passing results. Rerunning the same command replaces its final result and retains prior attempts in `validationHistory`. Adding a problem or recording stack publication clears older final validation. Verification checks commit existence/ancestry, first-parent repair inventory, duplicate commits/threads, and validation revisions. It does not execute recorded test commands or certify their coverage. Session identity and operation outcomes are helper-owned; do not edit them to bypass a blocker.
 
 ### Record final stack publication
 
@@ -102,7 +102,7 @@ Results can be `passed`, `failed`, or `skipped`; publication/thread writes requi
 }
 ```
 
-Include every layer in original order and passing validation for every changed tip. Use a repair mapping for each repair if the target was replayed; retain original problem commit SHAs. The helper checks target commit counts against original boundaries and mapped repair ancestry; the stack workflow must compare old/new ranges and reconcile conflict changes to prove that intended work survived. Record final target validation **after** this result. Thread finishing independently rereads remote heads/base chains, checks parent ancestry, and verifies the original stack token. It never acquires/releases a token or performs restacking.
+Include every layer in original order and validation results for every changed tip, including failures and skipped checks. Use a repair mapping for each repair if the target was replayed; retain original problem commit SHAs. The helper checks target commit counts against original boundaries and mapped repair ancestry; the stack workflow must compare old/new ranges and reconcile conflict changes to prove that intended work survived. Record final target validation **after** this result. Thread finishing independently rereads remote heads/base chains, checks parent ancestry, and verifies the original stack token. It never acquires/releases a token or performs restacking.
 
 ## Collect CI logs
 
@@ -121,7 +121,7 @@ node "<helper>" publish --session <session>
 node "<helper>" finish-threads --session <session>
 ```
 
-For ordinary PRs, publication requires clean Git state, unchanged identity/remotes, recorded commits, and final passing validation. It performs one explicit normal target-branch push, disables automatic tag/submodule publication, and checks the actual destination and final GitHub head. No changes means `noop`, without an empty commit or push. Completed publication is reused only if the current local/remote heads still match. Thread finishing can verify a no-op directly when no push is necessary.
+For ordinary PRs, publication requires clean Git state, unchanged identity/remotes, recorded commits, and final validation records at the current head. Failed and skipped checks remain recorded and do not prevent publication. It performs one explicit normal target-branch push, disables automatic tag/submodule publication, and checks the actual destination and final GitHub head. No changes means `noop`, without an empty commit or push. Completed publication is reused only if the current local/remote heads still match. Thread finishing can verify a no-op directly when no push is necessary.
 
 Finishing validates all selected thread IDs against the current PR and eligible finding author before any write. Newly outdated findings require reassessment. Already resolved threads are reconciled without another mutation. Only `fixed`/`incorrect` are handled; `blocked` remains unresolved. An optional bot reply is recorded before the request; failure does not skip the required resolution attempt. Reply and resolution outcomes are independent. A partial failure is reported per thread, and other prepared threads are still handled.
 

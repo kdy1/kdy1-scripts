@@ -19,7 +19,7 @@ export function validations(values, revision = null) {
   for (const v of values) {
     assert(typeof v.command === 'string' && v.command.trim() && ['passed', 'failed', 'skipped'].includes(v.result), 'Invalid validation record');
     sha(v.revision);
-    if (revision) assert(v.revision === revision && v.result === 'passed', 'Validation must pass at the covered revision');
+    if (revision) assert(v.revision === revision, 'Validation revision differs from the covered revision');
   }
 }
 export function initSession(file, pr, stackFile) {

@@ -1,6 +1,6 @@
 ---
 name: design-ui
-description: Use automatically in Plan Mode whenever a task requires UI design, including direct UI changes and preparing issues, feature specifications, or implementation plans for new or changed screens, layout, components, content, styling, interaction, navigation, or responsive behavior. Apply alongside explicitly invoked skills such as `$add-issue`; immediate product implementation is not required. Preview and approve the design before finalizing the plan or issue text. Outside Plan Mode, do not select automatically; explicit `$design-ui` proposal work requires a switch to Plan Mode. Implement approved designs in the same conversation only when authorized. Read-only UI inspection, a screenshot without a change request, and editing this skill do not start the workflow.
+description: Design new or changed product UI, including direct UI changes and UI plans, specifications, or issues. Ground the design, create a preview, and obtain approval before implementation or finalizing the plan or issue text. Works in T3 Chat without a Plan Mode or mode switch. Implement approved designs in the same conversation only when authorized. Read-only inspection, screenshots without a change request, and editing this skill do not start the workflow.
 ---
 
 # Design UI
@@ -8,39 +8,34 @@ description: Use automatically in Plan Mode whenever a task requires UI design, 
 ## Goal
 
 Produce an approved, implementation-ready design proposal for a new or existing
-UI in Plan Mode.
-After leaving Plan Mode, implement and verify the approved design in the same
-conversation when implementation is within the authorized task.
+UI. Use proposal and implementation phases within the conversation. These phases
+do not depend on an application mode or a mode-switch control.
+After design approval, implement and verify the design in the same conversation
+when implementation is within the authorized task.
 
 ## Entry Conditions
 
-- Use this skill automatically only when Plan Mode is active and the authorized
-  task requires designing a new or changed product UI. This includes direct UI
-  changes and preparing issues, feature specifications, or implementation plans
-  for UI changes; immediate product implementation is not required. Apply whether
-  the UI design need is explicit or discovered while working on the task.
+- Use this skill when explicitly invoked or when the authorized task requires
+  designing a new or changed product UI. This includes direct UI changes and
+  preparing issues, feature specifications, or implementation plans for UI
+  changes; immediate product implementation is not required. Apply whether the
+  UI design need is explicit or discovered while working on the task.
 - Apply alongside other explicitly invoked skills, including `$add-issue`, when
   their task requires UI design. Naming another skill does not exclude this one,
-  and the human does not need to name `$design-ui`. For example, in Plan Mode,
+  and the human does not need to name `$design-ui`. For example,
   "add period presets to the sidebar" ("사이드바에 기간 프리셋 추가") starts this
   workflow even when requested through `$add-issue` for a future feature issue.
 - Once the UI design need is established, complete the preview and design
   approval steps before finalizing the implementation plan, feature
   specification, or issue text. Do not defer design until a later implementation
   request or a separate `$design-ui` invocation.
-- Outside Plan Mode, do not select this skill automatically or ask for a mode
-  switch solely because the task requires UI creation or changes.
 - Backend-only or other work without UI creation or changes, read-only UI
   inspection, a screenshot without a change request, and editing this skill
   do not start the design workflow.
-- Run the proposal phase only in Plan Mode. If the human explicitly invokes
-  `$design-ui` outside Plan Mode to start proposal work, ask the user to switch
-  to Plan Mode, then stop. Do not inspect the product, generate an image, or
-  modify files before the mode change. Resume the proposal phase in Plan Mode
-  without requiring another explicit skill invocation.
+- Start proposal work directly in the current conversation. Do not ask the user
+  to enter or leave Plan Mode or require an equivalent application control.
 - An approved design ready for authorized implementation resumes at step 4
-  outside Plan Mode. This continues the existing workflow and does not count as
-  a new automatic skill selection.
+  without another skill invocation or a mode switch.
 - Selecting `$design-ui`, explicitly or automatically, starts proposal work
   only within the authorized task. It never authorizes GitHub issue creation or
   another external mutation.
@@ -95,7 +90,7 @@ conversation when implementation is within the authorized task.
      compatibility constraints, acceptance criteria, test scenarios, and
      explicit out-of-scope work.
    - Record the approved previews and text specification in the conversation's
-     decision-complete Plan Mode result. For each approved final preview, retain
+     decision-complete design record. For each approved final preview, retain
      the actual absolute saved file path returned by image generation, target
      surface, viewport and state, caption or alt text, and final prompt. Keep the
      approved preview rendered inline, showing only the area being changed.
@@ -110,21 +105,20 @@ conversation when implementation is within the authorized task.
      owns GitHub recording and image attachments under its existing restrictions.
 
 4. Implement the approved design in the same conversation.
-   - If implementation is part of the authorized task, tell the user to leave
-     Plan Mode after design approval. While Plan Mode remains active, retain the
-     approved design record without modifying product files. For a proposal-only
-     request, finish with the approved Plan Mode result.
-   - An issue-only request does not enter implementation. Design approval and
-     leaving Plan Mode preserve that restriction; continue only the authorized
-     issue workflow.
-   - Once Plan Mode is no longer active, continue from the approved design record
-     without requiring another skill invocation or an issue handoff. Preserve
-     the original task scope and restrictions; leaving Plan Mode does not
-     authorize implementation of a proposal-only request.
+   - If implementation is part of the authorized task, continue after explicit
+     approval of the preview and text specification. Do not require a mode
+     switch or another implementation confirmation. For a proposal-only request,
+     finish with the approved design record.
+   - An issue-only request does not enter implementation. Design approval
+     preserves that restriction; continue only the authorized issue workflow.
+   - Continue from the approved design record without requiring another skill
+     invocation or an issue handoff. Preserve the original task scope and
+     restrictions; design approval does not authorize implementation of a
+     proposal-only request.
    - Use the approved text specification and final previews to implement the
      new or revised UI in the target repository. Do not repeat completed proposal
      work or regenerate approved previews. If feedback or new evidence requires a
-     design change, return to the proposal phase in Plan Mode and obtain approval
+     design change, return to the proposal phase and obtain approval
      of the revised preview and text specification before implementing it.
    - Run the relevant checks and inspect the rendered result against the approved
      acceptance criteria, viewports, and states. Report the changes, verification
@@ -144,8 +138,8 @@ conversation when implementation is within the authorized task.
 
 ## Boundaries
 
-- Never implement the UI design during the Plan Mode proposal phase.
-- Never modify repository-tracked files during the Plan Mode proposal phase.
+- Never implement the UI design during the proposal phase before design approval.
+- Never modify repository-tracked files during the proposal phase before design approval.
 - This skill does not authorize invoking an issue-recording skill or writing to
   GitHub. When an issue workflow is already authorized, contribute the approved
   design record and leave GitHub actions to that workflow.

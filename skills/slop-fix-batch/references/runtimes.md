@@ -14,7 +14,7 @@ For running process output, start with a supported interruptible wait of 10 seco
 - Send START to an active prepared worker with `collaboration.send_message`; use `collaboration.followup_task` for an idle worker. Preserve the actual agent identity through both phases.
 - Read delivered results and bounded `collaboration.list_agents` snapshots. Use `collaboration.wait_agent` for updates and `clock.sleep` for external waits, each at most 30 seconds and capped at the next deadline.
 - Stop with `collaboration.interrupt_agent`, then reconcile actual process, Git and remote effects before releasing a slot or replacing the actor. An unavailable handle is not proof of termination.
-- Attach every published PR to the Codex chat through `attach_artifact`. Observe the attachments independently; publication input uses `attachmentComplete: true` and the attached PR URLs in `attachments`.
+- Register every created or updated PR with `link_pull_request`, passing its full URL immediately after creation or when starting work on an existing PR. Register every layer of a stack. Before completing publication, call `list_thread_pull_requests` and link any missing PR from this batch, then query again to verify it. Pass this tool policy to `$create-pr`; do not use or require `attach_artifact`. Publication input uses `attachmentComplete: true` only after the list confirms every expected PR, and stores those verified URLs in `attachments`. A failed link or incomplete list remains unverified; report it without creating another PR.
 
 Role models and standard reasoning efforts remain unchanged; simple investigation/implementation uses medium effort as recorded before creation. `fork_turns: "none"` requires a complete first-message handoff.
 

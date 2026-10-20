@@ -153,7 +153,7 @@ export function renderHandoff(input) {
   const spawnTool = runtime === 'claude-code' ? 'Agent' : 'collaboration.spawn_agent';
   const attachmentPolicy = runtime === 'claude-code'
     ? 'Codex chat attachment is not applicable. Record attachmentStatus: "not-applicable" and attachments: []; report verified PR URLs. Do not claim an attachment succeeded.'
-    : 'Verify Codex chat attachment for every published PR.';
+    : 'Use link_pull_request with the full URL for every created or updated PR, including every stack layer. Verify all expected links with list_thread_pull_requests before completing publication; link missing PRs and query again. Pass this policy to $create-pr; do not use or require attach_artifact. Set attachmentComplete: true and attachments to the verified URLs only after that list confirms them.';
   const roleInstructions = runtime === 'claude-code' ? instructions[input.role].replaceAll('$create-pr', '/create-pr').replaceAll('$slop-fix-batch', '/slop-fix-batch') : instructions[input.role];
   const issueKeys = new Set([...(a.issueKeys ?? []), ...(ledger.groups[a.groupId]?.issues ?? []),
     ...(ledger.stacks[a.stackId]?.groups ?? []).flatMap(id => ledger.groups[id].issues)]);

@@ -1,12 +1,12 @@
 ---
 name: slop-fix-batch
-description: "Fix a fixed batch of open repository issues selected by human-supplied conditions using parallel subagents and scoped stack executors, group related fixes, publish each verified group immediately in dependency-based PR stacks with scoped lower-layer repairs during construction, and directly manage ongoing repairs and conditional whole-stack merging after verified publication. Start only when the human explicitly invokes $slop-fix-batch in Codex or /slop-fix-batch in Claude Code."
+description: "Fix a fixed batch of open repository issues selected by human-supplied conditions using parallel subagents and scoped stack executors, group related fixes, publish each verified group immediately in dependency-based PR stacks with scoped lower-layer repairs during construction, and directly manage ongoing repairs and conditional whole-stack merging after verified publication. Start only when the human explicitly invokes $slop-fix-batch in T3 Chat or /slop-fix-batch in Claude Code."
 disable-model-invocation: true
 ---
 
 # Slop Fix Batch
 
-Start a batch only on an explicit human `$slop-fix-batch` (Codex) or `/slop-fix-batch` (Claude Code) invocation with issue-selection conditions. Loading, editing, testing or planning this skill does not start a batch. Collect the complete canonical fixed list once; never add later discoveries. `$slop-fix-issue` publishes separately and is not a batch worker. Never create implementation or repair sidebar chats.
+Start a batch only on an explicit human `$slop-fix-batch` (T3 Chat) or `/slop-fix-batch` (Claude Code) invocation with issue-selection conditions. Loading, editing, testing or planning this skill does not start a batch. Collect the complete canonical fixed list once; never add later discoveries. `$slop-fix-issue` publishes separately and is not a batch worker. Never create implementation or repair sidebar chats.
 
 The invocation authorizes scoped investigation/implementation, evidence-backed closure of already-resolved issues, verified stacked publication, and conditional management/merging of this batch's ready stacks. The objective is verified merging, not PR creation or merge-request acceptance. Before each new assignment at a safe boundary, process due ready-stack gates, merges and result verification. When selecting a stack for merging, choose the stack with the most currently mergeable PRs first; use existing priorities only to break ties. Count only the merge range allowed by the existing gates, as defined in [scheduling](references/scheduling.md). External CI/review waits permit independent construction.
 
@@ -31,7 +31,7 @@ Large issues or groups should be split into reviewable, coherent PR units when e
 
 ## Shared execution constraints
 
-Record `context.runtime` as `codex` or `claude-code`; an absent field in an old ledger means Codex. Resume that runtime without switching workers. Keep this skill in the coordinator conversation without `context: fork`. Resolve installed dependency/reference paths when needed; attachment requirements follow runtime policy and GitHub verification always applies.
+Record `context.runtime` as `codex` or `claude-code`; an absent field in an old ledger means `codex`. Resume that runtime without switching workers. Keep this skill in the coordinator conversation without `context: fork`. Resolve installed dependency/reference paths when needed; attachment requirements follow runtime policy and GitHub verification always applies.
 
 New execution ledgers activate scoped delegation at an idle pre-dispatch boundary; existing ledgers remain coordinator-only until explicit safe-boundary activation. Use worker-settings.mjs for every new worker, including repairs. Workers start without parent history; pass a compact verified handoff and full evidence file paths. Preserve existing actors' creation settings. No default total concurrency cap is added.
 

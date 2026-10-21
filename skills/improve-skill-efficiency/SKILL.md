@@ -17,7 +17,7 @@ Run the bundled analyzer rather than loading entire histories into model context
 python3 scripts/analyze_history.py --skill TARGET-SLUG --skill-path /absolute/path/to/TARGET-SLUG
 ```
 
-Resolve the script relative to this skill's directory. It opens `~/.t3/userdata/statev2.sqlite` in read-only mode and reads a consistent snapshot of T3 Chat's v2 projections, including archived threads. It does not read Codex rollout logs or legacy T3 tables. Use `--database /path/to/statev2.sqlite` for another T3 data directory. Never rewrite history. Report database/schema errors and omitted evidence; do not silently fall back to provider histories.
+Resolve the script relative to this skill's directory. It opens `~/.t3/userdata/statev2.sqlite` in read-only mode and reads a consistent snapshot of T3 Chat's v2 projections, including archived threads. It does not read provider rollout logs or legacy T3 tables. Use `--database /path/to/statev2.sqlite` for another T3 data directory. Never rewrite history. Report database/schema errors and omitted evidence; do not silently fall back to provider histories.
 
 Use repeatable `--thread EXACT-T3-THREAD-ID` to analyze all retained runs in specific threads. Without it, the helper selects candidate runs from user invocations and tool inputs containing the skill path. Use inclusive `--since YYYY-MM-DD` / `--until YYYY-MM-DD` for recorded dates. Usage is assigned by provider-turn completion time, falling back to start time; a turn that spans the boundary is not split. Evidence is filtered by its own message/item timestamp. Preserve user-specified scope.
 

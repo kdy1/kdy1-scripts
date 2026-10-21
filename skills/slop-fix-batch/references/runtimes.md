@@ -1,6 +1,6 @@
 # Runtime tools and attachment policy
 
-Use one runtime for the entire batch. Record `context.runtime: "codex"` or `"claude-code"` at initialization; helpers default only an absent runtime to Codex. An unknown value is an error. Resume the same ledger in its recorded runtime. Do not relabel a ledger or move live actors between runtimes. The runtime selects tools and worker settings, not issue scope, grants, merge authority, checks, or review gates.
+Use one runtime for the entire batch. Record `context.runtime: "codex"` or `"claude-code"` at initialization; helpers default only an absent runtime to `codex`. An unknown value is an error. Resume the same ledger in its recorded runtime. Do not relabel a ledger or move live actors between runtimes. The runtime selects tools and worker settings, not issue scope, grants, merge authority, checks, or review gates.
 
 Before dispatch, verify the tools needed to create, message/resume, observe completion, stop, and wait for workers in the current session. Verify the selected model and effort are available. Read capabilities without launching a batch or test merge. Record actual runtime capacity and nesting restrictions; do not impose another concurrency cap or alter the user's configuration. If a required capability is missing, report the blocker before writes. If only nested delegation is unavailable, return the maintenance repair signal and slot so the coordinator can dispatch that repair directly under the existing ownership rules.
 
@@ -8,7 +8,9 @@ Use the settings returned by `batch-coordinator.mjs prepare` for new execution a
 
 For running process output, start with a supported interruptible wait of 10 seconds; after unchanged results use 20 then at most 30 seconds. Cap it at the earliest relevant deadline; handle completion, failure or required input immediately. Use `batch-coordinator.mjs wait` when computing a duration. Return only changed output/status and evidence paths. No wait timeout by itself triggers an API read or scheduler write, and no background polling loop is added.
 
-## Codex
+## T3 Chat
+
+The existing helpers use `codex` as the runtime key for this tool set. Keep that value in ledgers and command arguments.
 
 - Create with `collaboration.spawn_agent`, passing the helper's `model`, `reasoning_effort`, and `fork_turns`, plus `task_name` and the scoped `message`.
 - Send START to an active prepared worker with `collaboration.send_message`; use `collaboration.followup_task` for an idle worker. Preserve the actual agent identity through both phases.
@@ -28,8 +30,8 @@ Target current Claude Code as described in the official [subagent documentation]
 - Collect completion notifications and worker messages as they arrive. Track every reserved, running, nested and uncertain actor in the ledger. Use status tools only if exposed; `ListAgents` is not a prerequisite and is not universally available. A task's disappearance or a notification without reconciled effects does not free its slot. Use `TaskStop` with the recorded task identity when stopping work, then verify termination and outstanding effects.
 - For waits, use an available interruptible runtime wait capped at 30 seconds and the earliest deadline. If only Bash is available, use one foreground `sleep` command of at most 30 seconds with a bounded timeout, then collect notifications and due work. Never start a background polling loop, schedule a wakeup, or keep a worker alive only to wait for CI/review. A sleep does not authorize another API read.
 - Use `batch-stack.mjs worktree` for execution checkouts at the exact assigned SHA and common Git directory. Pass their absolute paths to workers; perform file and Git operations explicitly in those paths. Do not request automatic `isolation: "worktree"`, which could create a second checkout from another base. Plan Mode remains read-only and does not run worktree creation.
-- Invoke installed dependencies with Claude's Skill tool by skill name, or read their resolved `SKILL.md` when Skill is unavailable. `$skill-name` in shared references means the dependency, not a requirement for Codex tooling. Pass original human authorization and scope explicitly; dependency loading does not start a new batch.
-- Codex chat attachment does not apply. Report the authenticated, verified PR URLs. Publication input must set `runtime: "claude-code"`, `observed.attachmentStatus: "not-applicable"`, and `observed.attachments: []`, and omit `attachmentComplete`. Do not fabricate successful attachments. This affects only Codex chat artifacts, not GitHub body images or PR identity/content/head/base/stack checks.
+- Invoke installed dependencies with Claude's Skill tool by skill name, or read their resolved `SKILL.md` when Skill is unavailable. `$skill-name` in shared references means the dependency, not a requirement for a particular provider’s tooling. Pass original human authorization and scope explicitly; dependency loading does not start a new batch.
+- T3 Chat PR linking does not apply. Report the authenticated, verified PR URLs. Publication input must set `runtime: "claude-code"`, `observed.attachmentStatus: "not-applicable"`, and `observed.attachments: []`, and omit `attachmentComplete`. Do not fabricate successful attachments. This affects only T3 Chat thread links, not GitHub body images or PR identity/content/head/base/stack checks.
 
 All Claude roles use Sonnet. Standard effort is `high` for investigation, implementation and repair; `medium` for preparation, stack-execution, maintenance and publication; `low` for inventory. Simple investigation/implementation uses medium effort. The settings helper is authoritative. Coordinator settings are unchanged. A resumed worker keeps its creation settings; changing roles with different settings requires a new actor after reconciliation.
 

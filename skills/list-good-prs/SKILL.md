@@ -1,6 +1,6 @@
 ---
 name: list-good-prs
-description: List open pull requests in the current GitHub repository that are CLEAN or UNSTABLE and have a +1 reaction from chatgpt-codex-connector[bot]. Use when the user asks for good or Codex-approved PRs; this skill only reports them and never changes repository state.
+description: List open pull requests in the current GitHub repository that are CLEAN or UNSTABLE and have a +1 reaction from chatgpt-codex-connector[bot]. Use when the user asks for good or bot-approved PRs; this skill only reports them and never changes repository state.
 ---
 
 # List Good PRs
@@ -53,13 +53,13 @@ Reactions on reviews, review comments, and issue comments do not qualify.
            -H 'Accept: application/vnd.github+json' \
            "repos/{owner}/{repo}/issues/${pr_number}/reactions?content=%2B1&per_page=100"
        )"
-       has_codex_plus_one="$(
+       has_bot_plus_one="$(
          jq -r \
            'any(.[][]; .content == "+1" and .user.login == "chatgpt-codex-connector[bot]")' \
            <<< "$reactions"
        )"
 
-       if [[ "$has_codex_plus_one" == "true" ]]; then
+       if [[ "$has_bot_plus_one" == "true" ]]; then
          good_prs+=("$eligible_pr")
        fi
      done <<< "$open_pr_numbers"

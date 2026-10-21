@@ -1,6 +1,6 @@
 # kdy1-scripts
 
-A collection of standalone [Codex skills](https://learn.chatgpt.com/docs/build-skills) for GitHub, product planning, writing, and UI-design workflows. Each directory under [`skills/`](./skills) is a complete skill: its `SKILL.md` contains the workflow instructions and it may include scripts, references, or UI metadata.
+A collection of standalone [T3 Chat skills](./skills) for GitHub, product planning, writing, and UI-design workflows. Each directory under [`skills/`](./skills) is a complete skill: its `SKILL.md` contains the workflow instructions and it may include scripts, references, or UI metadata.
 
 ## Included skills
 
@@ -9,7 +9,7 @@ A collection of standalone [Codex skills](https://learn.chatgpt.com/docs/build-s
 | `add-issue` | Investigate locally by default, inspect logs, repair confirmed regenerable state, and create evidence-backed GitHub issues for confirmed work. |
 | `create-human-reviewed-pr` | Explicitly publish human-reviewed changes as a non-draft PR with AI-use disclosure, a reviewer mention, and known harness, model, and reasoning-effort details. |
 | `create-pr` | Publish changes through a shared PR workflow with verified Closes references for resolved issues and Refs for partial or related work. |
-| `list-good-prs` | List clean or unstable pull requests that were approved by the Codex connector. |
+| `list-good-prs` | List clean or unstable pull requests that were approved by the review bot. |
 | `main-qa` | Explicitly run parallel functional and usability QA with GPT-5.6 Luna `xhigh` subagents and report discovered problems through `$add-issue`. |
 | `manage-stacked-prs` | Modify existing stacked PRs, fix necessary lower-layer causes, and restack and verify only affected upper layers. |
 | `merge-pr` | Squash merge authorized GitHub PRs without overriding the commit subject, then verify the result. |
@@ -25,43 +25,43 @@ A collection of standalone [Codex skills](https://learn.chatgpt.com/docs/build-s
 | `write-prd` | Capture product decisions and create an implementation-ready GitHub issue. |
 | `write-ste` | Automatically apply practical ASD-STE100 clarity principles to technical text while preserving its language and meaning. |
 
-## Install for Codex
+## Install for T3 Chat
 
-Codex discovers a skill when a scanned directory contains its `SKILL.md`. It scans repository skills in `.agents/skills` from the current working directory to the repository root, and user-wide skills in `~/.agents/skills`. Symlinked skill directories are supported. See the official [local skill locations](https://learn.chatgpt.com/docs/build-skills#where-codex-loads-local-skills) reference for the complete precedence rules.
+T3 Chat exposes the skills discovered by the selected provider. Install each skill as a directory containing `SKILL.md` in a location that provider scans. The examples below use `.agents/skills` for project skills and `~/.agents/skills` for user-wide skills; use `.claude/skills` or `~/.claude/skills` for Claude Code.
 
-After installing or updating a skill, Codex normally detects it automatically. Restart Codex if it does not appear.
+After installing or updating a skill, check that it appears in T3 Chat for the selected provider. Restart the session if it does not appear.
 
 ### Quickest option: `npx skills`
 
 The [`skills` CLI](https://www.skills.sh/docs/cli) recognizes the skills in this repository. Run it from the repository where you want project-scoped skills installed:
 
 ```sh
-# Install one skill for Codex in the current project.
-npx skills add kdy1/kdy1-scripts --agent codex --skill write-prd
+# Install one skill for T3 Chat in the current project.
+npx skills add kdy1/kdy1-scripts --skill write-prd
 
-# Install every skill for Codex in the current project.
-npx skills add kdy1/kdy1-scripts --agent codex --skill '*'
+# Install every skill for T3 Chat in the current project.
+npx skills add kdy1/kdy1-scripts --skill '*'
 ```
 
 Add `--global` to install for the current user instead of the current project:
 
 ```sh
-npx skills add kdy1/kdy1-scripts --agent codex --global --skill '*'
+npx skills add kdy1/kdy1-scripts --global --skill '*'
 ```
 
 The CLI can list the available skills before installing anything:
 
 ```sh
-npx skills add kdy1/kdy1-scripts --list --agent codex
+npx skills add kdy1/kdy1-scripts --list
 ```
 
-It prompts for the installation method when necessary. Add `--copy` to use independent copies instead of symlinks.
+Select the agent used by your T3 Chat session when prompted. It also prompts for the installation method when necessary. Add `--copy` to use independent copies instead of symlinks.
 
 When installing selected skills, include their skill dependencies. `create-pr` requires `write-ste`. `write-comment` requires `write-ste` for technical comments. `create-human-reviewed-pr`, `slop-fix-issue`, and `slop-fix-batch` require both `create-pr` and its `write-ste` dependency. Installing every skill includes these dependencies. The same rule applies when copying individual skill directories manually.
 
 `slop-fix-batch` directly manages its published PRs and requires `repair-pr`, `manage-stacked-prs`, and `merge-pr` for repairs, alignment, and conditional merging. `repair-pr` uses `manage-stacked-prs` for stacked repairs; stack-edit workflows use the shared coordination helper bundled with `repair-pr`. Include both skills when installing either for stack work.
 
-`slop-fix-batch` also requires subagent controls, isolated Git worktrees, authenticated `gh` access, and the [`github/gh-stack` extension](https://github.com/github/gh-stack). Install the extension separately with `gh extension install github/gh-stack`; the skill checks installed command support and does not silently install or upgrade tools. It uses subagents in the current coordinator conversation and does not create scheduled jobs or repair sidebar chats. Codex uses the existing role settings; Claude Code uses Sonnet with role-specific effort.
+`slop-fix-batch` also requires subagent controls, isolated Git worktrees, authenticated `gh` access, and the [`github/gh-stack` extension](https://github.com/github/gh-stack). Install the extension separately with `gh extension install github/gh-stack`; the skill checks installed command support and does not silently install or upgrade tools. It uses subagents in the current coordinator conversation and does not create scheduled jobs or repair sidebar chats. T3 Chat uses the existing role settings; Claude Code uses Sonnet with role-specific effort.
 
 `manage-stacked-prs` uses authenticated `gh` access and prefers the same `github/gh-stack` extension for existing-stack inspection and scoped restacking. It checks installed command behavior and uses scoped Git replay when the extension cannot preserve the required range or commit boundaries. It does not silently install or upgrade tools.
 
@@ -109,7 +109,7 @@ A copied skill is not updated by `git pull`; copy it again when you want a newer
 
 ## Use Slop Fix Batch in Claude Code
 
-`slop-fix-batch` supports current Claude Code alongside Codex. Use the latest Claude Code with per-invocation subagent `effort`, resumable Agent/SendMessage controls, background execution and TaskStop. Older Claude Code fallbacks are not provided. See the [runtime requirements](skills/slop-fix-batch/references/runtimes.md).
+`slop-fix-batch` supports current Claude Code alongside T3 Chat. Use the latest Claude Code with per-invocation subagent `effort`, resumable Agent/SendMessage controls, background execution and TaskStop. Older Claude Code fallbacks are not provided. See the [runtime requirements](skills/slop-fix-batch/references/runtimes.md).
 
 Copy these six sibling skill directories from this checkout into `.claude/skills/` in the target repository, or into `~/.claude/skills/` for personal use:
 
@@ -127,17 +127,17 @@ In Claude Code, explicitly invoke:
 /slop-fix-batch Fix all open issues labeled bug in the current repository.
 ```
 
-The skill starts only on explicit invocation with selection conditions. It stays in the current conversation and uses Sonnet workers: `high` effort for investigation, implementation and repair; `medium` for preparation, stack execution, maintenance and publication; `low` for inventory. The coordinator's model is unchanged. Claude reports verified PR URLs and records Codex chat attachment as not applicable. All GitHub verification and conditional merge gates remain required.
+The skill starts only on explicit invocation with selection conditions. It stays in the current conversation and uses Sonnet workers: `high` effort for investigation, implementation and repair; `medium` for preparation, stack execution, maintenance and publication; `low` for inventory. The coordinator's model is unchanged. Claude reports verified PR URLs and records T3 Chat PR linking as not applicable. All GitHub verification and conditional merge gates remain required.
 
 ## Verify and invoke a skill
 
-In Codex CLI or the IDE extension, use `/skills` to inspect discovered skills, then explicitly invoke one with `$`:
+In T3 Chat, select a skill from the composer or explicitly invoke it by name. For providers that use `$` invocation:
 
 ```text
 $write-prd
 ```
 
-The ChatGPT desktop app also shows standalone skills in its Skills sidebar. Several skills in this repository intentionally require explicit invocation, so invoking them by name is the reliable way to start their workflows.
+Several skills in this repository require explicit invocation. Select or name the skill in T3 Chat to start its workflow; Claude Code uses `/skill-name` syntax.
 
 `create-pr` applies automatically when an authorized task includes PR creation, and can also be invoked as `$create-pr`. Other skills must invoke it for their PR publishing step. `slop-fix-issue` passes its resolved issue and validation results; `create-human-reviewed-pr` passes its human-review disclosure and source-preservation constraint. The shared skill owns publishing, reuse, verification, and attachment. PR titles and bodies follow an explicit user language request first, then an explicit repository language requirement, and otherwise default to English. Conversation language and existing PR language do not change that default. Required fixed template text and unrelated existing PR content are preserved. It explicitly invokes `write-ste` with the selected language while preserving templates, disclosures, issue references, and validation status. It writes and verifies Conventional Commits PR titles that summarize the full change set, with optional scope and a `!` marker for breaking changes, and verifies the selected language for new or revised title and body prose. It requires standalone `Closes` lines in the PR body for fully resolved issues and `Refs` lines for partial or related work.
 
@@ -184,11 +184,11 @@ $slop-maintain-repo-prs
 
 Repository mode uses `repo:<owner/repo> is:pr is:open author:@me base:<current-default-branch>` on the resolved GitHub host, including draft PRs, and records the authenticated author for subsequent scans. One heartbeat scans every matching PR on every pass, including previously repaired PRs. The interval is configurable: a new watch defaults to five minutes, while resuming preserves its existing cadence. There is no default repair concurrency cap; only user/app limits apply, with one preparing/running repair per registered stack.
 
-Confirmed merge conflicts, current-head CI failures, or unresolved, non-outdated Codex bot review threads trigger a one-shot `$repair-pr` invocation in a dedicated GPT-5.6 Luna worktree chat with `xhigh` reasoning effort. Healthy PRs, pending checks, and missing approvals alone do not create repair chats. The coordinator prevents overlapping repairs, reconciles uncertain effects, and corrects failed attempts before retrying a remaining verified repair signal. Successful repairs are repeated only for a new problem or relevant changed evidence, including a new review on the same head. After capturing a successful repair's results, it archives the repair chat without waiting for the PR to merge or follow-up CI to finish. Failed, uncertain, and input-waiting chats remain open; the coordinator and Git worktrees remain available.
+Confirmed merge conflicts, current-head CI failures, or unresolved, non-outdated review-bot threads trigger a one-shot `$repair-pr` invocation in a dedicated GPT-5.6 Luna worktree chat with `xhigh` reasoning effort. Healthy PRs, pending checks, and missing approvals alone do not create repair chats. The coordinator prevents overlapping repairs, reconciles uncertain effects, and corrects failed attempts before retrying a remaining verified repair signal. Successful repairs are repeated only for a new problem or relevant changed evidence, including a new review on the same head. After capturing a successful repair's results, it archives the repair chat without waiting for the PR to merge or follow-up CI to finish. Failed, uncertain, and input-waiting chats remain open; the coordinator and Git worktrees remain available.
 
 `repair-pr` includes read-only preflight, versioned repair sessions, current-head Actions log collection, one-shot ordinary-PR publication, and post-publication thread handling. Sessions record separate repair commits, validation revisions, and external-write outcomes outside tracked source. Interrupted writes are reconciled against GitHub before another operation; uncertain requests are not blindly retried. Stack replay/publication remains owned by `manage-stacked-prs`, using the existing shared token and pre-change boundaries. See [repair session commands](skills/repair-pr/references/repair-session.md) for CLI arguments, record formats, and recovery.
 
-`repair-pr` and `slop-maintain-repo-prs` report routine repair progress and results in Codex chats without posting PR comments or reviews by default. Other comments require an explicit human request, preserved with its scope in the coordinator record and heartbeat; it is not appended to repair prompts. Objectively incorrect bot findings are the exception: a concise English explanation with concrete evidence may be posted in the original inline thread. After a successful final push, or when no push is needed, those threads must be resolved even if the optional reply is omitted or fails. Uncertain findings remain unresolved, and reply or resolution failures are reported in chat. This policy applies to PR repairs; `review-full` publication and issue-comment workflows retain their own policies.
+`repair-pr` and `slop-maintain-repo-prs` report routine repair progress and results in T3 Chat conversations without posting PR comments or reviews by default. Other comments require an explicit human request, preserved with its scope in the coordinator record and heartbeat; it is not appended to repair prompts. Objectively incorrect bot findings are the exception: a concise English explanation with concrete evidence may be posted in the original inline thread. After a successful final push, or when no push is needed, those threads must be resolved even if the optional reply is omitted or fails. Uncertain findings remain unresolved, and reply or resolution failures are reported in chat. This policy applies to PR repairs; `review-full` publication and issue-comment workflows retain their own policies.
 
 To fix matching issues through grouped stacked PRs, explicitly invoke:
 
@@ -215,6 +215,6 @@ Shared stack ownership lives outside tracked source under the repository’s Git
 - `create-human-reviewed-pr` starts only when the human directly invokes `$create-human-reviewed-pr`; invoking it declares that the current changes have been human-reviewed. It resolves the reviewer from an explicit username or the target GitHub host's authenticated account and includes execution details only when known. Install `create-pr` alongside it; it prepares the disclosure, then invokes `create-pr` for verified non-draft publication while preserving reviewed source. Missing publication dependencies are reported without a direct-publishing fallback.
 - `slop-fix-issue` starts on a human's explicit invocation or an authorized issue handoff from another explicitly invoked skill. Authorized coordinators can assign an issue with only `$slop-fix-issue <issue_url>`; delegation history stays in the coordinator record. It generates AI slop to implement one issue while retaining required verification. It closes already-resolved issues as completed after posting and confirming an evidence comment, then stops without selecting another issue or creating a PR or automation. Otherwise it invokes `create-pr` to publish, verify, and attach a non-draft PR with a Closes reference and stops. Install `create-pr` alongside it; unavailable publication dependencies block implementation of unresolved issues, but are not needed for evidence-backed closure. It uses authenticated `gh` and the desktop app's PR attachment tool; PR-maintenance skills and heartbeat tools are not dependencies. Existing PRs are reconciled and reported without replacement or maintenance, and no CI, review, or merge loop follows PR creation.
 - `slop-maintain-repo-prs` starts on explicit human invocation and watches only the authenticated author's PRs targeting the current default branch. It continues until stopped, including when there are no eligible PRs or all are healthy, and never merges or enables auto-merge. Install `repair-pr` and `manage-stacked-prs` alongside it. It owns scanning, one heartbeat, repair assignments, and result collection. Repairs use isolated-worktree subagents with `model: "gpt-5.6-luna"`, `reasoning_effort: "xhigh"`, and `fork_turns: "none"`; no model or reasoning fallback is allowed. Only explicit user concurrency limits and runtime capacity apply. Complete inventories, current repair signals, and ownership must be verified before dispatch. Incomplete reads remain blockers. Stopping the watch prevents new assignments; running repairs retain their actual state. Local scheduled work requires the computer and app to remain running. Editing the skill does not start a watch or migrate saved automations. Batch maintenance belongs to `slop-fix-batch`.
-- Do not place the repository itself directly inside `~/.agents/skills`: Codex expects each immediate child there to be a skill directory containing `SKILL.md`. Clone the repository elsewhere and link or copy its individual directories from `skills/`.
-- Avoid installing two different directories with the same skill `name`. Codex does not merge duplicate skill names; both may appear in the selector.
+- Do not place the repository itself directly inside `~/.agents/skills`: Each immediate child must be a skill directory containing `SKILL.md`. Clone the repository elsewhere and link or copy its individual directories from `skills/`.
+- Avoid installing two different directories with the same skill `name`. Duplicate names may appear in the skill selector; do not rely on them being merged.
 - Review a skill's `SKILL.md` and any included scripts before installing it, especially when it can run commands or access external services.

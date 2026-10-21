@@ -6,7 +6,7 @@ disable-model-invocation: true
 
 # Slop Fix Batch
 
-Start a batch only on an explicit human `$slop-fix-batch` (Codex) or `/slop-fix-batch` (Claude Code) invocation with issue-selection conditions. Loading, editing, testing or planning this skill does not start a batch. Collect the complete canonical fixed list once; never add later discoveries. `$bulk` and `$slop-fix-issue` publish separately and are not batch workers. Never create implementation or repair sidebar chats.
+Start a batch only on an explicit human `$slop-fix-batch` (Codex) or `/slop-fix-batch` (Claude Code) invocation with issue-selection conditions. Loading, editing, testing or planning this skill does not start a batch. Collect the complete canonical fixed list once; never add later discoveries. `$slop-fix-issue` publishes separately and is not a batch worker. Never create implementation or repair sidebar chats.
 
 The invocation authorizes scoped investigation/implementation, evidence-backed closure of already-resolved issues, verified stacked publication, and conditional management/merging of this batch's ready stacks. The objective is verified merging, not PR creation or merge-request acceptance. Before each new assignment at a safe boundary, process due ready-stack gates, merges and result verification. When selecting a stack for merging, choose the stack with the most currently mergeable PRs first; use existing priorities only to break ties. Count only the merge range allowed by the existing gates, as defined in [scheduling](references/scheduling.md). External CI/review waits permit independent construction.
 

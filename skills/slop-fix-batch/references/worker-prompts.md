@@ -141,7 +141,7 @@ or a final tip. Preserve required execution times. If preparation findings exist
 them with relevant prerequisite changes at the assigned starting SHA. Use the implementation role’s explicit worker settings. Ask the coordinator before changing the
 assignment or using nested slots. Never modify another worker's refs/checkout,
 publish a PR, change GitHub issues/comments, or run gh stack. Do not invoke
-$slop-fix-issue or $bulk: this assignment ends at implementation handoff.
+$slop-fix-issue: this assignment ends at implementation handoff.
 
 Skip direct app launches, manual reproduction, real-environment validation, and
 screenshot capture for validation even when required by an issue. Automated tests,

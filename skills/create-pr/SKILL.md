@@ -5,7 +5,7 @@ description: "Publish intended changes as a GitHub pull request with verified Cl
 
 # Create PR
 
-Own the shared PR publishing workflow. Other skills that create PRs must invoke this skill for publication instead of copying its steps or creating PRs directly.
+Own the shared PR publishing workflow in T3 Chat. Other skills that create PRs must invoke this skill for publication instead of copying its steps or creating PRs directly.
 
 Start for a human request to create a PR, or a publishing handoff within an already human-authorized task. Automatic selection does not authorize publishing from ordinary code changes. Loading, editing, or planning this skill does not start publication. A handoff carries the original human request, delegation context, and intended scope; it does not expand that scope.
 
@@ -32,7 +32,7 @@ Resolve missing facts through the checkout and authenticated GitHub reads. Ask o
 
 Read [references/scripts.md](references/scripts.md) for the manifest schema, commands, output states, and recovery procedure. Use `scripts/create-pr.mjs` for deterministic collection, content checks, publication, reconciliation, and verification. Resolve the script to an absolute path before invocation.
 
-Keep authorization, intended scope, repository guidance, issue completion, prose/language, validation coverage, and screenshot selection in this skill. Scripts do not establish these facts. Commit and push only the agent-selected changes before setting the manifest's exact `headSha`. In T3 Chat, register PRs with `link_pull_request` and verify their thread links with `list_thread_pull_requests`; do not use or require `attach_artifact`. In Claude Code, report the verified GitHub URL and mark T3 Chat thread linking not applicable; do not require a T3 Chat tool. GitHub body image handling is unchanged.
+Keep authorization, intended scope, repository guidance, issue completion, prose/language, validation coverage, and screenshot selection in this skill. Scripts do not establish these facts. Commit and push only the agent-selected changes before setting the manifest's exact `headSha`. In T3 Chat, register PRs with `link_pull_request` and verify their thread links with `list_thread_pull_requests`; do not use or require `attach_artifact`. GitHub body image handling is unchanged.
 
 ## Prepare the Publication
 

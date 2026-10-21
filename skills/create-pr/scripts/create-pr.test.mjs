@@ -7,7 +7,7 @@ import { content, choose, preserve, GitHub } from './core.mjs';
 import { publish, reconcile, verify } from './create-pr.mjs';
 
 const sha = 'a'.repeat(40);
-const plan = () => ({ version: 1, host: 'github.com', repository: 'owner/repo', headRepository: 'owner/repo', headBranch: 'codex/change', baseBranch: 'main', headSha: sha, title: 'fix: handle input', draft: false, language: 'English', issues: [{ repository: 'owner/repo', number: 12, kind: 'closes' }], requiredText: ['Validation: not performed.'], attachments: [] });
+const plan = () => ({ version: 1, host: 'github.com', repository: 'owner/repo', headRepository: 'owner/repo', headBranch: 't3/change', baseBranch: 'main', headSha: sha, title: 'fix: handle input', draft: false, language: 'English', issues: [{ repository: 'owner/repo', number: 12, kind: 'closes' }], requiredText: ['Validation: not performed.'], attachments: [] });
 const body = 'Handle input.\n\nValidation: not performed.\n\nCloses #12\n';
 const pr = p => ({ ...p, url: 'https://github.com/owner/repo/pull/1', state: 'OPEN', body });
 function fake(p, { partial = false, initial = null } = {}) {

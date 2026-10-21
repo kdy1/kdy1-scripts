@@ -41,7 +41,7 @@ export function verify(p, body, actual, { defaultBranch, attachments = [] } = {}
   return { version: 1, status: errors.length ? 'mismatch' : 'verified', complete: !errors.length, errors, pr: actual, attachments: outcomes,
     automaticClosure: defaultBranch === p.baseBranch,
     limitations: defaultBranch !== p.baseBranch && p.issues.some(x => x.kind === 'closes') ? ['Base is not the default branch; automatic issue closure will not occur'] : [],
-    manualChecks: ['Selected language and factual meaning', 'Preservation of unrelated body prose', 'Screenshot relevance and captured revision', 'Local validation coverage', 'Codex link_pull_request links verified with list_thread_pull_requests (not applicable in Claude Code)'] };
+    manualChecks: ['Selected language and factual meaning', 'Preservation of unrelated body prose', 'Screenshot relevance and captured revision', 'Local validation coverage', 'T3 Chat link_pull_request links verified with list_thread_pull_requests'] };
 }
 
 export function reconcile(journal, client = new GitHub(journal.plan)) {

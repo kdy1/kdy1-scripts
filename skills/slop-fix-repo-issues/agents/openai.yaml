@@ -1,6 +1,0 @@
-interface:
-  display_name: "Slop Fix Repo Issues"
-  short_description: "Fix matching repo issues once through PR creation"
-
-policy:
-  allow_implicit_invocation: false

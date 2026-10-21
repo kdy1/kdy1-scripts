@@ -1,143 +1,111 @@
 #!/usr/bin/env python3
-"""Read Codex rollout logs; emit bounded evidence and explicitly scoped API estimates."""
+"""Read T3 Chat's v2 SQLite projections without modifying session history."""
 import argparse
 import contextlib
 import datetime as dt
 import json
 import math
-import os
 from pathlib import Path
 import re
-import subprocess
+import sqlite3
 import sys
 
 FIELDS = ('input_tokens', 'cached_input_tokens', 'cache_write_input_tokens', 'output_tokens')
+PREFIX = 'orchestration_v2_projection_'
 
 
 @contextlib.contextmanager
-def lines(path):
-    if path.suffix != '.zst':
-        with path.open(encoding='utf-8') as stream:
-            yield stream
-        return
-    # Stream decompression; never rewrite the user's history.
-    proc = subprocess.Popen(['zstd', '-dc', '--', str(path)], stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE, text=True, encoding='utf-8')
+def connect(path):
+    # mode=ro avoids creating a database at a misspelled path. Keep WAL visibility.
+    db = sqlite3.connect(path.expanduser().resolve().as_uri() + '?mode=ro', uri=True)
+    db.row_factory = sqlite3.Row
     try:
-        yield proc.stdout
-        proc.stdout.close()
-        error = proc.stderr.read()
-        if proc.wait():
-            raise ValueError('zstd failed: ' + error[:300])
+        db.execute('PRAGMA query_only = ON')
+        db.execute('BEGIN')  # One consistent snapshot across all projections.
+        yield db
     finally:
-        if proc.poll() is None:
-            proc.kill()
-            proc.wait()
-        proc.stderr.close()
+        db.close()
 
 
-def content_text(payload):
-    content = payload.get('content', [])
-    if isinstance(content, str):
-        return content
-    return '\n'.join(x.get('text', '') for x in content if isinstance(x, dict))
+def rows(db, table, thread=None):
+    query = 'SELECT * FROM ' + PREFIX + table
+    params = ()
+    if thread is not None:
+        query += ' WHERE thread_id = ?'
+        params = (thread,)
+    yield from db.execute(query, params)
 
 
-def evidence(payload, skill, skill_path):
-    """Catalog availability is not invocation. Tool path matches are candidates only."""
-    kind = payload.get('type')
-    if kind == 'message' and payload.get('role') == 'user':
-        text = content_text(payload)
-        # Environment skill catalogs and quoted logs must not become positive evidence.
-        text = re.sub(r'<(?:skills_instructions|INSTRUCTIONS)>.*?</(?:skills_instructions|INSTRUCTIONS)>', '', text, flags=re.S)
+def payload(row, warnings, table):
+    try:
+        value = json.loads(row['payload_json'])
+        if not isinstance(value, dict):
+            raise ValueError('expected object')
+        return value
+    except (ValueError, TypeError) as exc:
+        warnings.append({'table': PREFIX + table, 'error': str(exc)[:200]})
+        return {}
+
+
+def body(value):
+    return value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
+
+
+def evidence(text, skill, skill_path, user=False, match_text=()):
+    if user:
+        text = re.sub(r'<(?:skills_instructions|INSTRUCTIONS|skill)>.*?</(?:skills_instructions|INSTRUCTIONS|skill)>', '', text, flags=re.S)
         text = re.sub(r'```.*?```', '', text, flags=re.S)
         if re.search(r'\$' + re.escape(skill) + r'(?![\w-])', text):
-            return 'explicit_invocation_candidate', text
-    if kind in ('function_call', 'custom_tool_call'):
-        text = str(payload.get('arguments', payload.get('input', '')))
-        paths = (skill_path, str(Path(skill_path).resolve()), '/' + skill + '/SKILL.md')
-        if any(p and p in text for p in paths):
-            return 'skill_path_tool_candidate', text
+            return 'explicit_invocation_candidate'
+    elif any(p in text for p in (skill_path, str(Path(skill_path).resolve()), '/' + skill + '/SKILL.md')):
+        return 'skill_path_tool_candidate'
+    if any(term in text for term in match_text):
+        return 'text_match_candidate'
     return None
 
 
-def read_session(path, skill, skill_path, excerpt_chars):
-    modern, legacy, hits, actions = [], [], {}, {}
-    model, turn, session = None, 'unknown', path.name
-    total = None
-    warnings = []
-    with lines(path) as stream:
-        for number, line in enumerate(stream, 1):
-            try:
-                row = json.loads(line)
-            except (ValueError, TypeError):
-                warnings.append('malformed JSON at line %s' % number)
-                continue
-            p = row.get('payload') or {}
-            kind = row.get('type')
-            stamp = row.get('timestamp', '')
-            if kind == 'session_meta':
-                session = p.get('id', session)
-            if kind == 'turn_context':
-                model = p.get('model')
-                turn = p.get('turn_id', turn)
-            if kind == 'response_item':
-                found = evidence(p, skill, skill_path)
-                if found:
-                    entries = hits.setdefault(turn, [])
-                    if len(entries) < 10:
-                        entries.append({'line': number, 'timestamp': stamp, 'kind': found[0],
-                                        'excerpt': found[1][:excerpt_chars]})
-                if p.get('type') in ('function_call', 'custom_tool_call', 'function_call_output', 'custom_tool_call_output'):
-                    entries = actions.setdefault(turn, [])
-                    if len(entries) < 40:
-                        body = str(p.get('arguments', p.get('input', p.get('output', ''))))
-                        entries.append({'line': number, 'type': p['type'], 'name': p.get('name'),
-                                        'characters': len(body), 'excerpt': body[:excerpt_chars]})
-            if kind == 'token_usage_record':
-                usage = p.get('usage')
-                if usage:
-                    modern.append({'session': session, 'turn': p.get('turn_id', turn),
-                                   'response_id': p.get('response_id'), 'model': p.get('model') or model,
-                                   'timestamp': stamp, 'line': number, 'usage': usage, 'source': 'usage'})
-            if kind == 'event_msg' and p.get('type') == 'token_count':
-                info = p.get('info') or {}
-                current = info.get('total_token_usage')
-                if not current:
-                    continue
-                # Repeated cumulative snapshots are not new calls. Missing baseline after a
-                # reset is not interpreted as the entire historical total being one call.
-                reset = total is not None and any(current.get(k, 0) < total.get(k, 0) for k in FIELDS)
-                if total is None or reset:
-                    usage = info.get('last_token_usage')
-                    if usage and any(current.get(k, 0) > usage.get(k, 0) for k in FIELDS):
-                        warnings.append('history before first/reset snapshot omitted at line %s' % number)
-                    if not usage:
-                        warnings.append('unpriced initial/reset cumulative snapshot at line %s' % number)
-                else:
-                    usage = {k: current[k] - total.get(k, 0) for k in FIELDS if k in current}
-                initial_snapshot = total is None or reset
-                total = current
-                if usage and any(usage.get(k, 0) for k in FIELDS):
-                    legacy.append({'session': session, 'turn': turn, 'response_id': None,
-                                   'model': model, 'timestamp': stamp, 'line': number,
-                                   'usage': usage, 'source': 'cumulative_delta',
-                                   'precision': 'last_call' if initial_snapshot else 'snapshot_interval'})
-    modern_turns = {c['turn'] for c in modern}
-    calls = modern + [c for c in legacy if c['turn'] not in modern_turns]
-    return {'session': session, 'path': str(path), 'calls': calls, 'hits': hits,
-            'actions': actions, 'warnings': warnings}
+def in_range(stamp, since, until):
+    return bool(stamp) and (not since or stamp[:10] >= since) and (not until or stamp[:10] <= until)
 
 
-def price_call(call, prices):
-    """Price disjoint input buckets; price files must specify cache-write semantics."""
+def item_sample(row, p, limit):
+    result = {k: row[k] for k in ('turn_item_id', 'run_id', 'provider_turn_id', 'type', 'status')}
+    for k in ('input', 'output'):
+        if k in p:
+            text = body(p[k])
+            result[k + '_characters'] = len(text)
+            result[k + '_excerpt'] = text[:limit]
+    result['tool_name'] = p.get('toolName')
+    return result
+
+
+def turn_record(row, p, selection):
+    # tokenUsage describes the context window / latest response, not total turn cost.
+    u = p.get('turnTokenUsage') or {}
+    mapping = dict(inputTokens='input_tokens', cachedInputTokens='cached_input_tokens',
+                   cacheCreationTokens='cache_write_input_tokens', outputTokens='output_tokens')
+    return {'provider_turn_id': row['provider_turn_id'], 'provider_thread_id': row['provider_thread_id'],
+            'node_id': row['node_id'], 'model': selection.get('model'),
+            'provider_instance_id': selection.get('instanceId'),
+            'model_options': selection.get('options', []),
+            'timestamp': row['completed_at'] or row['started_at'],
+            'usage_status': u.get('usageStatus', 'unavailable'),
+            'usage_scope': u.get('usageScope'), 'has_subagents': u.get('hasSubagents'),
+            'source': 'provider_turn_total',
+            'usage': {dest: u[src] for src, dest in mapping.items() if src in u}}
+
+
+def price_turn(call, prices):
+    """T3 turn totals include cache reads/writes in input and reasoning in output."""
     rule = prices.get('models', {}).get(call['model']) if prices else None
     if not rule:
         return None, 'model price unavailable'
+    if call.get('usage_status') != 'complete':
+        return None, 'turn usage incomplete or unavailable'
     usage = call['usage']
     if any(k not in usage for k in ('input_tokens', 'cached_input_tokens', 'output_tokens')):
         return None, 'usage fields missing'
-    if any(not isinstance(usage.get(k, 0), (int, float)) or usage.get(k, 0) < 0 for k in FIELDS):
+    if any(not valid_count(usage.get(k, 0)) for k in FIELDS):
         return None, 'invalid token counts'
     if not rule.get('source') or not prices.get('as_of') or not rule.get('basis'):
         return None, 'price source, date, or basis missing'
@@ -145,122 +113,192 @@ def price_call(call, prices):
     writes = usage.get('cache_write_input_tokens', 0)
     if cached > inp:
         return None, 'cached input exceeds input'
-    if writes and rule.get('cache_write_in_input') not in (True, False):
-        return None, 'cache-write accounting unknown'
-    uncached = inp - cached - (writes if rule.get('cache_write_in_input') else 0)
+    uncached = inp - cached - writes
     if uncached < 0:
         return None, 'overlapping input buckets'
     rates = rule.get('usd_per_million', {})
     if any(not isinstance(v, (int, float)) or not math.isfinite(v) or v < 0 for v in rates.values()):
         return None, 'invalid rates'
-    if 'cache_write' in rates and rates['cache_write'] and 'cache_write_input_tokens' not in usage:
+    if 'cache_write_input_tokens' not in usage:
         return None, 'cache-write usage unavailable'
     buckets = {'input': uncached, 'cached_input': cached, 'cache_write': writes, 'output': out}
     if any(v and k not in rates for k, v in buckets.items()):
         return None, 'required rate missing'
-    multipliers = {}
-    long = rule.get('long_context')
-    if long:
-        if call.get('source') == 'cumulative_delta' and call.get('precision') != 'last_call':
-            return None, 'request boundaries unavailable for long-context pricing'
-        if long.get('scope') != 'request':
-            return None, 'session-level long-context pricing requires manual calculation'
-        if inp > long['threshold']:
-            multipliers = long['multipliers']
-    value = sum(v * rates.get(k, 0) * multipliers.get(k, 1) for k, v in buckets.items()) / 1_000_000
+    if rule.get('long_context'):
+        return None, 'request boundaries unavailable for long-context pricing'
+    value = sum(v * rates.get(k, 0) for k, v in buckets.items()) / 1_000_000
     return value, None
 
 
+def valid_count(value):
+    return (isinstance(value, (int, float)) and not isinstance(value, bool)
+            and math.isfinite(value) and value >= 0)
+
+
 def summarize(calls, prices):
-    result = {'calls': len(calls), 'tokens': {k: 0 for k in FIELDS}, 'priced_calls': 0,
-              'unpriced_calls': 0, 'known_cost_usd': 0.0, 'unpriced_reasons': {}}
+    result = {'provider_turns': len(calls), 'tokens': {k: 0 for k in FIELDS}, 'priced_turns': 0,
+              'unpriced_turns': 0, 'known_cost_usd': 0.0, 'unpriced_reasons': {}, 'usage_statuses': {},
+              'missing_token_fields': {k: 0 for k in FIELDS}}
     for call in calls:
+        status = call.get('usage_status', 'unavailable')
+        result['usage_statuses'][status] = result['usage_statuses'].get(status, 0) + 1
         for k in FIELDS:
-            result['tokens'][k] += call['usage'].get(k, 0)
-        cost, reason = price_call(call, prices)
+            value = call['usage'].get(k)
+            if value is None:
+                result['missing_token_fields'][k] += 1
+            elif valid_count(value):
+                result['tokens'][k] += value
+        cost, reason = price_turn(call, prices)
         if cost is None:
-            result['unpriced_calls'] += 1
+            result['unpriced_turns'] += 1
             result['unpriced_reasons'][reason] = result['unpriced_reasons'].get(reason, 0) + 1
         else:
-            result['priced_calls'] += 1
+            result['priced_turns'] += 1
             result['known_cost_usd'] += cost
     result['known_cost_usd'] = round(result['known_cost_usd'], 8)
     return result
 
 
-def analyze(paths, skill, skill_path, prices=None, since=None, until=None, top=10, excerpt_chars=600):
-    sessions, errors, seen = [], [], set()
+def analyze(db, skill, skill_path, prices=None, threads=(), since=None, until=None,
+            top=10, excerpt_chars=600, match_text=()):
+    sessions, errors = [], []
+    available = {r['thread_id']: r for r in rows(db, 'threads')}
+    errors.extend({'thread_id': t, 'error': 'thread not found'} for t in threads if t not in available)
     scanned = 0
-    for path in paths:
+    for tid, thread in available.items():
+        if threads and tid not in threads:
+            continue
         scanned += 1
-        try:
-            data = read_session(path, skill, skill_path, excerpt_chars)
-        except (OSError, ValueError, UnicodeError) as exc:
-            errors.append({'path': str(path), 'error': str(exc)[:300]})
-            continue
-        if not data['hits']:
-            continue
-        calls = []
-        for c in sorted(data['calls'], key=lambda x: x['timestamp']):
-            day = c['timestamp'][:10]
-            if (since and day < since) or (until and day > until):
+        warnings, hits, actions = [], {}, {}
+        runs = {r['run_id']: payload(r, warnings, 'runs') for r in rows(db, 'runs', tid)}
+        nodes = {r['node_id']: r['run_id'] for r in rows(db, 'nodes', tid)}
+        # Read each projection once. Messages and user_message turn items mirror one another;
+        # use messages for user evidence and turn items only for tool evidence.
+        for row in rows(db, 'messages', tid):
+            if row['role'] != 'user':
                 continue
-            key = ('response', c['response_id']) if c['response_id'] else (
-                c['session'], c['turn'], c['timestamp'], json.dumps(c['usage'], sort_keys=True))
-            if key in seen:
+            p = payload(row, warnings, 'messages')
+            text = p.get('text', '')
+            kind = evidence(text, skill, skill_path, True, match_text)
+            if kind and in_range(row['created_at'], since, until):
+                entries = hits.setdefault(row['run_id'], [])
+                if len(entries) < 10:
+                    entries.append({'message_id': row['message_id'], 'timestamp': row['created_at'],
+                                    'kind': kind, 'excerpt': text[:excerpt_chars]})
+        for row in rows(db, 'turn_items', tid):
+            if row['type'] not in ('command_execution', 'dynamic_tool'):
                 continue
-            seen.add(key)
-            calls.append(c)
-        related = [c for c in calls if c['turn'] in data['hits']]
-        if not related and (since or until):
+            p = payload(row, warnings, 'turn_items')
+            kind = evidence(body(p.get('input', '')), skill, skill_path, match_text=match_text)
+            if kind and in_range(row['updated_at'], since, until):
+                entries = hits.setdefault(row['run_id'], [])
+                if len(entries) < 10:
+                    entries.append({'turn_item_id': row['turn_item_id'], 'timestamp': row['updated_at'],
+                                    'kind': kind, 'excerpt': body(p.get('input', ''))[:excerpt_chars]})
+            entries = actions.setdefault(row['run_id'], [])
+            if in_range(row['updated_at'], since, until) and len(entries) < 40:
+                entries.append(item_sample(row, p, excerpt_chars))
+        if not hits and not threads:
             continue
-        if not calls and any(x['session'] == data['session'] for x in sessions):
+        records = []
+        for row in rows(db, 'provider_turns', tid):
+            p = payload(row, warnings, 'provider_turns')
+            run_id = nodes.get(row['node_id'])
+            if run_id is None:
+                warnings.append({'provider_turn_id': row['provider_turn_id'], 'error': 'run linkage unavailable'})
+            run = runs.get(run_id, {})
+            # A run's selected model identifies its root turn only. Do not assign it
+            # to native child turns, or to turns whose run linkage was not retained.
+            selection = run.get('modelSelection', {}) if row['node_id'] == run.get('rootNodeId') else {}
+            record = turn_record(row, p, selection)
+            record['run_id'] = run_id
+            if in_range(record['timestamp'], since, until):
+                records.append(record)
+        selected_runs = set(hits) if not threads else set(runs) | set(hits)
+        if since or until:
+            selected_runs &= set(hits) | {r['run_id'] for r in records}
+        selected = [r for r in records if r['run_id'] is not None and r['run_id'] in selected_runs]
+        subagents = []
+        for row in rows(db, 'subagents', tid):
+            if row['run_id'] not in selected_runs:
+                continue
+            p = payload(row, warnings, 'subagents')
+            subagents.append({k: p.get(k) for k in ('id', 'runId', 'childThreadId', 'providerThreadId',
+                                                   'modelSelection', 'status')})
+        if not hits and not selected and (since or until):
             continue
-        sessions.append({'session': data['session'], 'path': data['path'],
-                         'session_usage_in_date_range': summarize(calls, prices),
-                         'candidate_turn_usage': summarize(related, prices),
-                         'models': sorted({c['model'] or 'unknown' for c in calls}),
-                         'candidate_turns': [{'turn': t, 'evidence': h, 'tool_samples': data['actions'].get(t, [])}
-                                             for t, h in data['hits'].items()
-                                             if not (since or until) or any(c['turn'] == t for c in related)],
-                         'call_samples': related[:10], 'warnings': data['warnings']})
-    sessions.sort(key=lambda s: (s['candidate_turn_usage']['known_cost_usd'],
-                                 s['candidate_turn_usage']['tokens']['input_tokens']), reverse=True)
-    return {'skill': skill, 'files_scanned': scanned, 'candidate_sessions': len(sessions),
-            'price_as_of': (prices or {}).get('as_of'),
-            'scope': 'Candidate turns are associated context, not exclusive skill cost. Confirm evidence before editing.',
-            'pricing_basis': (prices or {}).get('models', {}),
+        sessions.append({'thread_id': tid, 'title': thread['title'],
+                         'archived': thread['archived_at'] is not None,
+                         'deleted': thread['deleted_at'] is not None,
+                         'thread_usage_in_date_range': summarize(records, prices),
+                         'selected_run_usage': summarize(selected, prices),
+                         'models': sorted({r['model'] or 'unknown' for r in records}),
+                         'runs': [{'run_id': rid, 'evidence': hits.get(rid, []),
+                                   'tool_samples': actions.get(rid, []),
+                                   'usage': summarize([r for r in selected if r['run_id'] == rid], prices)}
+                                  for rid in sorted(selected_runs, key=lambda x: x or '')],
+                         'turn_samples': selected[:10], 'linked_subagents': subagents,
+                         'warnings': warnings})
+    sessions.sort(key=lambda s: (s['selected_run_usage']['known_cost_usd'],
+                                s['selected_run_usage']['tokens']['input_tokens']), reverse=True)
+    return {'skill': skill, 'threads_scanned': scanned, 'matched_threads': len(sessions),
+            'scope': ('Explicit threads: all retained runs.' if threads else 'Candidate runs: confirm invocation.') +
+                     ' Associated context is not exclusive skill cost. Child threads are not included automatically.',
+            'price_as_of': (prices or {}).get('as_of'), 'pricing_basis': (prices or {}).get('models', {}),
             'sessions': sessions[:top], 'omitted_sessions': max(0, len(sessions) - top), 'errors': errors}
 
 
 def main():
-    p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument('--skill', required=True, help='Exact skill slug')
-    p.add_argument('--skill-path', required=True, help='Target skill directory')
-    p.add_argument('--history-root', action='append', help='Repeatable; defaults to CODEX_HOME sessions and archived_sessions')
-    p.add_argument('--session', action='append', help='Exact session UUID or rollout filename; repeatable')
-    p.add_argument('--since', type=dt.date.fromisoformat)
-    p.add_argument('--until', type=dt.date.fromisoformat)
-    p.add_argument('--prices', type=Path, help='Verified API price JSON; omitted means token-only analysis')
-    p.add_argument('--top', type=int, default=10)
-    p.add_argument('--excerpt-chars', type=int, default=600)
-    args = p.parse_args()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--skill', required=True, help='Exact skill slug')
+    parser.add_argument('--skill-path', required=True, help='Target skill directory')
+    parser.add_argument('--database', type=Path, default=Path.home() / '.t3/userdata/statev2.sqlite')
+    parser.add_argument('--thread', action='append', default=[], help='Exact T3 thread ID; analyzes all its runs; repeatable')
+    parser.add_argument('--match-text', action='append', default=[], help='Additional literal candidate text; repeatable')
+    detail = parser.add_mutually_exclusive_group()
+    detail.add_argument('--item', help='Retrieve one exact turn-item ID instead of analyzing')
+    detail.add_argument('--message', help='Retrieve one exact message ID instead of analyzing')
+    parser.add_argument('--since', type=dt.date.fromisoformat)
+    parser.add_argument('--until', type=dt.date.fromisoformat)
+    parser.add_argument('--prices', type=Path, help='Verified API price JSON; omitted means token-only analysis')
+    parser.add_argument('--top', type=int, default=10)
+    parser.add_argument('--excerpt-chars', type=int, default=600)
+    args = parser.parse_args()
     if args.top < 1 or args.excerpt_chars < 0 or (args.since and args.until and args.since > args.until):
-        p.error('invalid limits or date range')
-    home = Path(os.environ.get('CODEX_HOME', str(Path.home() / '.codex')))
-    roots = [Path(x).expanduser() for x in args.history_root] if args.history_root else [home / 'sessions', home / 'archived_sessions']
-    paths = sorted({f for root in roots for f in root.rglob('*.jsonl*')
-                    if f.name.endswith(('.jsonl', '.jsonl.zst'))})
-    if args.session:
-        paths = [f for f in paths if any(s == f.name or f.name.endswith(s + '.jsonl') or f.name.endswith(s + '.jsonl.zst') for s in args.session)]
-    prices = json.loads(args.prices.read_text()) if args.prices else None
-    report = analyze(paths, args.skill, args.skill_path, prices,
-                     str(args.since) if args.since else None, str(args.until) if args.until else None,
-                     args.top, args.excerpt_chars)
-    report['missing_history_roots'] = [str(r) for r in roots if not r.exists()]
+        parser.error('invalid limits or date range')
+    try:
+        prices = json.loads(args.prices.read_text()) if args.prices else None
+        with connect(args.database) as db:
+            if args.message:
+                row = db.execute('SELECT * FROM ' + PREFIX + 'messages WHERE message_id = ?', (args.message,)).fetchone()
+                if row is None:
+                    raise ValueError('message not found: ' + args.message)
+                warnings = []
+                text = payload(row, warnings, 'messages').get('text', '')
+                report = {'message_id': row['message_id'], 'thread_id': row['thread_id'],
+                          'run_id': row['run_id'], 'role': row['role'], 'text_characters': len(text),
+                          'text_excerpt': text[:args.excerpt_chars], 'warnings': warnings}
+            elif args.item:
+                row = db.execute('SELECT * FROM ' + PREFIX + 'turn_items WHERE turn_item_id = ?', (args.item,)).fetchone()
+                if row is None:
+                    raise ValueError('turn item not found: ' + args.item)
+                warnings = []
+                report = {'item': item_sample(row, payload(row, warnings, 'turn_items'), args.excerpt_chars),
+                          'warnings': warnings}
+            else:
+                report = analyze(db, args.skill, args.skill_path, prices, args.thread,
+                                 args.since.isoformat() if args.since else None,
+                                 args.until.isoformat() if args.until else None,
+                                 args.top, args.excerpt_chars, args.match_text)
+        report['database'] = str(args.database.expanduser().resolve())
+    except (OSError, sqlite3.Error, ValueError) as exc:
+        json.dump({'error': str(exc)}, sys.stderr, ensure_ascii=False)
+        print(file=sys.stderr)
+        return 1
     json.dump(report, sys.stdout, ensure_ascii=False, indent=2)
     print()
+    return 0
 
 
 if __name__ == '__main__':
-    main()
+    sys.exit(main())

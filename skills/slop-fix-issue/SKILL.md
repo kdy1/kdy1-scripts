@@ -57,7 +57,7 @@ For a single PR, invoke `$create-pr` once. For a stack, invoke it for each layer
 
 Pass partial issue completion for lower layers so their bodies use `Refs`. Only the final layer uses `Closes` when its implementation together with its prerequisites satisfies the full issue requirements and the checks support that conclusion. For a single PR, use the same full-versus-partial completion rule. A closing keyword on a non-default base does not automatically close the issue; report this limitation without changing the base or closing the issue manually.
 
-Let `$create-pr` own publication, PR reuse and interrupted-write reconciliation, required `Closes` or `Refs` references and their verification, and attachment. Do not duplicate or bypass its workflow. If any recorded PR is already merged or closed, let its recorded-PR handling report and attach it, then stop without creating a replacement or rebuilding the stack around it. On a publication blocker, report the verified prefix and unfinished layers. Successful publication of one layer returns control here to publish the next planned layer; it does not end an incomplete stack.
+Let `$create-pr` own publication, PR reuse and interrupted-write reconciliation, required `Closes` or `Refs` references and their verification, and attachment. Do not duplicate or bypass its workflow. On a publication blocker, report the verified prefix and unfinished layers. Successful publication of one layer returns control here to publish the next planned layer; it does not end an incomplete stack.
 
 After every planned PR has been published and verified, connect the stack with:
 

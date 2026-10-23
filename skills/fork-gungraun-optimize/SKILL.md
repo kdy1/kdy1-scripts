@@ -1,12 +1,12 @@
 ---
 name: fork-gungraun-optimize
-description: Check and configure Gungraun measurement infrastructure on a personal fork's default branch, then validate optimization PR candidates with profiles and benchmarks from fork CI. Use for ForkGungraunOptimize requests or performance optimization based on a personal fork. Create each upstream PR only after human approval of that candidate.
+description: Update or configure Gungraun measurement infrastructure on a personal fork's default branch on top of the latest upstream code, then validate optimization PR candidates with profiles and benchmarks from fork CI. Use for ForkGungraunOptimize requests or performance optimization based on a personal fork. Create each upstream PR only after human approval of that candidate.
 ---
 
 # Fork Gungraun Optimize
 
 Profile a personal fork with Gungraun and validate optimization candidates.
-First check the measurement infrastructure on the fork's default branch. If it is missing or incomplete, configure it before proceeding.
+First bring the Gungraun CI branch onto the latest upstream code: rebase existing infrastructure or configure it on a fresh upstream base. Integrate and verify it on the fork's default branch before proceeding.
 A request to write or modify this skill is not itself a request to run optimizations.
 
 The reference implementation is Gungraun Optimize in the [PrimJS comparison diff](https://github.com/lynx-family/primjs/compare/develop...kdy1:primjs:develop).
@@ -17,18 +17,21 @@ Do not apply the reference repository's name, default branch, or build commands 
 
 - Check repository instructions and user changes. Use GitHub metadata to verify the authenticated GitHub user, the actual personal fork, its parent upstream, and both repositories' default branches and SHAs. Do not assume that `origin` is the fork.
 - Use the repository specified by the user, if any. Otherwise, identify it from the current repository and its fork relationship to the authenticated user. Ask only if you cannot determine the target among multiple forks. If no fork exists, report that fact and confirm the target.
+- Fetch the verified upstream default branch and record its latest full SHA as the starting upstream revision. Fetch the fork branches as well. Check whether the Gungraun CI branch contains that upstream revision; existing CI files alone do not establish that its code is current.
 - Inspect **files on the fork's remote default branch**. A workflow that exists only on a working branch does not establish readiness.
 - Check the Gungraun harness, representative workloads, runnable fork-only CI, exact base/head comparisons, profiles with symbols, result and metadata artifacts, and parsers. Verify that an actual same-SHA comparison succeeds, not just that the files exist.
 - Reuse adequate infrastructure. If it is partially complete, add only what is missing. Also check existing performance criteria and repository instructions.
 
 ## 2. Configure the required measurement infrastructure
 
-An optimization execution request includes any necessary setup of the fork's measurement infrastructure. Do not ask for approval unnecessarily before completing the preparation that you can do.
+An optimization execution request includes updating the Gungraun CI base to the latest upstream and any necessary setup of the fork's measurement infrastructure. Do not ask for approval unnecessarily before completing the preparation that you can do.
 
-- Create a separate infrastructure branch from the fork's default branch. Configure a Gungraun library or binary benchmark suited to the project, a reproducible build, deterministic inputs and result assertions, a base/head parser, and a fork-only workflow.
-- Validate the infrastructure changes and integrate them into the fork's default branch. Use the repository's normal integration process, respecting protection rules and required approvals. Do not force-push or bypass protections. Do not submit fork CI configuration changes upstream.
+- If infrastructure exists on an older upstream base, create a task-owned copy of its branch and rebase its fork-only infrastructure commits onto the fetched upstream SHA. Resolve conflicts and adapt the harness and workflow to the updated code. Inspect the commit range first; do not replay unrelated fork changes as infrastructure or discard user changes.
+- If infrastructure is absent, or replaying it would carry unrelated history, create a separate infrastructure branch directly from the fetched upstream SHA. Configure or transfer only the required Gungraun library or binary benchmark suited to the project, reproducible build, deterministic inputs and result assertions, base/head parser, and fork-only workflow.
+- Verify that the pinned upstream SHA is an ancestor of the prepared CI branch and review its diff against upstream. Do not treat an unchanged CI branch on an older base as ready. If upstream advances during preparation, refresh the base before the initial validation, then pin it for the optimization session.
+- Validate the infrastructure changes and integrate them into the fork's default branch. Use the repository's normal integration process, respecting protection rules and required approvals. Do not force-push or bypass protections. Publish rebased infrastructure under a new task-owned branch when updating the existing remote branch would require a force-push. After integration, verify that the remote default branch contains the pinned upstream SHA and the intended infrastructure. Do not submit fork CI configuration changes upstream.
 - Before integration into the default branch, you may bootstrap through a push trigger restricted to the infrastructure branch. After integration, verify `workflow_dispatch` on the default branch and the actual artifacts.
-- Compare the same SHA as both base and head. Verify successful completion, identical cases and inputs, the expected comparison results, function names, and self/inclusive costs. Resolve the cause of any differences. A same-SHA comparison is not an optimization result.
+- After the upstream update and infrastructure integration, compare the pinned starting upstream SHA as both base and head using the updated harness/workflow. Repeat this validation after any further base or infrastructure change. Verify successful completion, identical cases and inputs, the expected comparison results, function names, and self/inclusive costs. Resolve the cause of any differences. A same-SHA comparison is not an optimization result.
 - Report actual blockers precisely, such as disabled Actions, permissions, runners, secrets, or protection rules. Request only the necessary user action. Do not evaluate performance until the infrastructure is usable.
 
 ## 3. Select a hypothesis from profiles

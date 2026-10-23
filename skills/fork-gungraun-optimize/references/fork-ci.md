@@ -11,6 +11,21 @@ Inspected revision: `kdy1/primjs@dcb6d7bc964791577e9db3be8e777c27e5e209af`.
 
 Read required reference files at the pinned revision. For other repositories, adapt the build, inputs, repository guard, and artifact metadata. When changing tool syntax or versions, check the official Gungraun and GitHub documentation.
 
+## Update the CI base before measurement
+
+Fetch the verified upstream default branch before preparing CI and record its full SHA. Rebase a task-owned copy of existing infrastructure onto that revision, or create a fresh branch from that revision and transfer or configure only the required infrastructure. Inspect the selected commits and resolve conflicts against the updated build and APIs. Preserve unrelated user changes.
+
+Use Git's ancestry check on the prepared CI revision and again on the fork's remote default revision after integration:
+
+```sh
+git merge-base --is-ancestor "$UPSTREAM_SHA" "$CI_SHA"
+git diff "$UPSTREAM_SHA" "$CI_SHA"
+```
+
+Set both variables to verified full SHAs. An exit status of 1 from the ancestry check means that the CI revision does not contain the pinned upstream revision. Review the diff to ensure that the prepared branch adds the intended infrastructure. Keep the existing no-force-push rule: publish rewritten infrastructure on a new task-owned branch and use the normal integration process.
+
+Once integrated, use the updated workflow/harness to compare `UPSTREAM_SHA` against itself. Record the upstream and infrastructure SHAs separately. Existing successful runs on an older base do not validate the updated setup. Refresh upstream if it advanced during preparation; after validation, keep the starting upstream SHA fixed for candidate comparisons.
+
 ## Choose a harness for the project
 
 Rust libraries can use library benchmarks. Native programs, such as C/C++ programs, can use a small Rust binary benchmark driver to invoke the executable. Verify that Valgrind can measure the actual execution path on the selected Linux runner and target.

@@ -1,0 +1,3 @@
+interface:
+  display_name: "Fork Gungraun Optimize"
+  short_description: "Profile personal forks in CI and prepare approved upstream PRs"

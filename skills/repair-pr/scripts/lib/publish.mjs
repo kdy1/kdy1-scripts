@@ -1,3 +1,4 @@
+import { validateStackState } from './stack-state.mjs';
 import { assert, git, head, readPR, run, prIdentity } from './common.mjs';
 import { preflight } from './preflight.mjs';
 import { loadSession, saveSession, verifySession, ancestor, validations } from './session.mjs';
@@ -53,13 +54,19 @@ export function verifyPublication(s) {
   } else {
     const publication = s.stackPublication;
     assert(publication?.complete === true && Array.isArray(publication.layers) && publication.layers.length === s.stack.initialLayers.length, 'Record complete stack publication before thread writes');
+    const actuals = publication.layers.map(l => readPR(l.pr));
+    const firstOpen = validateStackState(publication.layers, actuals);
     for (let i = 0; i < publication.layers.length; i++) {
       const l = publication.layers[i], before = s.stack.initialLayers[i];
       assert(l.pr === before.pr && l.headRepository === before.headRepository && l.branch === before.branch, 'Stack publication membership/order changed');
-      const actual = readPR(l.pr), identity = prIdentity(l.pr);
-      assert(actual.state === 'OPEN' && actual.headRepository === l.headRepository && actual.headBranch === l.branch && actual.headSha === l.headSha && actual.baseBranch === l.baseBranch, 'Stack remote head or base chain is not verified');
-      assert(l.baseBranch === (i ? publication.layers[i - 1].branch : before.baseBranch), 'Stack base chain differs from recorded boundaries');
-      if (i) { assert(identity.repository === publication.layers[i - 1].headRepository, 'Stack parent repository mismatch'); ancestor(publication.layers[i - 1].headSha, l.headSha); }
+      const actual = actuals[i], identity = prIdentity(l.pr);
+      assert(actual.state === (before.state ?? 'OPEN') && actual.headRepository === l.headRepository && actual.headBranch === l.branch && actual.headSha === l.headSha && actual.baseBranch === l.baseBranch, 'Stack remote head or base chain is not verified');
+      if (i < firstOpen) {
+        assert(l.headSha === before.headSha && l.baseBranch === before.baseBranch && actual.mergeSha === before.mergeSha, 'Merged layer changed during repair');
+        continue;
+      }
+      assert(l.baseBranch === (i > firstOpen ? publication.layers[i - 1].branch : before.baseBranch), 'Stack base chain differs from recorded boundaries');
+      if (i > firstOpen) { assert(identity.repository === publication.layers[i - 1].headRepository, 'Stack parent repository mismatch'); ancestor(publication.layers[i - 1].headSha, l.headSha); }
       if (l.headSha !== before.headSha) validations(publication.validation?.filter(v => v.revision === l.headSha), l.headSha);
     }
   }

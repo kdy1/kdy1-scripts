@@ -1,3 +1,4 @@
+import { validateStackState } from './stack-state.mjs';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { CoordinationStore, canonicalPr } from '../stack-coordination.mjs';
@@ -103,9 +104,8 @@ export function preflight(prArg, ownership = null) {
     if (!report.stack && (relationships.length || pr.baseBranch !== repo.default_branch || catalogContains(report.catalog, pr))) report.blockers.push('Unregistered or uncertain stack: verify full membership and register before mutation');
     report.mode = report.stack ? 'stack' : report.blockers.length ? 'unknown' : 'ordinary';
     if (report.stack) {
-      const index = report.stack.layers.findIndex(l => l.pr === pr.url);
-      const parent = report.stack.layers[index - 1];
-      if (parent && (pr.baseBranch !== parent.branch || parent.headRepository !== pr.repository)) report.blockers.push('Registered stack base relationship mismatch');
+      report.stackStates = report.stack.layers.map(l => l.pr === pr.url ? pr : readPR(l.pr));
+      report.firstOpenLayer = validateStackState(report.stack.layers, report.stackStates);
       if (relationships.some(item => !report.stack.layers.some(l => l.pr === canonicalPr(item.html_url)))) report.blockers.push('GitHub stack relationship missing from registry');
     }
   } catch (error) { report.blockers.push(error.message); }

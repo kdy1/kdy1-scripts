@@ -38,7 +38,7 @@ export function readPR(pr) {
   const data = api(identity.host, `repos/${identity.slug}/pulls/${identity.number}`);
   assert(prIdentity(data.html_url).url === url && data.head?.repo?.full_name && data.base?.repo?.full_name && /^[a-f0-9]{40,64}$/.test(data.head.sha ?? '') && /^[a-f0-9]{40,64}$/.test(data.base.sha ?? '') && typeof data.head.ref === 'string' && typeof data.base.ref === 'string' && ['open', 'closed'].includes(data.state), 'Incomplete or mismatched PR identity');
   assert(`${identity.host}/${data.base.repo.full_name}`.toLowerCase() === identity.repository, 'PR base repository mismatch');
-  return { url, ...identity, state: data.state.toUpperCase(), headBranch: data.head.ref, headSha: data.head.sha,
+  return { url, ...identity, state: data.merged === true ? 'MERGED' : data.state.toUpperCase(), mergeSha: data.merged === true ? data.merge_commit_sha : null, headBranch: data.head.ref, headSha: data.head.sha,
     headRepository: `${identity.host}/${data.head.repo.full_name}`.toLowerCase(), baseBranch: data.base.ref,
     baseSha: data.base.sha, headSlug: data.head.repo.full_name };
 }

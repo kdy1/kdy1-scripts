@@ -40,8 +40,9 @@ export function initSession(file, pr, stackFile) {
       assert(l.pr === registered.pr && l.branch === registered.branch && l.headRepository === registered.headRepository && typeof l.baseBranch === 'string', 'Snapshot identity/order mismatch');
       sha(l.headSha);
       const actual = readPR(l.pr);
-      assert(actual.state === 'OPEN' && actual.headSha === l.headSha && actual.headRepository === l.headRepository && actual.headBranch === l.branch && actual.baseBranch === l.baseBranch, 'Snapshot remote identity/head/base mismatch');
-      if (i > 0) { sha(l.inheritedBoundary); ancestor(l.inheritedBoundary, l.headSha); }
+      assert(['OPEN', 'MERGED'].includes(actual.state) && actual.headSha === l.headSha && actual.headRepository === l.headRepository && actual.headBranch === l.branch && actual.baseBranch === l.baseBranch, 'Snapshot remote identity/head/base mismatch');
+      if (actual.state === 'OPEN' && (i > 0 || l.inheritedBoundary)) { sha(l.inheritedBoundary); ancestor(l.inheritedBoundary, l.headSha); }
+      l.state = actual.state; l.mergeSha = actual.mergeSha;
     }
     assert(snapshot.layers.find(l => l.pr === check.pr.url)?.headSha === check.headSha, 'Snapshot target head is stale');
     stack = { id: check.stack.id, root: check.commonDir, owner: ownership.owner, token: ownership.token, snapshotPath, initialLayers: snapshot.layers };

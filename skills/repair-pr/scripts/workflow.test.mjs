@@ -66,6 +66,7 @@ else if (a[0] === 'api') {
    if(d.headChangesAfterChecks && d.calls.some(x=>x.some(v=>v.includes('/check-runs?')))) item.head.sha='b'.repeat(40);
    emit(item);
  }
+ else if(endpoint.includes('/compare/')) emit({status:d.missingMerge?'diverged':'identical',merge_base_commit:{sha:d.missingMerge?'b'.repeat(40):d.start}});
  else if(endpoint.includes('/check-runs?')) {
    if(d.checksError) fail(d.checksError);
    if(d.checksRaw!==undefined) {process.stdout.write(d.checksRaw);process.exit(0);}
@@ -162,7 +163,7 @@ test('fresh linked repair worktree preserves registered singleton token and sess
   assert.equal(init.status, 0, init.stdout + init.stderr);
   const session = JSON.parse(init.stdout);
   assert.equal(session.stack.token, 'held');
-  assert.deepEqual(session.stack.initialLayers, layers);
+  assert.deepEqual(session.stack.initialLayers, layers.map(l => ({ ...l, state: 'OPEN', mergeSha: null })));
   assert.deepEqual(JSON.parse(readFileSync(join(dir, 'state.json'))).stacks[0].lock, { owner: 'attempt', token: 'held', mode: 'repair' });
 });
 test('missing catalog never excuses unknown native membership, changing identity or other CLI errors', t => {
@@ -448,4 +449,29 @@ test('failed validation still requires the covered revision', t => {
   const before = readFileSync(f.session, 'utf8');
   assert.match(f.record({ validation: { command: 'test', revision: f.start, result: 'failed' } }).stderr, /revision differs/);
   assert.equal(readFileSync(f.session, 'utf8'), before);
+});
+
+test('merged prefix permits session and publication without rewriting retired layers', t => {
+  const f = fixture(t, { catalog: { branches: ['fix'] } });
+  const layers = [
+    { pr: 'https://github.com/owner/repo/pull/2', branch: 'retired', headRepository: 'github.com/owner/repo', headSha: f.start, baseBranch: 'main' },
+    { pr: 'https://github.com/owner/repo/pull/1', branch: 'fix', headRepository: 'github.com/owner/repo', headSha: f.start, baseBranch: 'main', inheritedBoundary: f.start },
+  ];
+  const retired = { html_url: layers[0].pr, state: 'closed', merged: true, merge_commit_sha: f.start, head: { ref: 'retired', sha: f.start, repo: { full_name: 'owner/repo' } }, base: { ref: 'main', sha: f.start, repo: { full_name: 'owner/repo' } } };
+  f.update({ prs: { 2: retired } });
+  const dir = join(f.repo, '.git', 'codex-stack-coordination'); mkdirSync(dir);
+  writeFileSync(join(dir, 'state.json'), JSON.stringify({ version: 1, recoveries: [], stacks: [{ id: 'prefix', phase: 'ready', layers, lock: { owner: 'attempt', token: 'held', mode: 'repair' } }] }));
+  const snapshotPath = join(f.root, 'snapshot.json'), ownership = join(f.root, 'owner.json');
+  writeFileSync(snapshotPath, JSON.stringify({ layers }));
+  writeFileSync(ownership, JSON.stringify({ owner: 'attempt', token: 'held', snapshotPath }));
+  const session = f.ok('session', 'init', '--file', f.session, '--pr', '1', '--stack-file', ownership);
+  assert.equal(session.stack.initialLayers[0].state, 'MERGED');
+  assert.equal(f.record({ stackPublication: { complete: true, targetBoundary: f.start, repairCommits: [], layers, validation: [] } }).status, 0);
+  assert.equal(f.record({ validation: f.validation(f.start) }).status, 0);
+  f.ok('finish-threads', '--session', f.session);
+  f.update({ missingMerge: true });
+  assert.match(f.run('finish-threads', '--session', f.session).stderr, /does not contain/);
+  f.update({ missingMerge: false, prs: { 2: { ...retired, head: { ...retired.head, sha: 'b'.repeat(40) } } } });
+  assert.match(f.run('finish-threads', '--session', f.session).stderr, /remote head/);
+  assert(!f.read().pushCount);
 });

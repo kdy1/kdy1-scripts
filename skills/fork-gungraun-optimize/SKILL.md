@@ -60,17 +60,18 @@ An optimization execution request includes updating the Gungraun CI base to the 
 - Cross-check the run ID, workflow SHA, comparison SHAs, cases and input hashes, features, tool versions, and artifact completion status. Do not select a run merely because it is the most recent. Missing, added, or renamed cases, or different inputs, make the results incomparable.
 - A candidate that depends on previously accepted changes must pass both an incremental comparison against the most recently accepted revision and a cumulative comparison against the initial starting revision. One comparison is sufficient if the bases are identical.
 - Review summaries and raw profiles together. A green CI run with valid results can still fail the performance criteria. Incomplete metadata or failed artifacts are not evidence of a pass.
+- There is no limit on the total number of CI runs. Run additional experiments, comparisons, and retries as needed within the requested scope. The five-experiment limit applies only to active candidate experiments, not the total number of ideas or CI runs.
 
 ## 5. Evaluate performance
 
 For each comparison, calculate `score = sum(frequency * head) / sum(frequency * base)` and the improvement as `1 - score`.
 Use only complete, positive counts. Also check per-case changes, weighted absolute changes, and the geometric mean as a supplementary metric.
 
-- The default criteria are a portfolio improvement of **at least 1%**, regressions of **less than 1%** in every target/related case, and passing correctness checks. Apply these criteria to both incremental and cumulative comparisons.
-- Preserve the reference skill's exceptions. An improvement below 1% may be accepted only if both portfolios improve, the code is equally simple or simpler, and every individual regression is below 1%.
+- The default criteria are a portfolio improvement of **at least 0.1%**, regressions of **less than 1%** in every target/related case, and passing correctness checks. Apply these criteria to both incremental and cumulative comparisons.
+- Preserve the reference skill's exceptions with the updated portfolio threshold. An improvement below 0.1% may be accepted only if both portfolios improve, the code is equally simple or simpler, and every individual regression is below 1%.
 - A regression of at least 1% but less than 3% in a single unprotected case may be considered if both portfolios improve by at least 5% each, the regression does not recur across the workload family, and the profiles explain its cause. Do not label this as a pass under the default criteria. Disclose the exception and tradeoff.
 - A regression of at least 1% in a protected case, or at least 3% in any case, requires user judgment before publication. Reject an incremental portfolio deterioration or widespread regressions. Do not change cases, frequencies, or criteria after seeing the results to make a candidate pass.
-- If results are near a threshold or profiles conflict with aggregate results, repeat the comparison once under identical conditions. If the repeat is inconsistent, withhold a conclusion. Distinguish infrastructure failures from performance regressions. Retry a transient infrastructure failure once, then report the blocker if it persists.
+- If results are near a threshold or profiles conflict with aggregate results, repeat the comparison under identical conditions as needed. Withhold a conclusion while results remain inconsistent. Distinguish infrastructure failures from performance regressions. Retry transient infrastructure failures as needed; report persistent blockers that require external action.
 
 ## 6. Prepare upstream PRs and obtain human approval
 

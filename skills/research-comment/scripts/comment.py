@@ -11,17 +11,21 @@ import re
 import sys
 
 
-def prepare(findings, reviewer, harness, model):
+def prepare(findings, reviewer, harness, model, *, summary):
     reviewer = reviewer.removeprefix("@")
     if not re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?", reviewer) or "--" in reviewer:
         raise ValueError("Provide a GitHub login, not a display name or URL.")
     if not findings.strip():
         raise ValueError("Research findings must not be empty.")
+    if not summary.strip():
+        raise ValueError("Research summary must not be empty.")
     for label, value in (("harness", harness), ("model", model)):
         if not value.strip() or any(char in value for char in "\r\n"):
             raise ValueError(f"Provide a nonempty, single-line {label} value.")
     return (
-        findings.rstrip() + "\n\n"
+        summary.strip() + "\n\n"
+        "<details>\n<summary>Research details</summary>\n\n"
+        + findings.rstrip() + "\n\n</details>\n\n"
         "AI was used to conduct this research. The findings and this comment "
         f"were reviewed and approved by @{reviewer}.\n"
         f"Harness: {harness.strip()}\n"
@@ -43,7 +47,8 @@ def check(body, expected):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
-    draft = commands.add_parser("prepare", help="Append disclosures and write a new UTF-8 comment file.")
+    draft = commands.add_parser("prepare", help="Format a summary, collapsed findings, and disclosures as a UTF-8 comment.")
+    draft.add_argument("--summary", required=True, type=Path)
     draft.add_argument("--findings", required=True, type=Path)
     draft.add_argument("--reviewer", required=True)
     draft.add_argument("--harness", required=True)
@@ -55,7 +60,10 @@ def main():
     args = parser.parse_args()
     try:
         if args.command == "prepare":
-            body = prepare(args.findings.read_text(encoding="utf-8"), args.reviewer, args.harness, args.model)
+            body = prepare(
+                args.findings.read_text(encoding="utf-8"), args.reviewer, args.harness, args.model,
+                summary=args.summary.read_text(encoding="utf-8"),
+            )
             with args.output.open("xb") as output:
                 output.write(body)
         else:

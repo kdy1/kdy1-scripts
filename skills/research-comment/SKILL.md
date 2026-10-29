@@ -17,7 +17,7 @@ Investigate the user's question, prepare an evidence-backed English comment, and
 
 ## Prepare the English comment
 
-Explain the findings, evidence, and remaining uncertainty in clear English. Keep code, identifiers, quotations, and URLs intact. Include one disclosure at the end:
+Start with a concise English summary of the results, including any uncertainty that affects the conclusion. Put the detailed findings, evidence, citations, and remaining questions inside a collapsed `<details>` block with `<summary>Research details</summary>`. Keep code, identifiers, quotations, and URLs intact. Include one disclosure at the end, outside the collapsed block:
 
 ```markdown
 AI was used to conduct this research. The findings and this comment were reviewed and approved by @<username>.
@@ -27,10 +27,11 @@ AI model: <actual research model>
 
 The review statement is proposed text until the human approves it. Preparing the draft does not establish that review occurred.
 
-Use the bundled helper to append this disclosure and fingerprint the exact comment. Keep draft files outside the investigated repository. Replace all example values with resolved facts:
+Use the bundled helper to combine the summary, collapsed details, and disclosure, and fingerprint the exact comment. Keep draft files outside the investigated repository. Replace all example values with resolved facts:
 
 ```sh
 python3 <skill-dir>/scripts/comment.py prepare \
+  --summary /absolute/path/summary.md \
   --findings /absolute/path/findings.md \
   --reviewer github-login \
   --harness 'Actual harness' \
@@ -38,7 +39,7 @@ python3 <skill-dir>/scripts/comment.py prepare \
   --output /absolute/path/comment.md
 ```
 
-The UTF-8 findings file contains only the English research findings and citations, without the disclosure. For multiple contributors, pass a clear list in the harness and model values with enough context to associate each model with its harness. The helper only formats text and checks file identity; it does not verify evidence, English wording, provenance, or human approval.
+The UTF-8 summary file contains the concise result summary. The UTF-8 findings file contains only the detailed English research findings and citations, without the `<details>` wrapper or disclosure. The helper adds the wrapper and keeps the summary and disclosure visible. For multiple contributors, pass a clear list in the harness and model values with enough context to associate each model with its harness. The helper only formats text and checks file identity; it does not verify evidence, English wording, provenance, or human approval.
 
 ## Obtain human review and approval
 

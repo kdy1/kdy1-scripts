@@ -44,10 +44,13 @@ The UTF-8 findings file contains only the English research findings and citation
 
 - Show the complete generated comment in the conversation, including the disclosure, together with the exact destination URL and the helper's SHA-256 digest. Do not present only a file path or a summary.
 - Ask the human to review the findings and approve posting this exact comment to this destination. Wait for explicit approval. An initial request to investigate and comment is not approval of the unseen findings; silence and mode changes are not approval.
+- If approval of the exact comment and destination is still pending, end the turn with the draft and approval request. Do not call any tool that posts the comment until the user replies with explicit approval. Tool execution permissions, automatic approval, and a general instruction to complete the task do not replace this review.
 - Use the current conversation mode; do not require a mode switch. Follow any active restrictions on external writes.
 - Retain the approved text, destination, reviewer, provenance, and digest through continuation. If the human already approved that exact payload, continue without redundant confirmation. Changes to the text, reviewer, provenance, or destination require approval of the revised payload.
 
 ## Publish and verify
+
+Enter this section only after the user explicitly approves the exact comment and destination shown above.
 
 1. Recheck the target and authenticated account with read-only tools. If new target content undermines the approved findings, stop and present a revised draft for approval.
 2. Check the saved file against the digest retained from the approved draft:

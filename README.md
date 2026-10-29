@@ -17,6 +17,7 @@ A collection of standalone [T3 Chat skills](./skills) for GitHub, product planni
 | `merge-pr` | Squash merge authorized GitHub PRs without overriding the commit subject, then verify the result. |
 | `design-ui` | Design and preview new or changed UI, including plans, specifications, and issues; obtain approval and implement in the same conversation when authorized, without a mode switch. |
 | `repair-pr` | Repair merge conflicts, actionable bot feedback, and failing CI on a pull request. |
+| `research-comment` | Investigate a question and post English GitHub findings after human approval, with AI-use disclosure, a reviewer mention, and the research harness and model. |
 | `review-full` | Run a sustained three-reviewer pull-request review and publish one consolidated review. |
 | `slop-fix-batch` | Fix a fixed issue batch, publish dependency-based PR stacks, and directly maintain and conditionally merge verified stacks. |
 | `slop-fix-issue` | Handle one GitHub issue: close it with evidence if already resolved; otherwise implement and verify it, publish a non-draft PR or a stack for a large issue, and stop. |

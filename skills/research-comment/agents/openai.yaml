@@ -1,0 +1,4 @@
+interface:
+  display_name: "Research Comment"
+  short_description: "Research and post English findings after human approval"
+  default_prompt: "Use $research-comment to investigate this question, show me the English GitHub comment for approval, then post it with AI, harness, model, and human-review disclosures."

@@ -30,7 +30,7 @@ Write in English. Open with a strong, credible lead, then develop the idea in sh
 
 ### X
 
-Write in English. Prefer one post of no more than 280 characters. If that would remove essential meaning, write a thread of two to four posts; keep every post within 280 characters and number them as `1/N`, `2/N`, and so on.
+Write in English. Always write one post of no more than 280 characters. Condense the source to preserve its core message within that limit. Do not split it into a thread or number multiple posts.
 
 ### Threads
 
@@ -44,6 +44,6 @@ Always return all three sections in this order:
 2. `X`
 3. `Threads`
 
-Put each ready-to-post copy in its own fenced code block, with the label outside the block. Do not add a language identifier to the fence. If X requires a thread, put each numbered post in a separate fenced code block so it can be copied independently.
+Put each ready-to-post copy in its own fenced code block, with the label outside the block. Do not add a language identifier to the fence. Return exactly one code block per platform.
 
 Return only the labels and ready-to-post copy. Do not add strategy notes, explanations, or alternative drafts unless requested.

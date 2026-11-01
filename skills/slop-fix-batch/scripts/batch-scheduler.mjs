@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
@@ -196,7 +196,8 @@ export function writeEvent(path, event) {
   } finally { rmSync(temp, { force: true }); rmSync(lock, { recursive: true }); }
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+// import.meta.url is the real path; argv[1] may run through a symlinked skill directory.
+if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
     const [command, input, statePath] = process.argv.slice(2);
     check(input && ['plan', 'record'].includes(command), 'Usage: batch-scheduler.mjs plan snapshot.json | record event.json timing-state.json');

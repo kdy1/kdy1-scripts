@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { randomUUID } from 'node:crypto';
-import { existsSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { check, text, version, hash, readJson, save, lock, outside, result } from '../../add-issue/scripts/common.mjs';
@@ -282,7 +282,8 @@ export function main(args, injectedClient) {
   } catch (e) { if (s) save(input.statePath,s); throw e; }
   finally { release(); }
 }
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+// import.meta.url is the real path; argv[1] may run through a symlinked skill directory.
+if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try { const value = main(process.argv.slice(2)); process.stdout.write(`${JSON.stringify(value,null,2)}\n`); if (value.complete === false) process.exitCode = value.status === 'uncertain' ? 3 : 2; }
   catch (e) { process.stdout.write(`${JSON.stringify(result('failed',[e.message]))}\n`); process.exitCode = 1; }
 }

@@ -1,15 +1,15 @@
 #!/usr/bin/env node
 
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import { exit } from "node:process";
 import { fileURLToPath } from "node:url";
-import { resolve } from "node:path";
 import { readChecks as collectChecks, isFailingCheck } from "./lib/common.mjs";
 
 const REVIEW_AUTHOR = "chatgpt-codex-connector[bot]";
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+// import.meta.url is the real path; argv[1] may run through a symlinked skill directory.
+if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
   main(process.argv.slice(2)).catch(error => {
     process.stderr.write(`repair-pr: ${error.message}\n`); process.exitCode = 1;
   });

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { readFileSync, writeFileSync, existsSync, statSync, mkdirSync, rmSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, statSync, mkdirSync, rmSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import { target, check, absolute, run, readJson, save, GitHub, choose, content, preserve, attachmentImages } from './core.mjs';
@@ -109,7 +109,8 @@ export function publish(p, body, journalPath, client = new GitHub(p)) {
   } finally { rmSync(`${journalPath}.lock`, { recursive: true }); }
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+// import.meta.url is the real path; argv[1] may run through a symlinked skill directory.
+if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
     const [command, input, extra] = process.argv.slice(2); const p = readJson(input);
     let result;

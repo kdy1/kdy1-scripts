@@ -1,5 +1,5 @@
-import { mkdirSync, readFileSync, writeFileSync, renameSync, rmSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { mkdirSync, readFileSync, writeFileSync, renameSync, rmSync, realpathSync } from 'node:fs';
+import { dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 export function check(ok, message) { if (!ok) throw new Error(message); }
@@ -23,7 +23,8 @@ export function lock(path) {
   return () => rmSync(`${path}.lock`, { recursive: true });
 }
 export function cli(meta, help, run) {
-  if (!process.argv[1] || resolve(process.argv[1]) !== fileURLToPath(meta)) return;
+  // meta is the real path; argv[1] may run through a symlinked skill directory.
+  if (!process.argv[1] || realpathSync(process.argv[1]) !== fileURLToPath(meta)) return;
   if (process.argv.includes('--help')) { process.stdout.write(`${help}\n`); return; }
   Promise.resolve().then(() => run(process.argv.slice(2))).then(result => {
     process.stdout.write(typeof result === 'string' ? result : `${JSON.stringify(result, null, 2)}\n`);

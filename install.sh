@@ -19,14 +19,12 @@ git -C "$repo_dir" fetch origin main
 git -C "$repo_dir" merge --ff-only origin/main
 
 link_skill() {
-    local source=$1 destination=$2 backup
+    local source=$1 destination=$2
     if [[ -L "$destination" && $(readlink "$destination") == "$source" ]]; then
         return
     fi
     if [[ -e "$destination" || -L "$destination" ]]; then
-        backup=$(mktemp -d "${destination}.backup.XXXXXX")
-        mv -- "$destination" "$backup/skill"
-        printf 'Backed up %s to %s/skill\n' "$destination" "$backup"
+        rm -rf -- "$destination"
     fi
     ln -s -- "$source" "$destination"
 }

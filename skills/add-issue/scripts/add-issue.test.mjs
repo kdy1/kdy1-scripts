@@ -383,6 +383,12 @@ test('CLI uses structured errors, private output and rejects overwriting reposit
   const s=setup(t),path=join(s.dir,'input.json');save(path,{version:1,repo:s.repo});assert.throws(()=>main(['snapshot',path,join(s.repo,'output.json')]),/outside/);assert.equal(main(['snapshot',path,join(s.dir,'baseline.json')]).complete,true);
   const cli=spawnSync(process.execPath,[new URL('./add-issue.mjs',import.meta.url).pathname,'unknown',path],{encoding:'utf8'});assert.equal(cli.status,1);assert.equal(JSON.parse(cli.stdout).status,'failed');
 });
+test('CLI runs when invoked through a symlinked skill directory',t=>{
+  const dir=mkdtempSync(join(tmpdir(),'add-issue-link-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));
+  const link=join(dir,'scripts');symlinkSync(new URL('.',import.meta.url).pathname,link,'dir');
+  const cli=spawnSync(process.execPath,[join(link,'add-issue.mjs'),'--help'],{encoding:'utf8'});
+  assert.equal(cli.status,0,cli.stderr);assert.match(JSON.parse(cli.stdout).help,/add-issue\.mjs/);
+});
 
 class ProjectGh extends FakeGh {
   constructor() {

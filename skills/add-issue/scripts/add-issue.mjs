@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { fileURLToPath } from 'node:url';
-import { resolve } from 'node:path';
+import { realpathSync } from 'node:fs';
 import { check, readJson, result, save, outside, version } from './common.mjs';
 import { snapshot, compare } from './workspace.mjs';
 import { validatePayload, images } from './payload.mjs';
@@ -44,7 +44,8 @@ export function main(args) {
   if (output) { save(output, value); return { ...result(value.status ?? 'verified', value.errors ?? []), output, ...(value.payloadHash ? { payloadHash: value.payloadHash } : {}), ...(value.baseline ? { baselineRef: value.baseline.ref } : {}) }; }
   return value;
 }
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+// import.meta.url is the real path; argv[1] may run through a symlinked skill directory.
+if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try { const value = main(process.argv.slice(2)); process.stdout.write(`${JSON.stringify(value, null, 2)}\n`); if (value.complete === false) process.exitCode = value.status === 'uncertain' ? 3 : 2; }
   catch (e) { process.stdout.write(`${JSON.stringify(result('failed', [e.message]))}\n`); process.exitCode = 1; }
 }

@@ -34,7 +34,23 @@ T3 Chat exposes the skills discovered by the selected provider. Install each ski
 
 After installing or updating a skill, check that it appears in T3 Chat for the selected provider. Restart the session if it does not appear.
 
-### Quickest option: `npx skills`
+### Install and update with `install.sh`
+
+Clone this repository outside the skill directories, then run:
+
+```sh
+git clone https://github.com/kdy1/kdy1-scripts.git "$HOME/src/kdy1-scripts"
+cd "$HOME/src/kdy1-scripts"
+./install.sh
+```
+
+The script requires Git and Node.js with `npx`. It fetches `origin/main` and updates the checkout with `--ff-only`, then symlinks each repository skill into both `~/.agents/skills` and `~/.claude/skills`. It stops if the checkout has uncommitted changes or cannot fast-forward. Existing conflicting skill paths are moved into adjacent backup directories; matching symlinks are kept.
+
+It also installs [`gh-stack`](https://github.com/github/gh-stack/tree/main/skills/gh-stack) and [`codspeed-optimize`](https://github.com/CodSpeedHQ/codspeed/tree/main/skills/codspeed-optimize) globally for Codex and Claude Code with `npx skills`. This installs the gh-stack skill; install the `gh stack` CLI extension separately when needed.
+
+Run `./install.sh` again to update the checkout, refresh the links, and reinstall the external skills. Keep the checkout at the same path so its symlinks remain valid.
+
+### Alternative: `npx skills`
 
 The [`skills` CLI](https://www.skills.sh/docs/cli) recognizes the skills in this repository. Run it from the repository where you want project-scoped skills installed:
 

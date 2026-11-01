@@ -14,8 +14,15 @@ git -C "$repo_dir" fetch origin main
 git -C "$repo_dir" merge --ff-only origin/main
 
 mkdir -p -- "$HOME/.agents" "$HOME/.claude"
-ln -sfnT -- "$repo_dir/skills" "$HOME/.agents/skills"
-ln -sfnT -- "$repo_dir/skills" "$HOME/.claude/skills"
+for destination in "$HOME/.agents/skills" "$HOME/.claude/skills"; do
+    if [[ -d "$destination" && ! -L "$destination" ]]; then
+        printf 'Cannot replace existing directory with a symlink: %s\n' "$destination" >&2
+        exit 1
+    fi
+done
+for destination in "$HOME/.agents/skills" "$HOME/.claude/skills"; do
+    ln -sfn "$repo_dir/skills" "$destination"
+done
 
 # Both agents share the directory, so install external skills only once.
 for source in \

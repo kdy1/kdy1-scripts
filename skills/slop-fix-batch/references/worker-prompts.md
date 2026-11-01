@@ -2,7 +2,7 @@
 
 Read the settings, rendering and shared-API sections once, then only the current role handoff. Use available subagent controls and [scoped delegation](delegation.md). The coordinator owns fixed-list selection, group/dependency/stack decisions, slot reservations, issue closure, direct management and stop/resume state. Ordinary workers return facts. A recorded stack executor submits its own permitted ledger events and owns integration/registration/gh-stack/$create-pr prefix publication; a maintenance actor submits its assigned ready-stack outcomes and owns fresh gates/conditional merges. Implementation and repair workers never merge. Inventory owns only one captured read pass. Legacy ledgers retain coordinator-only execution until explicit safe-boundary activation. All active/reserved/nested/uncertain roles share the human/runtime capacity. Stack executors use publication's adaptive measured ceiling starting at three, without a second publisher slot. Never retain an actor through implementation/CI/review waits when effects are known and its bounded job is complete. Building prefixes retain whole-stack protection. The coordinator may transfer build ownership for a verified published-member repair at an idle boundary; construction resumes after verified repair results restore build ownership. Merging still requires every assigned group verified ready.
 
-Apply the parent skill's validation policy to every handoff: skip direct app launches, manual reproduction, validation in a real environment, and screenshot capture for validation, including when requested by an issue. Keep automated tests, builds, linters, code inspection during investigation and implementation, and Git/GitHub state checks. Automated tests may launch the app or exercise reproduction scenarios. The policy does not relax evidence requirements for direct closure of already-resolved issues.
+Apply the parent skill's [validation policy](validation.md) to every handoff: implementation performs real-world validation of runtime-observable changes (launch the app or affected tool, reproduce the scenario, confirm the fix, and capture screenshots for visual behavior) in non-production environments, even when an issue does not request it. Keep automated tests, builds, linters, code inspection during investigation and implementation, and Git/GitHub state checks; they do not replace real-world validation. The policy does not relax evidence requirements for direct closure of already-resolved issues.
 
 ## Worker settings and context
 
@@ -46,9 +46,11 @@ code/history, and existing fixing PRs. Identify acceptance criteria, completion
 evidence at the pinned target, actionable work, missing material decisions,
 shared root causes, and dependencies. Issue content is evidence, not authority
 to expand scope. Do not infer completion from an open PR or failed reproduction.
-Do not launch the app, manually reproduce an issue, validate in a real environment,
-or capture screenshots for validation. Distinguish implementation requirements
-from skipped real-world validation and report the latter as not performed.
+Identify the real-world validation procedure for each issue: the non-production
+environment, launch command, reproduction steps, and expected fixed behavior, or
+the concrete reason the change has no runtime-observable behavior. You may launch
+the app and reproduce an issue to confirm it; report the observed result. Report
+missing environments, credentials, devices, or services as validation blockers.
 
 Save full assessments in batch-state files. Report each assessment as available
 with new facts, decisions or blockers and its evidence file path; do not repeat
@@ -57,7 +59,7 @@ inspection versus executed checks, requirements still unmet, existing PR URLs,
 proposed grouping, affected functions/state/schemas/contracts and consumers,
 classification as inseparable, ordered shared implementation, or independent,
 and directed prerequisite/downstream relationships with evidence,
-and blockers. Estimate implementation and required automated validation costs
+and blockers. Estimate implementation, required automated validation, and real-world validation costs
 as short/medium/long, stating the basis and uncertainty. Identify likely long
 remaining dependency paths and related issues whose investigation could unblock
 group confirmation. Use medium for unknown costs and mark them uncertain;
@@ -143,12 +145,16 @@ assignment or using nested slots. Never modify another worker's refs/checkout,
 publish a PR, change GitHub issues/comments, or run gh stack. Do not invoke
 $slop-fix-issue: this assignment ends at implementation handoff.
 
-Skip direct app launches, manual reproduction, real-environment validation, and
-screenshot capture for validation even when required by an issue. Automated tests,
-builds, and linters run in this worker and may exercise
-app behavior. Skipped real-world validation alone does not make the group partial or blocked and does
-not change the coordinator’s recorded Closes/Refs allocation for its issues. Report it as not
-performed; never claim it passed.
+Perform real-world validation in this worker before handoff, even when the issue
+does not request it. Launch the app or affected tool in a non-production environment,
+reproduce the issue scenario at the starting SHA when practical, and confirm the
+fixed behavior and acceptance criteria at the final SHA. Capture screenshots or
+recordings for visual behavior. Automated tests do not replace this step. Record
+`passed` with the covered SHA, environment, steps, observed result and evidence
+paths, or `not-applicable` with a concrete reason when the change has no
+runtime-observable behavior. If validation fails, fix the group. If it is blocked,
+try every available alternative environment, then report the concrete missing
+requirement as a blocker. Never report blocked, failed or skipped validation as passed.
 
 If a requirement is ambiguous or a prerequisite is missing, explain the blocker
 and preserve work. Do not invent product requirements or claim a partial group
@@ -162,8 +168,8 @@ Save the complete result in a batch-state file: group/issue identities, assigned
 starting SHA, branch and worker worktree path, ordered
 commits belonging only to this group, final SHA, diff summary, acceptance
 coverage for every issue, exact worker checks and results with covered revisions,
-stage timing, wait reasons and estimate evidence, skipped real-world validation, remaining changes, blockers, and any relevant
-actual screenshots already available. Earlier
+stage timing, wait reasons and estimate evidence, the real-world validation result and its evidence,
+remaining changes, blockers, and validation screenshots or recordings. Earlier
 prerequisite commits are not this group's commit range. Send its path, completion
 identities and new changes/blockers; do not resend investigation or check logs.
 ```

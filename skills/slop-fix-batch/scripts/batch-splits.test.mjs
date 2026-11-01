@@ -13,7 +13,7 @@ function register() { return apply(initial(), 'split-plan', { groups, splitPlans
 function building() { return apply(register(), 'stack', { value: { id: 's', phase: 'building', groups: split.groups, layers: [], baseSha: sha, worktree: '/tmp/split-stack', fetchedAt: '2026-10-16T00:00:00Z', revalidationEvidence: 'Verified base' } }); }
 function publish(ledger, index) {
   const groupId = groups[index].id, headSha = String(index + 1).repeat(40);
-  let next = apply(ledger, 'layer', { stackId: 's', value: { groupId, requirementsSatisfied: true, headSha, workerSha: headSha, checks: [{ command: 'node --test', status: 'passed', sha: headSha }], integrationChanged: false, realWorldValidation: 'not-performed' } });
+  let next = apply(ledger, 'layer', { stackId: 's', value: { groupId, requirementsSatisfied: true, headSha, workerSha: headSha, checks: [{ command: 'node --test', status: 'passed', sha: headSha }], integrationChanged: false, realWorldValidation: { status: 'passed', sha: headSha, environment: 'local CLI', evidence: 'Ran the changed command' } } });
   const references = groupReferences(next, groupId);
   const previous = next.stacks.s.layers.slice(0, -1).map(l => l.publication.layer);
   const layer = { groupId, url: `https://github.com/o/r/pull/${index + 2}`, headRepository: 'github.com/o/r', headBranch: groupId, baseBranch: index ? groups[index - 1].id : 'main', headSha, baseSha: index ? previous.at(-1).headSha : sha, title: `Implement ${groupId}`, body: `${index === 2 ? 'Closes' : 'Refs'} ${issue.url}`, ...references };

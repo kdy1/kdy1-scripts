@@ -8,6 +8,16 @@ import { workerSettings } from './worker-settings.mjs';
 import { rankTasks } from './batch-scheduler.mjs';
 import { delegationSafeBoundary, validateDelegation, grantDelegation, authorizeSubmission, authorizeEvent, closeGrants, unresolvedOperations } from './batch-delegation.mjs';
 const safeId = value => { nonempty(value, 'id'); check(!['__proto__', 'constructor', 'prototype'].includes(value), 'Unsafe id'); return value; };
+// Legacy ledgers recorded skipped validation as 'not-performed'; it stays readable but cannot enter or publish a layer.
+function validateRealWorld(layer, legacyAllowed) {
+  const v = layer.realWorldValidation;
+  if (v === 'not-performed') return check(legacyAllowed, 'Real-world validation is required; not-performed is legacy only');
+  check(v && typeof v === 'object', 'Missing real-world validation result');
+  if (v.status === 'passed') {
+    check(v.sha === layer.workerSha || (layer.integrationChanged === true && v.sha === layer.headSha), 'Real-world validation must cover the worker or changed integration SHA');
+    nonempty(v.environment, 'real-world validation environment'); nonempty(v.evidence, 'real-world validation evidence');
+  } else { check(v.status === 'not-applicable', 'Real-world validation must pass or be not applicable'); nonempty(v.reason, 'reason real-world validation is not applicable'); }
+}
 export function initialize(input) {
   version(input); nonempty(input.batchId, 'batch id'); nonempty(input.coordinator, 'coordinator'); nonempty(input.query, 'exact query');
   check(input.selection?.complete === true && Array.isArray(input.selection.issues), 'Complete fixed selection required');
@@ -93,7 +103,7 @@ export function validateLedger(ledger) {
       if (layer.publication) matchRuntime(layer.publication.runtime, runtime);
       check(stack.groups.includes(layer.groupId), 'Layer outside stack scope'); check(layer.requirementsSatisfied === true, 'Incomplete implementation requirements'); sha(layer.headSha); sha(layer.workerSha);
       check(layer.checks?.length && layer.checks.every(c => c.status === 'passed' && c.sha === layer.workerSha && c.command), 'Missing passing worker checks at original SHA');
-      check(layer.realWorldValidation === 'not-performed', 'Missing skipped validation disclosure');
+      validateRealWorld(layer, true);
       check(typeof layer.integrationChanged === 'boolean', 'Missing integration-change observation');
       if (layer.integrationChanged) check(layer.integrationChecks?.length && layer.integrationChecks.every(c => c.status === 'passed' && c.sha === layer.headSha && c.command), 'Missing integration-change checks');
       for (const parent of ledger.groups[layer.groupId].requires) check(stack.layers.slice(0, i).some(l => l.groupId === parent), 'Layer before prerequisite');
@@ -198,6 +208,7 @@ export function applyEvent(ledger, event, owner) {
       check(!s.layers.some(l => l.publication && !l.publication.complete), 'Uncertain publication blocks integration');
       const executor = Object.values(next.assignments).find(a => a.stackId === s.id && a.groupId === event.value.groupId && a.status === 'active' && a.role === 'stack-execution');
       if (executor?.prerequisiteRevalidation) check(event.value.integrationChanged === true, 'Revalidated prerequisite requires integration-change coverage');
+      validateRealWorld(event.value, false);
       const old = s.layers.findIndex(l => l.groupId === event.value.groupId);
       check(old === -1 || (old === s.layers.length - 1 && !s.layers[old].publication), 'Published or lower layer cannot change');
       if (old === -1) { check(!s.layers.length || s.layers.at(-1).publication?.complete === true, 'Verify published prefix before integrating next layer'); s.layers.push(event.value); } else s.layers[old] = event.value; break;
@@ -215,6 +226,7 @@ export function applyEvent(ledger, event, owner) {
       check(expected?.stackId === s.id && expected.layers.length === s.layers.length, 'Publication must cover current prefix');
       s.layers.forEach((layer, i) => {
         check(expected.layers[i].headSha === layer.headSha && expected.layers[i].groupId === layer.groupId, 'Publication differs from integration ledger');
+        if (!layer.publication) validateRealWorld(layer, false);
         const { closes, refs } = groupReferences(ledger, layer.groupId);
         check(isDeepStrictEqual([...expected.layers[i].closes].sort(), closes), 'Publication closes differ from group completion');
         check(isDeepStrictEqual([...(expected.layers[i].refs ?? [])].sort(), refs), 'Publication refs differ from split scope');

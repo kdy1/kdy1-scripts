@@ -20,7 +20,7 @@ const selection = { version: 1, complete: true, query: 'repo:o/r is:issue is:ope
 const init = () => initialize({ version: 1, batchId: 'batch', coordinator: 'root', query: selection.query, repository: 'github.com/o/r', baseBranch: 'main', remote: 'origin', authorization: 'Fix selected issues', inspectedSha: sha, selection });
 const group = { id: 'g', issues: [issue.key], requires: [], confirmed: true, acceptance: 'Fix behavior', dependencyEvidence: 'Independent inspected function' };
 const stack = { id: 's', phase: 'building', groups: ['g'], layers: [], baseSha: sha, worktree: '/tmp/stack', fetchedAt: '2026-10-11T00:00:00Z', revalidationEvidence: 'Fetched base and inspected function' };
-const layer = { groupId: 'g', requirementsSatisfied: true, headSha: head, workerSha: sha, checks: [{ command: 'node --test', status: 'passed', sha }], integrationChanged: false, realWorldValidation: 'not-performed' };
+const layer = { groupId: 'g', requirementsSatisfied: true, headSha: head, workerSha: sha, checks: [{ command: 'node --test', status: 'passed', sha }], integrationChanged: false, realWorldValidation: { status: 'passed', sha, environment: 'local dev server', evidence: 'Reproduced the failure and confirmed the fix' } };
 function event(ledger, type, fields = {}) { return { id: `e${ledger.revision}`, expectedRevision: ledger.revision, at: '2026-10-11T00:00:00Z', type, ...fields }; }
 function apply(ledger, type, fields) { return applyEvent(ledger, event(ledger, type, fields), 'root'); }
 function building(runtime = 'codex') { const initial = init(); initial.context.runtime = runtime; let l = apply(initial, 'groups', { groups: [group] }); return apply(l, 'stack', { value: stack }); }
@@ -123,6 +123,25 @@ test('ledger rejects cycles, cross-stack dependencies and missing original worke
   assert.throws(() => apply(init(), 'groups', { groups: [{ ...group, requires: ['g'] }] }), /cycle/);
   assert.throws(() => apply(building(), 'layer', { stackId: 's', value: { ...layer, checks: [{ command: 'test', status: 'passed', sha: head }] } }), /original SHA/);
   assert.throws(() => apply(building(), 'layer', { stackId: 's', value: { ...layer, integrationChanged: true } }), /integration-change/);
+});
+test('layers require real-world validation; legacy not-performed records cannot be published', () => {
+  const withRw = realWorldValidation => ({ ...layer, realWorldValidation });
+  assert.throws(() => apply(building(), 'layer', { stackId: 's', value: withRw('not-performed') }), /legacy only/);
+  assert.throws(() => apply(building(), 'layer', { stackId: 's', value: withRw(undefined) }), /Missing real-world/);
+  assert.throws(() => apply(building(), 'layer', { stackId: 's', value: withRw({ status: 'blocked', reason: 'No device' }) }), /pass or be not applicable/);
+  assert.throws(() => apply(building(), 'layer', { stackId: 's', value: withRw({ ...layer.realWorldValidation, sha: head }) }), /worker or changed integration SHA/);
+  assert.throws(() => apply(building(), 'layer', { stackId: 's', value: withRw({ ...layer.realWorldValidation, evidence: '' }) }), /evidence/);
+  assert.throws(() => apply(building(), 'layer', { stackId: 's', value: withRw({ status: 'not-applicable' }) }), /not applicable/);
+  const integration = { ...layer, integrationChanged: true, integrationChecks: [{ command: 'node --test', status: 'passed', sha: head }], realWorldValidation: { ...layer.realWorldValidation, sha: head } };
+  assert.equal(apply(building(), 'layer', { stackId: 's', value: integration }).stacks.s.layers[0].realWorldValidation.sha, head);
+  const docs = apply(building(), 'layer', { stackId: 's', value: withRw({ status: 'not-applicable', reason: 'Documentation only' }) });
+  assert.match(renderReport(docs), /real-world validation not applicable: Documentation only/);
+  const legacy = structuredClone(building()); legacy.stacks.s.layers.push(withRw('not-performed'));
+  validateLedger(legacy);
+  assert.throws(() => apply(legacy, 'publication', { stackId: 's', verification: publication() }), /legacy only/);
+  const published = structuredClone(ready()); published.stacks.s.layers[0].realWorldValidation = 'not-performed';
+  validateLedger(published); assert.match(renderReport(published), /real-world validation not performed/);
+  assert.match(renderReport(ready()), /real-world validation passed at a{40} in local dev server/);
 });
 test('ready requires complete publication, registry proof and detached exact tip', () => {
   assert.throws(() => apply(building(), 'ready', { stackId: 's', detachedSha: head, evidence: 'clean' }), /ready handoff/);

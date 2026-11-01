@@ -31,7 +31,7 @@ function assign(l, i = 0, role = 'stack-execution', extra = {}) {
 }
 function envelope(l, g, events, overrides = {}) { return { version: 1, grantId: g.id, worker: g.worker, generation: g.generation, sequence: l.delegation.grants[g.id].sequence + 1, at, events, ...overrides }; }
 function send(l, g, events) { return submitEvents(l, envelope(l, g, events)); }
-function layer(i = 0, workerSha = base, headSha = head) { return { groupId: `g${i}`, branch: `kdy1/fix${i}`, requirementsSatisfied: true, headSha, workerSha, checks: [{ command: 'node --test', status: 'passed', sha: workerSha }], integrationChanged: false, realWorldValidation: 'not-performed' }; }
+function layer(i = 0, workerSha = base, headSha = head) { return { groupId: `g${i}`, branch: `kdy1/fix${i}`, requirementsSatisfied: true, headSha, workerSha, checks: [{ command: 'node --test', status: 'passed', sha: workerSha }], integrationChanged: false, realWorldValidation: { status: 'passed', sha: workerSha, environment: 'local dev server', evidence: 'Reproduced the failure and confirmed the fix' } }; }
 function prefix(i = 0, headSha = head, baseSha = base) {
   const p = { groupId: `g${i}`, url: `https://github.com/o/r/pull/${i + 3}`, headRepository: 'github.com/o/r', headBranch: `kdy1/fix${i}`, headSha, baseBranch: 'main', baseSha, title: 'fix: correct function', body: `Fix function\n\nCloses ${issues[i].url}`, closes: [issues[i].url] };
   return { version: 1, expected: { stackId: `s${i}`, baseBranch: 'main', layers: [p] }, observed: { stackId: `s${i}`, complete: true, attachmentComplete: true, layers: [{ ...p, state: 'OPEN', isDraft: false }], attachments: [p.url] } };

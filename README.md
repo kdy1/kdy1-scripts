@@ -44,9 +44,9 @@ cd "$HOME/src/kdy1-scripts"
 ./install.sh
 ```
 
-The script requires Git and Node.js with `npx`. It fetches `origin/main` and updates the checkout with `--ff-only`, then symlinks each repository skill into both `~/.agents/skills` and `~/.claude/skills`. It stops if the checkout has uncommitted changes or cannot fast-forward. Existing conflicting skill paths are removed and replaced with symlinks without backups; matching symlinks are kept.
+The script requires Git, GNU `ln`, and Node.js with `npx`. It fetches `origin/main` and updates the checkout with `--ff-only`. Both `~/.agents/skills` and `~/.claude/skills` are symlinks to this checkout's `skills/` directory. Running `./install.sh` again updates the skills through those directory links. Git stops if it cannot fast-forward or local changes would be overwritten. Existing real directories at either link path cause `ln` to stop; the script does not delete or back them up.
 
-It also installs [`gh-stack`](https://github.com/github/gh-stack/tree/main/skills/gh-stack) and [`codspeed-optimize`](https://github.com/CodSpeedHQ/codspeed/tree/main/skills/codspeed-optimize) globally for Codex and Claude Code with `npx skills`. This installs the gh-stack skill; install the `gh stack` CLI extension separately when needed.
+It also installs [`gh-stack`](https://github.com/github/gh-stack/tree/main/skills/gh-stack) and [`codspeed-optimize`](https://github.com/CodSpeedHQ/codspeed/tree/main/skills/codspeed-optimize) with `npx skills`. The CLI installs into `~/.agents/skills`, which writes the external skills into this checkout's shared `skills/` directory and makes them available to both agents. This installs the gh-stack skill; install the `gh stack` CLI extension separately when needed.
 
 Run `./install.sh` again to update the checkout, refresh the links, and reinstall the external skills. Keep the checkout at the same path so its symlinks remain valid.
 

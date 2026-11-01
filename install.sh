@@ -10,38 +10,18 @@ for command in git npx; do
     fi
 done
 
-# Keep local changes and commits intact; stop if main cannot be fast-forwarded.
-if [[ -n $(git -C "$repo_dir" status --porcelain) ]]; then
-    printf 'Commit or stash checkout changes before running install.sh.\n' >&2
-    exit 1
-fi
 git -C "$repo_dir" fetch origin main
 git -C "$repo_dir" merge --ff-only origin/main
 
-link_skill() {
-    local source=$1 destination=$2
-    if [[ -L "$destination" && $(readlink "$destination") == "$source" ]]; then
-        return
-    fi
-    if [[ -e "$destination" || -L "$destination" ]]; then
-        rm -rf -- "$destination"
-    fi
-    ln -s -- "$source" "$destination"
-}
+mkdir -p -- "$HOME/.agents" "$HOME/.claude"
+ln -sfnT -- "$repo_dir/skills" "$HOME/.agents/skills"
+ln -sfnT -- "$repo_dir/skills" "$HOME/.claude/skills"
 
-for destination in "$HOME/.agents/skills" "$HOME/.claude/skills"; do
-    mkdir -p -- "$destination"
-    for skill in "$repo_dir"/skills/*; do
-        [[ -f "$skill/SKILL.md" ]] || continue
-        link_skill "$skill" "$destination/${skill##*/}"
-    done
-done
-
-# The CLI stores global skills in ~/.agents/skills and links Claude Code to them.
+# Both agents share the directory, so install external skills only once.
 for source in \
     https://github.com/github/gh-stack/tree/main/skills/gh-stack \
     https://github.com/CodSpeedHQ/codspeed/tree/main/skills/codspeed-optimize; do
-    npx --yes skills add "$source" --global --agent codex claude-code --yes
+    npx --yes skills add "$source" --global --agent codex --yes
 done
 
 printf 'Skills installed in ~/.agents/skills and ~/.claude/skills.\n'

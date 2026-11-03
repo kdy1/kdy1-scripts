@@ -271,6 +271,30 @@ test('threads are gated by publication and PR membership; blocked findings stay 
   f.update({threads:[f.thread('PRRT_fixed'),f.thread('PRRT_blocked')]});const r=f.ok('finish-threads','--session',f.session);assert.deepEqual(r.blocked,['PRRT_blocked']);assert.equal(f.read().threads[1].isResolved,false);
   const mutations=f.read().calls.filter(a=>a.some(x=>x.includes('mutation'))).length;f.ok('finish-threads','--session',f.session);assert.equal(f.read().calls.filter(a=>a.some(x=>x.includes('mutation'))).length,mutations);
 });
+test('outdated fixed threads on repaired files resolve; other outdated threads need a recorded reassessment', t => {
+  const f=fixture(t);const outdated=(id,path='file.txt')=>({...f.thread(id),isOutdated:true,path});
+  f.update({threads:[f.thread('PRRT_fixed'),f.thread('PRRT_elsewhere'),f.thread('PRRT_wrong')]});f.init();
+  f.repair([{id:'PRRT_fixed',disposition:'fixed',evidence:'fixed'},{id:'PRRT_elsewhere',disposition:'fixed',evidence:'fixed'}]);
+  assert.equal(f.record({problem:{id:'wrong',kind:'review',evidence:'invariant',threads:[{id:'PRRT_wrong',disposition:'incorrect',evidence:'invariant'}]}}).status,0);
+  assert.equal(f.record({validation:f.validation(f.git('rev-parse','HEAD'))}).status,0);f.ok('publish','--session',f.session);
+  f.update({threads:[outdated('PRRT_fixed'),outdated('PRRT_elsewhere','other.txt'),outdated('PRRT_wrong')]});
+  const r=f.run('finish-threads','--session',f.session);assert.equal(r.status,1);assert.match(r.stderr,/PRRT_elsewhere, PRRT_wrong/);assert.doesNotMatch(r.stderr,/PRRT_fixed/);
+  assert(!f.read().calls.some(a=>a.some(x=>x.includes('mutation'))));
+  assert.match(f.record({reassessment:{threadId:'PRRT_elsewhere'}}).stderr,/evidence/);
+  assert.equal(f.record({reassessment:{threadId:'PRRT_elsewhere',evidence:'the repair still covers it'}}).status,0);
+  assert.match(f.record({reassessment:{threadId:'PRRT_wrong',evidence:'needs a decision',disposition:'fixed'}}).stderr,/repair commit/);
+  assert.equal(f.record({reassessment:{threadId:'PRRT_wrong',evidence:'the cited code changed; needs a decision',disposition:'blocked'}}).status,0);
+  const done=f.ok('finish-threads','--session',f.session);assert.deepEqual(done.blocked,['PRRT_wrong']);
+  assert.equal(done.outcomes.PRRT_fixed.outdated,'repair-changed-path');assert.equal(done.outcomes.PRRT_elsewhere.outdated,'reassessed');
+  assert.deepEqual(f.read().threads.map(x=>x.isResolved),[true,true,false]);
+  assert.match(f.record({reassessment:{threadId:'PRRT_fixed',evidence:'again'}}).stderr,/Writes already started/);
+});
+test('session errors name the branch and repairs made after a replay', t => {
+  const f=fixture(t);f.init();f.git('switch','-c','other');assert.match(f.record({validation:f.validation(f.start)}).stderr,/Current branch other differs from session branch fix/);
+  f.git('switch','--orphan','replay');writeFileSync(join(f.repo,'file.txt'),'replayed\n');f.git('add','file.txt');f.git('commit','-m','replayed');
+  f.git('switch','fix');f.git('reset','--hard','replay');const sha=f.commit();
+  assert.match(f.record({problem:{id:'late',kind:'review',commit:sha,evidence:'cause',threads:[],validation:[f.validation(sha)]}}).stderr,/does not descend from session start .*stackPublication/);
+});
 test('reply failure still resolves and repeated runs do not retry the reply', t => {
   const f=fixture(t);f.update({threads:[f.thread('PRRT_wrong')],replyError:true});f.init();const body=join(f.root,'reply.txt');writeFileSync(body,'The invariant disproves this finding.');
   assert.equal(f.record({problem:{id:'wrong',kind:'review',evidence:'invariant',threads:[{id:'PRRT_wrong',disposition:'incorrect',evidence:'invariant',replyBodyFile:body}]}}).status,0);

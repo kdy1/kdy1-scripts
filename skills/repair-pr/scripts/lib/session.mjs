@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
-import { assert, git, head, readJSON, saveJSON, outsideSource, canonicalPath, readPR } from './common.mjs';
+import { assert, git, run, head, readJSON, saveJSON, outsideSource, canonicalPath, readPR } from './common.mjs';
 import { preflight } from './preflight.mjs';
 
 export function loadSession(file) {
@@ -13,7 +13,12 @@ export function loadSession(file) {
 }
 export function saveSession(file, s) { s.updatedAt = new Date().toISOString(); saveJSON(file, s); }
 function sha(value) { assert(typeof value === 'string' && /^[a-f0-9]{40,64}$/.test(value), 'Expected a full commit SHA'); return git('rev-parse', '--verify', `${value}^{commit}`); }
-export function ancestor(a, b) { assert(git('merge-base', a, b) === a, `${a} is not an ancestor of ${b}`); }
+export function ancestor(a, b, message = `${a} is not an ancestor of ${b}`) {
+  // Exit 1 means "not an ancestor", including unrelated histories; other codes are errors.
+  const r = run('git', ['merge-base', '--is-ancestor', a, b], true);
+  assert(r.status === 0 || r.status === 1, `git merge-base failed: ${r.stderr.trim() || r.status}`);
+  assert(r.status === 0, message);
+}
 export function validations(values, revision = null) {
   assert(Array.isArray(values) && values.length > 0, 'Validation records are required');
   for (const v of values) {
@@ -55,7 +60,8 @@ export function initSession(file, pr, stackFile) {
 export function verifySession(s, final = false) {
   assert(Array.isArray(s.problems) && Array.isArray(s.finalValidation) && s.threadOutcomes && ['ordinary', 'stack'].includes(s.mode), 'Invalid session structure');
   sha(s.startSha);
-  assert(git('symbolic-ref', '--short', 'HEAD') === s.branch, 'Current branch differs from session');
+  const branch = git('symbolic-ref', '--short', 'HEAD');
+  assert(branch === s.branch, `Current branch ${branch} differs from session branch ${s.branch}; switch to it first`);
   const current = head(), ids = new Set(), commits = new Set(), threads = new Set();
   const replay = s.stackPublication?.repairCommits ?? [];
   assert(Array.isArray(replay), 'Invalid replay mapping');
@@ -75,11 +81,12 @@ export function verifySession(s, final = false) {
       if (t.disposition === 'fixed') assert(p.commit, 'Fixed thread requires a repair commit');
       if (t.findingCommentId) assert(typeof t.findingCommentId === 'string' && t.findingCommentId.trim(), 'Invalid finding comment id');
       if (t.replyBodyFile) assert(t.disposition === 'incorrect' && typeof t.replyBodyFile === 'string', 'Only incorrect findings may have optional reply files');
+      if (t.reassessment) assert(typeof t.reassessment.evidence === 'string' && t.reassessment.evidence.trim(), 'Reassessment requires evidence');
     }
     if (p.commit) {
       const mapped = replay.find(x => x.problemId === p.id)?.commit ?? p.commit;
       sha(mapped); ancestor(mapped, current);
-      if (!s.stackPublication) ancestor(s.startSha, mapped);
+      if (!s.stackPublication) ancestor(s.startSha, mapped, `Repair ${mapped} does not descend from session start ${s.startSha}; commit repairs on the original head and record replayed SHAs through stackPublication`);
     }
   }
   if (s.mode === 'ordinary' || !s.stackPublication) {
@@ -110,8 +117,9 @@ export function verifySession(s, final = false) {
 }
 export function recordSession(file, input) {
   const s = loadSession(file);
+  assert(Object.keys(input).length === 1, 'Record exactly one problem, validation, stackPublication, or reassessment');
+  if (input.reassessment) return recordReassessment(file, s, input.reassessment);
   assert(!s.publication && !Object.keys(s.threadOutcomes).length, 'Reconcile pending publication/thread writes before changing records');
-  assert(Object.keys(input).length === 1, 'Record exactly one problem, validation, or stackPublication');
   if (input.problem) { s.problems.push(input.problem); s.finalValidation = []; }
   else if (input.validation) {
     s.validationHistory ??= []; s.validationHistory.push(input.validation);
@@ -119,9 +127,21 @@ export function recordSession(file, input) {
     s.finalValidation.push(input.validation);
   }
   else if (input.stackPublication) { assert(s.mode === 'stack', 'Stack results require a stack session'); s.stackPublication = input.stackPublication; s.finalValidation = []; }
-  else throw new Error('Expected problem, validation, or stackPublication');
+  else throw new Error('Expected problem, validation, stackPublication, or reassessment');
   // Recording one problem must not demand that later unrecorded repairs already
   // have entries, but all recorded data is validated before accepting it.
+  verifySession(s);
+  saveSession(file, s); return s;
+}
+// A thread can become outdated only after publication, so reassessment is the one
+// record accepted afterwards. It never changes commits or validation.
+function recordReassessment(file, s, r) {
+  const t = s.problems.flatMap(p => p.threads).find(x => x.id === r?.threadId);
+  assert(t, 'Reassessment requires a recorded thread');
+  assert(!s.threadOutcomes[t.id], `Writes already started for ${t.id}; reconcile them instead`);
+  assert(typeof r.evidence === 'string' && r.evidence.trim(), 'Reassessment requires evidence');
+  if (r.disposition !== undefined) t.disposition = r.disposition;
+  t.reassessment = { evidence: r.evidence, at: new Date().toISOString() };
   verifySession(s);
   saveSession(file, s); return s;
 }

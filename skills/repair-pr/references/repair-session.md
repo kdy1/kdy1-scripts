@@ -43,7 +43,7 @@ node "<helper>" session record --file <session> --input <record-json>
 node "<helper>" session verify --file <session>
 ```
 
-Each input contains exactly one of `problem`, `validation`, or `stackPublication`. A changing problem has exactly one commit. Record it immediately after committing, before starting another repair. Duplicate reports share one problem and commit; independent problems cannot share commits or thread IDs. The agent decides root-cause identity, correctness, and validation sufficiency.
+Each input contains exactly one of `problem`, `validation`, `stackPublication`, or `reassessment`. A changing problem has exactly one commit. Record it immediately after committing, before starting another repair. Duplicate reports share one problem and commit; independent problems cannot share commits or thread IDs. The agent decides root-cause identity, correctness, and validation sufficiency.
 
 ```json
 {
@@ -123,7 +123,13 @@ node "<helper>" finish-threads --session <session>
 
 For ordinary PRs, publication requires clean Git state, unchanged identity/remotes, recorded commits, and final validation records at the current head. Failed and skipped checks remain recorded and do not prevent publication. It performs one explicit normal target-branch push, disables automatic tag/submodule publication, and checks the actual destination and final GitHub head. No changes means `noop`, without an empty commit or push. Completed publication is reused only if the current local/remote heads still match. Thread finishing can verify a no-op directly when no push is necessary.
 
-Finishing validates all selected thread IDs against the current PR and eligible finding author before any write. Newly outdated findings require reassessment. Already resolved threads are reconciled without another mutation. Only `fixed`/`incorrect` are handled; `blocked` remains unresolved. An optional bot reply is recorded before the request; failure does not skip the required resolution attempt. Reply and resolution outcomes are independent. A partial failure is reported per thread, and other prepared threads are still handled.
+Finishing validates all selected thread IDs against the current PR and eligible finding author before any write. A `fixed` thread that became outdated proceeds when its problem's repair commit (or replayed mapping) changed the thread's file, since the fix itself usually outdates the hunk; the outcome records `outdated: "repair-changed-path"`. Any other outdated thread blocks every write, and the error lists all of them. Reassess each one at the current head, then record:
+
+```json
+{"reassessment": {"threadId": "PRRT_example", "evidence": "Why the recorded disposition still holds at the current head."}}
+```
+
+An optional `disposition` replaces the recorded one, for example `blocked` when the code an `incorrect` finding judged has changed and needs a decision. Validation still applies: `fixed` requires a repair commit. Reassessment is the only record accepted after publication. It is rejected once writes for that thread have started, and it does not clear final validation. Reassessed threads record `outdated: "reassessed"`. Already resolved threads are reconciled without another mutation. Only `fixed`/`incorrect` are handled; `blocked` remains unresolved. An optional bot reply is recorded before the request; failure does not skip the required resolution attempt. Reply and resolution outcomes are independent. A partial failure is reported per thread, and other prepared threads are still handled.
 
 ### Interrupted or uncertain operations
 

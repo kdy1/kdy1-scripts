@@ -10,6 +10,7 @@ A collection of standalone [T3 Chat skills](./skills) for GitHub, product planni
 | `collect-review` | Collect unresolved review-bot bug candidates from merged PRs, hand them to `add-issue`, resolve handled threads, and summarize verified issue links. |
 | `create-human-reviewed-pr` | Explicitly publish human-reviewed changes as a non-draft PR with AI-use disclosure, a reviewer mention, and known harness, model, and reasoning-effort details. |
 | `create-pr` | Publish changes through a shared PR workflow with verified Closes references for resolved issues and Refs for partial or related work. |
+| `daily-update` | On explicit human invocation, ask for repositories and produce a copyable English update from the authenticated user's daily PR activity, with optional extra text. |
 | `improve-skill-efficiency` | Use local T3 Chat session history and current API prices to make evidence-backed skill improvements while preserving quality and model settings. |
 | `list-good-prs` | List clean or unstable pull requests that were approved by the review bot. |
 | `main-qa` | Explicitly run parallel functional and usability QA with GPT-5.6 Luna `xhigh` subagents and report discovered problems through `$add-issue`. |

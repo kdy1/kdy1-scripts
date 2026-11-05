@@ -1,13 +1,13 @@
 ---
 name: repair-pr
-description: One-shot GitHub pull request repair workflow for the current or specified repository. Use when asked to resolve merge conflicts, handle unresolved feedback from chatgpt-codex-connector[bot] and the authenticated GitHub user (@me), fix failing CI within the PR scope, commit each distinct repair problem separately, perform final pushes under shared stack ownership, and resolve handled review threads. Post no PR comments by default, except optional English explanations of objectively incorrect bot findings.
+description: One-shot GitHub pull request repair workflow for the current or specified repository. Use when asked to resolve merge conflicts, handle unresolved feedback from chatgpt-codex-connector[bot], cubic-dev-ai[bot], and the authenticated GitHub user (@me), fix failing CI within the PR scope, commit each distinct repair problem separately, perform final pushes under shared stack ownership, and resolve handled review threads. Post no PR comments by default, except optional English explanations of objectively incorrect bot findings.
 ---
 
 # Repair PR
 
 ## Goal
 
-Repair only problems within the scope of the current or specified GitHub PR once, then stop. Handle merge conflicts, unresolved review feedback from `chatgpt-codex-connector[bot]` and the authenticated GitHub user (`@me`), and CI failures in that order. Correct actionable findings, assess incorrect findings with concrete evidence, and resolve handled threads. Create a separate commit for each distinct repair problem that changes files, but publish only after all local changes are complete. Ordinary PRs push once; stacked PRs use the scoped final pushes owned by [$manage-stacked-prs](../manage-stacked-prs/SKILL.md).
+Repair only problems within the scope of the current or specified GitHub PR once, then stop. Handle merge conflicts, unresolved review feedback from `chatgpt-codex-connector[bot]`, `cubic-dev-ai[bot]`, and the authenticated GitHub user (`@me`), and CI failures in that order. Correct actionable findings, assess incorrect findings with concrete evidence, and resolve handled threads. Create a separate commit for each distinct repair problem that changes files, but publish only after all local changes are complete. Ordinary PRs push once; stacked PRs use the scoped final pushes owned by [$manage-stacked-prs](../manage-stacked-prs/SKILL.md).
 
 ## Repair scope
 
@@ -44,8 +44,8 @@ Repair only problems within the scope of the current or specified GitHub PR once
    - Run focused verification for the resolved area, then `git add` the intended files and commit the merge or conflict repair before moving on. Record that problem and its commit/validation with `session record --file <session> --input <record-json>`.
 
 3. Apply review feedback.
-   - Consider only unresolved, non-outdated review threads with at least one comment authored by `chatgpt-codex-connector[bot]` or the authenticated GitHub user (`@me`). Resolve `@me` from `viewer.login` at runtime; if the account cannot be identified, stop and report the failure.
-   - Ignore approvals, resolved threads, outdated threads, duplicates, non-actionable notes, full-review bodies, and threads with no comment from either eligible author.
+   - Consider only unresolved, non-outdated review threads with at least one comment authored by `chatgpt-codex-connector[bot]`, `cubic-dev-ai[bot]`, or the authenticated GitHub user (`@me`). Resolve `@me` from `viewer.login` at runtime; if the account cannot be identified, stop and report the failure.
+   - Ignore approvals, resolved threads, outdated threads, duplicates, non-actionable notes, full-review bodies, and threads with no comment from any eligible author.
    - Evaluate each finding against the current diff, applicable contracts, implementation behavior, and tests. Apply **Repair scope** before making changes. Do not assume the review is correct because of its author.
    - Handle each distinct actionable, in-scope finding independently. Do not combine findings merely because they affect the same behavior or file. If multiple threads are duplicate reports of the same root cause, treat them as one problem.
    - Implement the smallest correct fix for one problem, including any documentation or repository-instruction update required by that fix or its public-contract change.
@@ -92,7 +92,7 @@ node "<skill-directory>/scripts/repair-pr.mjs" reply-thread PRRT_kwDO... --body 
 node "<skill-directory>/scripts/repair-pr.mjs" reply-thread PRRT_kwDO... --body-file /path/to/reply.md
 ```
 
-The helper resolves `@me` to the authenticated GitHub account. Status JSON includes both logins in `reviewAuthors`; the legacy `reviewAuthor` field retains the bot login.
+The helper resolves `@me` to the authenticated GitHub account. Status JSON includes both bot logins and the authenticated user in `reviewAuthors`; the legacy `reviewAuthor` field retains `chatgpt-codex-connector[bot]`.
 
 Use [repair session commands](references/repair-session.md) for preflight, problem/validation records, CI logs, ordinary final publication, and post-publication thread handling. The legacy commands above remain available for scoped manual use; do not use them to bypass publication or ownership gates.
 

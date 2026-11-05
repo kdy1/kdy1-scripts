@@ -2,9 +2,8 @@ import { readFileSync } from 'node:fs';
 import { assert, git, json } from './common.mjs';
 import { loadSession, saveSession } from './session.mjs';
 import { verifyPublication } from './publish.mjs';
-import { readReviewThreads, isReviewAuthor } from '../repair-pr.mjs';
+import { readReviewThreads, isReviewAuthor, isReviewBot } from '../repair-pr.mjs';
 
-const bot = login => /^chatgpt-codex-connector(?:\[bot\])?$/.test(login ?? '');
 function inventory(s) {
   const [owner, name] = s.pr.slug.split('/');
   return readReviewThreads({ owner, name, host: s.pr.host }, s.pr.number);
@@ -40,8 +39,8 @@ export function finishThreads(file) {
     }
     let body = null, bodyError = null;
     if (t.replyBodyFile && !actual.isResolved) {
-      assert(t.disposition === 'incorrect' && bot(finding.author?.login), `Optional replies are allowed only for incorrect bot findings: ${t.id}`);
-      assert(t.findingCommentId || eligible.every(c => bot(c.author?.login)), `Select a bot findingCommentId for a mixed-author thread: ${t.id}`);
+      assert(t.disposition === 'incorrect' && isReviewBot(finding.author?.login), `Optional replies are allowed only for incorrect bot findings: ${t.id}`);
+      assert(t.findingCommentId || eligible.every(c => isReviewBot(c.author?.login)), `Select a bot findingCommentId for a mixed-author thread: ${t.id}`);
       try { body = readFileSync(t.replyBodyFile, 'utf8'); assert(body.trim(), `Empty reply for ${t.id}`); }
       catch (error) { body = null; bodyError = error.message; }
     }

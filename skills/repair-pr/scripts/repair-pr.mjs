@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { readChecks as collectChecks, isFailingCheck } from "./lib/common.mjs";
 
 const REVIEW_AUTHOR = "chatgpt-codex-connector[bot]";
+const REVIEW_BOTS = [REVIEW_AUTHOR, "cubic-dev-ai[bot]"];
 
 // import.meta.url is the real path; argv[1] may run through a symlinked skill directory.
 if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
@@ -40,7 +41,7 @@ function statusCommand(rawArgs) {
   const pr = readPullRequest(options.pr);
   const repo = parsePullRequestUrl(pr.url) ?? readCurrentRepo();
   const { threads: reviewThreads, viewerLogin } = readReviewThreads(repo, pr.number);
-  const reviewAuthors = [REVIEW_AUTHOR, viewerLogin];
+  const reviewAuthors = [...REVIEW_BOTS, viewerLogin];
   const unresolvedThreads = reviewThreads.filter((thread) =>
     isRelevantReviewThread(thread, viewerLogin),
   );
@@ -521,9 +522,13 @@ export function isRelevantReviewThread(thread, viewerLogin) {
 
 export function isReviewAuthor(login, viewerLogin) {
   return (
-    authorLoginMatches(login, REVIEW_AUTHOR) ||
+    isReviewBot(login) ||
     (typeof login === "string" && login.toLowerCase() === viewerLogin.toLowerCase())
   );
+}
+
+export function isReviewBot(login) {
+  return REVIEW_BOTS.some((bot) => authorLoginMatches(login, bot));
 }
 
 function authorLoginMatches(actual, expected) {

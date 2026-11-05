@@ -8,6 +8,7 @@ import test from "node:test";
 
 const helper = fileURLToPath(new URL("./repair-pr.mjs", import.meta.url));
 const bot = "chatgpt-codex-connector[bot]";
+const cubic = "cubic-dev-ai[bot]";
 const comment = (author, body = author) => ({
   author: author === null ? null : { login: author }, body,
   url: `https://github.com/owner/repo/pull/1#${body}`,
@@ -59,28 +60,32 @@ process.stdout.write(JSON.stringify(result));
   });
 }
 
-test("status includes bot and @me inline threads once and preserves JSON compatibility", (t) => {
+test("status includes both bots and @me inline threads once and preserves JSON compatibility", (t) => {
   const run = fixture(t, { viewer: { login: "Alice" }, pages: { first: connection([
     thread("bot", [bot]), thread("bot-alias", ["chatgpt-codex-connector"]),
-    thread("me", ["other", "aLiCe"]), thread("mixed", [bot, "Alice"]),
+    thread("cubic", [cubic]), thread("cubic-alias", ["cubic-dev-ai"]),
+    thread("me", ["other", "aLiCe"]), thread("mixed", [bot, cubic, "Alice"]),
     thread("other", ["other"]), thread("deleted", [null]),
     thread("resolved", ["Alice"], { isResolved: true }),
     thread("outdated", [bot], { isOutdated: true }),
     thread("suffix", ["Alice[bot]"]),
+    thread("cubic-resolved", [cubic], { isResolved: true }),
+    thread("cubic-outdated", [cubic], { isOutdated: true }),
+    thread("unrelated-bot", ["other[bot]"]),
   ]) } });
   const json = run("--json");
   assert.equal(json.status, 0, json.stderr);
   const report = JSON.parse(json.stdout);
   assert.equal(report.checks.complete, true);
   assert.equal(report.reviewAuthor, bot);
-  assert.deepEqual(report.reviewAuthors, [bot, "Alice"]);
-  assert.deepEqual(report.unresolvedReviewThreads.map(x => x.id), ["bot", "bot-alias", "me", "mixed"]);
+  assert.deepEqual(report.reviewAuthors, [bot, cubic, "Alice"]);
+  assert.deepEqual(report.unresolvedReviewThreads.map(x => x.id), ["bot", "bot-alias", "cubic", "cubic-alias", "me", "mixed"]);
   const me = report.unresolvedReviewThreads.find(x => x.id === "me");
   assert.equal(me.url, comment("aLiCe").url);
   assert.equal(me.comments.length, 2);
   const text = run();
   assert.equal(text.status, 0, text.stderr);
-  assert.match(text.stdout, /Unresolved chatgpt-codex-connector\[bot\] and Alice review threads: 4/);
+  assert.match(text.stdout, /Unresolved chatgpt-codex-connector\[bot\] and cubic-dev-ai\[bot\] and Alice review threads: 6/);
 });
 
 test("status finds @me across review-thread and comment pagination", (t) => {

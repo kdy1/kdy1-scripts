@@ -390,13 +390,16 @@ test('partial resolution failures preserve independent successful thread outcome
   const r=f.run('finish-threads','--session',f.session);assert.equal(r.status,1,r.stderr);const outcomes=JSON.parse(r.stdout).outcomes;
   assert.equal(outcomes.PRRT_fail.resolve.state,'uncertain');assert.equal(outcomes.PRRT_ok.resolve.state,'verified');
 });
-test('mixed-author replies require the exact eligible bot finding comment', t => {
-  const f=fixture(t);const thread=f.thread('PRRT_mixed');thread.comments.nodes.push({id:'human',author:{login:'Alice'},body:'human finding'});f.update({threads:[thread]});f.init();const body=join(f.root,'reply.txt');writeFileSync(body,'The bot premise contradicts the test.');
+for (const author of ['chatgpt-codex-connector[bot]', 'cubic-dev-ai[bot]', 'cubic-dev-ai']) {
+test(`mixed-author replies require the exact eligible bot finding comment: ${author}`, t => {
+  const f=fixture(t);const thread=f.thread('PRRT_mixed', author);thread.comments.nodes.push({id:'human',author:{login:'Alice'},body:'human finding'});f.update({threads:[thread]});f.init();const body=join(f.root,'reply.txt');writeFileSync(body,'The bot premise contradicts the test.');
   assert.equal(f.record({problem:{id:'wrong',kind:'review',evidence:'invariant',threads:[{id:'PRRT_mixed',disposition:'incorrect',evidence:'invariant',replyBodyFile:body}]}}).status,0);assert.equal(f.record({validation:f.validation(f.start)}).status,0);
   assert.match(f.run('finish-threads','--session',f.session).stderr,/findingCommentId/);
   const s=JSON.parse(readFileSync(f.session));s.problems[0].threads[0].findingCommentId='human';writeFileSync(f.session,JSON.stringify(s));assert.match(f.run('finish-threads','--session',f.session).stderr,/incorrect bot/);
   s.problems[0].threads[0].findingCommentId='comment-PRRT_mixed';writeFileSync(f.session,JSON.stringify(s));assert.equal(f.ok('finish-threads','--session',f.session).complete,true);
 });
+}
+
 test('replayed target repairs use original boundaries and mapped layer commits', t => {
   const f=fixture(t);f.git('branch','parent');const original=f.commit('target own');
   const url=n=>'https://github.com/owner/repo/pull/'+n;

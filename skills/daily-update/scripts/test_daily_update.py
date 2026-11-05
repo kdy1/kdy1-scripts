@@ -88,7 +88,8 @@ class DailyUpdateTests(unittest.TestCase):
         extra = "Team notes:\n\n - Keep `alpha` and **beta**.\n"
         output = daily.render(sections, extra)
         self.assertTrue(output.endswith("\n---\n\n" + extra))
-        self.assertIn("[example/demo#2](https://github.com/example/demo/pull/2) fix: retain `value` (draft)", output)
+        self.assertIn(" - [example/demo#2](https://github.com/example/demo/pull/2) (draft)\n", output)
+        self.assertNotIn("fix: retain", output)
         self.assertIn("Merged:\n - None.", output)
         self.assertNotIn("\n---\n", daily.render(sections))
 

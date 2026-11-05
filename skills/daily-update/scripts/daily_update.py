@@ -118,9 +118,8 @@ def render(sections, extra=None):
         lines.extend(["", f"{section}:"])
         for pr in prs:
             label = f"{pr['repository']['nameWithOwner']}#{pr['number']}"
-            title = " ".join(pr["title"].splitlines())
             note = " (draft)" if pr["isDraft"] else ""
-            lines.append(f" - [{label}]({pr['url']}) {title}{note}")
+            lines.append(f" - [{label}]({pr['url']}){note}")
         if not prs:
             lines.append(" - None.")
     report = "\n".join(lines) + "\n"

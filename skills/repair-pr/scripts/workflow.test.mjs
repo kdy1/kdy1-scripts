@@ -62,7 +62,13 @@ else if (a[0] === 'api') {
      }
    } else emit({data:{viewer:{login:'Alice'},repository:{pullRequest:{reviewThreads:{nodes:d.threads,pageInfo:{hasNextPage:false}}}}}});
  } else if(/pulls\\/\\d+$/.test(endpoint)) {
+   if(a.includes('PATCH')) {
+     if(d.bodyError) fail('body transport failure');
+     d.body=a.find(x=>x.startsWith('body='))?.slice(5);
+     fs.writeFileSync(file,JSON.stringify(d));
+   }
    const item=pr(Number(endpoint.split('/').at(-1)));
+   item.body=d.body??null;
    if(d.headChangesAfterChecks && d.calls.some(x=>x.some(v=>v.includes('/check-runs?')))) item.head.sha='b'.repeat(40);
    emit(item);
  }
@@ -501,4 +507,58 @@ test('merged prefix permits session and publication without rewriting retired la
   f.update({ missingMerge: false, prs: { 2: { ...retired, head: { ...retired.head, sha: 'b'.repeat(40) } } } });
   assert.match(f.run('finish-threads', '--session', f.session).stderr, /remote head/);
   assert(!f.read().pushCount);
+});
+
+function bodyFiles(f, body, before = 'Original body') {
+  const snapshot = join(f.root, 'body-before.json'), draft = join(f.root, 'body.md');
+  writeFileSync(snapshot, JSON.stringify({ url: 'https://github.com/owner/repo/pull/1', body: before }));
+  writeFileSync(draft, body);
+  return ['update-body', '--session', f.session, '--snapshot', snapshot, '--body-file', draft];
+}
+
+test('body-only correction preserves literal Markdown and verifies without push or comments', t => {
+  const f = fixture(t, { body: 'Original body' });
+  f.init(); assert.equal(f.record({ validation: f.validation(f.start) }).status, 0);
+  const body = '## 변경 내용\n\nLiteral `code` and $(echo untouched).\n\nRefs #42\n<!-- stack navigation -->\n';
+  const args = bodyFiles(f, body);
+  assert.equal(f.ok(...args).state, 'verified');
+  assert.equal(f.ok(...args).state, 'verified');
+  const data = f.read();
+  assert.equal(data.body, body);
+  assert.equal(data.pushCount, undefined);
+  assert.equal(data.calls.filter(a => a.includes('PATCH')).length, 1);
+  assert(!data.calls.some(a => a.includes('graphql') && a.some(v => v.includes('mutation'))));
+  assert.equal(JSON.parse(readFileSync(f.session)).bodyUpdate.before, 'Original body');
+});
+
+test('unchanged body is a no-op and concurrent edits block a replacement', t => {
+  const f = fixture(t, { body: 'Concurrent edit' });
+  f.init(); assert.equal(f.record({ validation: f.validation(f.start) }).status, 0);
+  assert.match(f.run(...bodyFiles(f, 'Replacement')).stderr, /changed since the snapshot/);
+  assert.equal(f.ok(...bodyFiles(f, 'Concurrent edit', 'Concurrent edit')).state, 'noop');
+  assert(!f.read().calls.some(a => a.includes('PATCH')));
+});
+
+test('body update requires validation and published repair commits', t => {
+  const f = fixture(t, { body: 'Original body' }); f.init();
+  const args = bodyFiles(f, 'Updated body');
+  assert.match(f.run(...args).stderr, /Validation records are required/);
+  f.repair();
+  assert.match(f.run(...args).stderr, /Final local head is not published/);
+  assert(!f.read().calls.some(a => a.includes('PATCH')));
+  f.ok('publish', '--session', f.session);
+  assert.equal(f.ok(...args).state, 'verified');
+});
+
+test('uncertain body update reconciles remote effects without retrying', t => {
+  const f = fixture(t, { body: 'Original body', bodyError: true });
+  f.init(); assert.equal(f.record({ validation: f.validation(f.start) }).status, 0);
+  const args = bodyFiles(f, 'Updated body');
+  assert.match(f.run(...args).stderr, /update is uncertain/);
+  f.update({ bodyError: false });
+  assert.match(f.run(...args).stderr, /reconcile effects/);
+  assert.equal(f.read().calls.filter(a => a.includes('PATCH')).length, 1);
+  f.update({ body: 'Updated body' });
+  assert.equal(f.ok(...args).state, 'verified');
+  assert.equal(f.read().calls.filter(a => a.includes('PATCH')).length, 1);
 });

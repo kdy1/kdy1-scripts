@@ -114,6 +114,20 @@ Collect failed/cancelled Actions run/job logs only after verifying repository, c
 
 `status` preserves its existing JSON fields and adds `checks.complete` and `checks.exitCode`. Valid check JSON with failure exit 1 or pending exit 8 is retained. API/authentication failures, unexpected exits, and malformed JSON are reported as incomplete rather than healthy.
 
+## Update the PR body when needed
+
+After final publication verification (or a validated no-op), compare the current body with the final diff and actual validation results under the skill's **PR body** rules. If a correction is needed, capture the current body after any stack alignment:
+
+```sh
+gh pr view <exact-pr-url> --json url,body > <outside-source-directory>/pr-body-before.json
+# Prepare the complete corrected body in <outside-source-directory>/pr-body.md.
+node "<helper>" update-body --session <session> --snapshot <outside-source-directory>/pr-body-before.json --body-file <outside-source-directory>/pr-body.md
+```
+
+The snapshot contains the exact PR URL and original body. The helper reuses publication, current-head, and stack-ownership checks. It refuses a changed body since the snapshot, unless GitHub already has the intended text, which returns `noop`. Reread and incorporate concurrent edits before preparing a replacement. GitHub does not provide an atomic compare-and-swap for this update; the helper checks immediately before the request and verifies the body and PR head afterward.
+
+Only the body is patched. Multiline text is read as UTF-8 and passed without shell interpolation. The helper records the original and intended text, target SHA, and operation outcome in `bodyUpdate` before sending the request. Reexecution with the same inputs reconciles the remote body without sending another request. A failed or uncertain update needs effect reconciliation under the interrupted-operation procedure; do not clear its record or claim completion. Keep a stack's token until the body outcome is reconciled. An unchanged body needs no helper call; a body-only correction needs no commit or push. The agent decides whether the text needs correction and preserves templates, issue references, and stack metadata.
+
 ## Publish and finish threads
 
 ```sh
@@ -133,7 +147,7 @@ An optional `disposition` replaces the recorded one, for example `blocked` when 
 
 ### Interrupted or uncertain operations
 
-Each push/reply/resolution records `attempting` before external mutation. Reexecution rereads actual GitHub state. A published target SHA or resolved thread confirms completion; an uncertain reply is confirmed only by a new authenticated-user comment matching the recorded body and absent from the pre-request comment IDs. The helper never blindly retries an unconfirmed request. Missing remote evidence remains a blocker, with thread outcomes preserved even if resolution succeeded.
+Each push/body update/reply/resolution records `attempting` before external mutation. Reexecution rereads actual GitHub state. A published target SHA or resolved thread confirms completion; an uncertain reply is confirmed only by a new authenticated-user comment matching the recorded body and absent from the pre-request comment IDs. The helper never blindly retries an unconfirmed request. Missing remote evidence remains a blocker, with thread outcomes preserved even if resolution succeeded.
 
 A session lock has no timeout or automatic stealing. After interruption, positively establish that the prior process stopped, inspect its operation record and local/remote effects, then remove only the abandoned sibling session lock. Stack/catalog recovery follows the separate coordination reference. Do not clear operation records to make a retry succeed. A known failed attempt needs explicit effect reconciliation before a separate replacement attempt; retain the original session as evidence. Do not release a stack token while effects remain uncertain. Known thread-write failures are reported according to the existing stack workflow.
 

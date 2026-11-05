@@ -4,16 +4,18 @@ import { initSession, loadSession, recordSession, verifySession } from './sessio
 import { publish } from './publish.mjs';
 import { finishThreads } from './threads.mjs';
 import { ciLogs } from './ci-logs.mjs';
+import { updateBody } from './body.mjs';
 
 export function workflowCommand(command, args) {
   const action = command === 'session' && args[0] && !args[0].startsWith('-') ? args.shift() : null;
   const allowed = {
     preflight: ['pr', 'json', 'help', 'stack-file'], session: action === 'init' ? ['file', 'pr', 'stack-file', 'json', 'help'] : action === 'record' ? ['file', 'input', 'json', 'help'] : ['file', 'json', 'help'],
     publish: ['session', 'json', 'help'], 'finish-threads': ['session', 'json', 'help'], 'ci-logs': ['session', 'output-dir', 'json', 'help'],
+    'update-body': ['session', 'body-file', 'snapshot', 'json', 'help'],
   };
   const o = parseOptions(args, allowed[command]);
   if (o.help) {
-    process.stdout.write(`Usage:\n  repair-pr.mjs preflight [--pr <number-or-url>] [--stack-file <ownership.json>] [--json]\n  repair-pr.mjs session init --file <path> [--pr <number-or-url>] [--stack-file <ownership.json>]\n  repair-pr.mjs session record --file <path> --input <record.json>\n  repair-pr.mjs session verify --file <path>\n  repair-pr.mjs ci-logs --session <path> --output-dir <directory>\n  repair-pr.mjs publish --session <path>\n  repair-pr.mjs finish-threads --session <path>\nSee references/repair-session.md for record schemas and recovery.\n`); return;
+    process.stdout.write(`Usage:\n  repair-pr.mjs preflight [--pr <number-or-url>] [--stack-file <ownership.json>] [--json]\n  repair-pr.mjs session init --file <path> [--pr <number-or-url>] [--stack-file <ownership.json>]\n  repair-pr.mjs session record --file <path> --input <record.json>\n  repair-pr.mjs session verify --file <path>\n  repair-pr.mjs ci-logs --session <path> --output-dir <directory>\n  repair-pr.mjs publish --session <path>\n  repair-pr.mjs update-body --session <path> --snapshot <pr.json> --body-file <body.md>\n  repair-pr.mjs finish-threads --session <path>\nSee references/repair-session.md for record schemas and recovery.\n`); return;
   }
   let result;
   if (command === 'preflight') {
@@ -30,7 +32,13 @@ export function workflowCommand(command, args) {
   } else {
     assert(o.session, 'Missing --session');
     if (command === 'ci-logs') { assert(o['output-dir'], 'Missing --output-dir'); result = ciLogs(o.session, o['output-dir']); if (!result.complete) process.exitCode = 1; }
-    else result = withSessionLock(o.session, file => command === 'publish' ? publish(file) : finishThreads(file));
+    else result = withSessionLock(o.session, file => {
+      if (command === 'update-body') {
+        assert(o['body-file'] && o.snapshot, 'Missing --body-file or --snapshot');
+        return updateBody(file, o['body-file'], o.snapshot);
+      }
+      return command === 'publish' ? publish(file) : finishThreads(file);
+    });
     if (result.complete === false) process.exitCode = 1;
   }
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);

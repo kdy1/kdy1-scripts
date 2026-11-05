@@ -24,7 +24,7 @@ async function main(args) {
   if (command === "status") statusCommand(args.slice(1));
   else if (command === "reply-thread") replyThreadCommand(args.slice(1));
   else if (command === "resolve-thread") resolveThreadCommand(args.slice(1));
-  else if (["preflight", "session", "ci-logs", "publish", "finish-threads"].includes(command)) {
+  else if (["preflight", "session", "ci-logs", "publish", "update-body", "finish-threads"].includes(command)) {
     const { workflowCommand } = await import("./lib/workflow.mjs");
     workflowCommand(command, args.slice(1));
   } else fail(`Unknown command: ${command}`);
@@ -634,6 +634,7 @@ Commands:
   session         Initialize, record, or verify a repair session.
   ci-logs         Collect current-head failing Actions logs.
   publish         Publish verified ordinary-PR repairs once.
+  update-body     Update a PR body when needed after publication verification.
   finish-threads  Reconcile replies and resolutions after publication.
   status          Show PR merge state, unresolved Codex bot and @me review threads, and failing checks.
   reply-thread    Reply to a GitHub review thread by node id.

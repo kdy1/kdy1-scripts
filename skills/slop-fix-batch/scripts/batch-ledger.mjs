@@ -267,7 +267,14 @@ export function applyEvent(ledger, event, owner) {
       s.repairHistory.push({ ...s.buildRepair, layers: structuredClone(s.layers), evidence: event.evidence, at: event.at });
       for (const [i, l] of s.layers.entries()) {
         const current = expected.layers[i], old = l.publication.layer;
-        const identity = x => { const { headSha, baseSha, ...rest } = x; return rest; };
+        // Repairs update validation prose. Keep issue directives immutable while
+        // verifyPublication checks the exact updated body against the remote read.
+        const identity = x => {
+          const { headSha, baseSha, body, ...rest } = x;
+          const issueDirectives = body.split('\n').map(line => line.trim()).filter(line =>
+            /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?|refs)\s*:?\s+(?:https?:\/\/|(?:[\w.-]+\/[\w.-]+)?#)/i.test(line)).sort();
+          return { ...rest, issueDirectives };
+        };
         check(isDeepStrictEqual(identity(current), identity(old)), 'Repair cannot replace membership, metadata or issue scope');
         if (current.headSha !== l.headSha) {
           const coverage = event.coverage?.find(c => c.groupId === l.groupId);

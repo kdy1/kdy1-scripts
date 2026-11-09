@@ -440,6 +440,28 @@ test('lower repair and upper replay update prefix evidence before construction r
     coordination: { phase: 'building', mode: 'build', owner: 'builder', token: 'new-build-token', evidence: 'resume-build verified' },
     coverage: updated.map((e, i) => ({ groupId: e.groupId, oldParentSha: f.entries[i].baseSha, newParentSha: e.baseSha, checks: [{ command: 'node --test relevant', sha: e.headSha, status: 'passed' }] })) };
   assert.throws(() => apply(l, 'build-repair-result', { ...result, coverage: [] }), /Missing repair\/replay coverage/);
+  const withBody = structuredClone(result);
+  for (const entry of withBody.verification.expected.layers) entry.body += '\n\nRepair validation passed at ' + entry.headSha;
+  withBody.verification.observed.layers = withBody.verification.expected.layers.map(e => ({ ...e, state: 'OPEN', isDraft: false }));
+  const acceptedBody = apply(l, 'build-repair-result', withBody);
+  assert.equal(acceptedBody.stacks.s.layers[0].publication.layer.body, withBody.verification.expected.layers[0].body);
+  assert.equal(acceptedBody.stacks.s.repairHistory[0].layers[0].publication.layer.body, f.entries[0].body);
+  const mismatchedBody = structuredClone(withBody);
+  mismatchedBody.verification.observed.layers[0].body += '\nUnverified text';
+  assert.throws(() => apply(l, 'build-repair-result', mismatchedBody));
+  for (const field of ['title', 'headBranch']) {
+    const changedIdentity = structuredClone(withBody);
+    changedIdentity.verification.expected.layers[0][field] += '-changed';
+    changedIdentity.verification.observed.layers[0][field] += '-changed';
+    if (field === 'headBranch') {
+      for (const side of ['expected', 'observed']) changedIdentity.verification[side].layers[1].baseBranch = changedIdentity.verification[side].layers[0].headBranch;
+    }
+    assert.throws(() => apply(l, 'build-repair-result', changedIdentity), /Repair cannot replace/);
+  }
+  const changedScope = structuredClone(withBody);
+  for (const side of ['expected', 'observed']) changedScope.verification[side].layers[0].body += '\nCloses https://github.com/o/r/issues/999';
+  assert.throws(() => apply(l, 'build-repair-result', changedScope));
+
   const changed = structuredClone(result); changed.verification.expected.layers[0].url = 'https://github.com/o/r/pull/999';
   assert.throws(() => apply(l, 'build-repair-result', changed));
   const unknown = apply(l, 'operation', { stackId: 's', value: { id: 'uncertain-push', kind: 'repair-push', owner: 'child', headSha: updated[0].headSha, status: 'uncertain' } });

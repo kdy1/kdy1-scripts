@@ -22,7 +22,7 @@ A collection of standalone [T3 Chat skills](./skills) for GitHub, product planni
 | `review-full` | Run a sustained three-reviewer pull-request review and publish one consolidated review. |
 | `slop-fix-batch` | Fix a fixed issue batch, publish dependency-based PR stacks, and directly maintain and conditionally merge verified stacks. |
 | `slop-fix-issue` | Handle one GitHub issue: close it with evidence if already resolved; otherwise implement and verify it, publish a non-draft PR or a stack for a large issue, and stop. |
-| `static-analysis` | Analyze all code in the requested scope and hand each confirmed bug to `add-issue` immediately. |
+| `static-analysis` | Analyze all code in the requested scope with parallel read-only subagents and hand each confirmed bug to `add-issue` immediately. |
 | `write-blog-post` | Develop a blog-post draft from material supplied by the user. |
 | `write-comment` | Explicitly plan exact public comments in Plan Mode, default to English, and publish approved text unchanged after authorized execution. |
 | `write-marketing-copy` | Rephrase source material into LinkedIn, X, and Threads posts. |

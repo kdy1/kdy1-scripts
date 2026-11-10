@@ -1,4 +1,4 @@
 interface:
   display_name: "Static Analysis"
-  short_description: "Analyze code and record each confirmed bug immediately"
-  default_prompt: "Use $static-analysis. Statically analyze all code in <Scope>, find every bug, and register each one with $add-issue. Do not batch issues; register each one as soon as it is confirmed. The user specifies <Scope>; if it is omitted, analyze all code."
+  short_description: "Analyze code with parallel subagents and record each confirmed bug"
+  default_prompt: "Use $static-analysis. Statically analyze all code in <Scope> with parallel read-only analysis subagents, find every bug, and register each one with $add-issue. Do not batch issues; register each one as soon as it is confirmed. The user specifies <Scope>; if it is omitted, analyze all code."

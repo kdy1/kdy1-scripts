@@ -48,7 +48,7 @@ Finish with: paths analyzed, checks performed, candidates reported, and remainin
 
 ## Candidate reports
 
-Workers send each candidate as soon as it has causal code evidence. Do not wait for the unit to finish.
+Workers send each candidate as soon as it has causal code evidence. Do not wait for the unit to finish. Use `t3_thread_send` to the coordinator thread with `mode: "auto"` and a stable per-message `clientRequestId` when the runtime provides it. If messaging is unavailable, return the candidate immediately in the final response with completed and remaining coverage.
 
 ```text
 candidate: <unit-id>-<n>

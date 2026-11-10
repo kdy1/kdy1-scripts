@@ -7,7 +7,7 @@ description: Analyze all code in a user-specified scope, or the whole repository
 
 ## Prompt
 
-`<Scope>`에 대한 모든 코드를 정적 분석하고 모든 버그를 찾아 각각 `$add-issue`로 등록해. 이슈를 모으지 말고 확인되는 대로 바로바로 등록해. `<Scope>`는 사용자가 지정하며, 생략하면 코드 전체를 대상으로 해.
+Statically analyze all code in `<Scope>`, find every bug, and register each one with `$add-issue`. Do not batch issues; register each one as soon as it is confirmed. The user specifies `<Scope>`; if it is omitted, analyze all code.
 
 ## Scope and authorization
 

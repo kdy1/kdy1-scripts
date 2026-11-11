@@ -16,9 +16,15 @@ def pr(number, **changes):
         "repository": {"nameWithOwner": "example/demo"},
         "author": {"login": "sample-user"}, "isDraft": False, "body": "",
         "mergedAt": None, "closedAt": None, "updatedAt": "2026-11-04T16:00:00Z",
+        "mergedBy": None, "reviews": {"totalCount": 0, "nodes": []},
     }
     record.update(changes)
     return record
+
+
+def reviews(*items):
+    nodes = [{"state": state, "submittedAt": at} for state, at in items]
+    return {"totalCount": len(nodes), "nodes": nodes}
 
 
 def page(records, count=None, cursor=None):
@@ -66,12 +72,14 @@ class DailyUpdateTests(unittest.TestCase):
                                       self.end, "is:merged", "merged")
         self.assertEqual(len(records), 2)
         self.assertIn("cursor=next", request.call_args.args)
+        self.assertIn("login=sample-user", request.call_args.args)
         search = next(arg for arg in request.call_args.args if arg.startswith("search="))
         self.assertIn("author:sample-user is:merged", search)
         self.assertIn("merged:2026-11-04T15:00:00Z..2026-11-05T14:59:59Z", search)
 
     def test_incomplete_search_and_limit_fail(self):
-        for result in [page([], count=1), page([], count=1001), page([None])]:
+        truncated = pr(1, reviews={"totalCount": 101, "nodes": []})
+        for result in [page([], count=1), page([], count=1001), page([None]), page([truncated])]:
             with self.subTest(result=result), patch.object(daily, "gh_json", return_value=result):
                 with self.assertRaises(RuntimeError):
                     daily.search_prs("example/demo", "sample-user", self.start,
@@ -82,6 +90,43 @@ class DailyUpdateTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "pagination"):
                 daily.search_prs("example/demo", "sample-user", self.start,
                                  self.end, "is:open", "updated")
+
+    def test_others_searches_cover_reviews_and_merges(self):
+        with patch.object(daily, "gh_json", side_effect=[page([pr(1)]), page([pr(1), pr(2)])]) as request:
+            records = daily.search_others("example/demo", "sample-user", self.start, self.end)
+        self.assertEqual(sorted(p["number"] for p in records), [1, 2])
+        searches = [arg for call in request.call_args_list for arg in call.args if arg.startswith("search=")]
+        self.assertIn("reviewed-by:sample-user -author:sample-user updated:>=2026-11-04T15:00:00Z", searches[0])
+        self.assertIn("is:merged -author:sample-user merged:2026-11-04T15:00:00Z..2026-11-05T14:59:59Z",
+                      searches[1])
+
+    def test_classifies_reviews_and_merges_on_others_prs(self):
+        other = {"login": "someone-else"}
+        records = [
+            pr(1, author=other, reviews=reviews(("CHANGES_REQUESTED", "2026-11-04T16:00:00Z"),
+                                                ("APPROVED", "2026-11-05T01:00:00Z"))),
+            pr(2, author=other, state="MERGED", mergedAt="2026-11-05T02:00:00Z",
+               mergedBy={"login": "SAMPLE-USER"},
+               reviews=reviews(("COMMENTED", "2026-11-05T01:00:00Z"))),
+            pr(3, author=other, state="MERGED", mergedAt="2026-11-05T02:00:00Z",
+               mergedBy={"login": "sample-user"}),
+            pr(4, author=other, state="MERGED", mergedAt="2026-11-05T02:00:00Z",
+               mergedBy={"login": "someone-else"}),
+            pr(5, author=other, reviews=reviews(("APPROVED", "2026-11-04T14:59:59Z"),
+                                                ("PENDING", None))),
+            pr(6, author=other, state="MERGED", mergedAt="2026-11-05T15:00:00Z",
+               mergedBy={"login": "sample-user"}),
+            pr(7, reviews=reviews(("COMMENTED", "2026-11-05T01:00:00Z"))),
+            pr(8, author=None, reviews=reviews(("DISMISSED", "2026-11-05T01:00:00Z"))),
+        ]
+        activity = daily.classify_others(records, "sample-user", self.start, self.end)
+        self.assertEqual([(p["number"], p["myActivity"]) for p in activity], [
+            (8, ["review dismissed"]), (3, ["merged"]), (2, ["commented", "merged"]),
+            (1, ["approved"]),
+        ])
+        output = daily.render({"Reviews and merges": activity})
+        self.assertIn(" - [example/demo#2](https://github.com/example/demo/pull/2) (commented, merged)\n",
+                      output)
 
     def test_extra_update_and_inline_code_are_preserved(self):
         sections = daily.classify([pr(2, isDraft=True)], "sample-user", self.start, self.end)
@@ -97,7 +142,10 @@ class DailyUpdateTests(unittest.TestCase):
         args = ["daily_update.py", "--repo", "example/demo", "--repo", "EXAMPLE/demo",
                 "--date", "2026-11-05", "--timezone", "Asia/Seoul", "--json"]
         responses = [{"login": "sample-user"}, {"full_name": "example/demo"},
-                     page([]), page([pr(2)]), page([])]
+                     page([]), page([pr(2)]), page([]),
+                     page([pr(3, author={"login": "someone-else"},
+                              reviews=reviews(("APPROVED", "2026-11-05T01:00:00Z")))]),
+                     page([])]
         stdout = io.StringIO()
         with patch("sys.argv", args), patch.object(daily, "gh_json", side_effect=responses) as request:
             with redirect_stdout(stdout):
@@ -106,12 +154,14 @@ class DailyUpdateTests(unittest.TestCase):
         self.assertEqual(result["repositories"], ["example/demo"])
         self.assertEqual(len(result["sections"]["WIP"]), 1)
         queries = [arg for call in request.call_args_list for arg in call.args if arg.startswith("search=")]
-        self.assertEqual(len(queries), 3)
+        self.assertEqual(len(queries), 5)
         self.assertIn("is:closed is:unmerged closed:", queries[2])
+        self.assertEqual([p["number"] for p in result["sections"]["Reviews and merges"]], [3])
+        self.assertIn("Reviews and merges:\n - [example/demo#3]", result["markdown"])
 
     def test_cli_failure_does_not_emit_partial_update(self):
         args = ["daily_update.py", "--repo", "example/demo", "--repo", "example/private"]
-        responses = [{"login": "sample-user"}, {}, page([]), page([]), page([]),
+        responses = [{"login": "sample-user"}, {}, page([]), page([]), page([]), page([]), page([]),
                      RuntimeError("repository unavailable")]
         stdout, stderr = io.StringIO(), io.StringIO()
         with patch("sys.argv", args), patch.object(daily, "gh_json", side_effect=responses):

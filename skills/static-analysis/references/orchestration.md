@@ -21,7 +21,29 @@ The output contains `scope`, `root`, `fileCount`, `lineCount`, and `units`. Each
 
 Add units for cross-cutting work that a path partition cannot express: shared contracts and schemas, configuration and build files, public entry points, and callers outside the scope that establish in-scope behavior. Assign each added unit an ID that does not collide with the planner's IDs.
 
-Keep a coverage ledger in the coordinating chat with: unit ID, paths, owner, status, candidates, and evidence. Use `pending`, `running`, `complete`, or `blocked`. A unit is `complete` only when its assigned paths were analyzed and its findings or explicit no-finding result were reconciled. A worker's "no findings" is not proof of correctness.
+## Coverage ledger
+
+Keep unit coverage in the persistent ledger. Keep candidates and evidence in the coordinating chat.
+
+```sh
+python3 <skill-dir>/scripts/plan-units.py <scope> --max-units <n> > <plan.json>
+python3 <skill-dir>/scripts/ledger.py init --plan <plan.json> --revision <sha>
+python3 <skill-dir>/scripts/ledger.py add --scope <scope> --id <id> --label <label> --path <path>...
+python3 <skill-dir>/scripts/ledger.py mark --scope <scope> --unit <id> --status running --owner <taskId>
+python3 <skill-dir>/scripts/ledger.py next --scope <scope>
+python3 <skill-dir>/scripts/ledger.py new-pass --scope <scope>
+```
+
+The default ledger path is derived from the resolved scope under `$XDG_CACHE_HOME/static-analysis` or `~/.cache/static-analysis`; `--ledger` overrides it. `init` resumes a ledger with the same scope and revision and replaces one for a different revision. Statuses are `pending`, `running`, `complete`, and `blocked`. A unit is `complete` only when its assigned paths were analyzed and its findings or explicit no-finding result were reconciled. A worker's "no findings" is not proof of correctness. Mark a failed, partial, or idle worker's unit `blocked`, then reassign it.
+
+## Passes and repeated invocations
+
+The human runs this skill from a queue, so the same invocation can arrive many times, both while a run is active and after it finishes. Each arrival is authorization to continue scanning. Never answer it only with status, and never decline it as redundant, already running, or already complete.
+
+- Pass 1 covers every assigned path. `next` returns `new-pass` only after every unit of the current pass is `complete`.
+- On an invocation that arrives while `next` returns `dispatch`, `reassign`, or `continue`, advance the current pass: fill free slots with pending or blocked units, analyze units locally when no slot is free, and validate and hand off ready candidates.
+- On an invocation that arrives after `next` returns `new-pass`, run `ledger.py new-pass` and analyze the whole scope again. Later passes rotate through foci such as cross-unit contracts, error and boundary paths, state and concurrency, differential checks against fixtures or reference implementations, and the least-productive units. Give each worker the pass number and focus, plus the candidates already handled for its unit so that it looks for new defects.
+- A pass that finds no new defect does not justify refusing the next pass.
 
 ## Worker prompt
 
@@ -32,6 +54,7 @@ You are a read-only static-analysis worker in a human-invoked $static-analysis r
 
 Authorization: <original human request and restrictions>
 Run: <run ID>; coordinator thread: <thread ID>; unit: <unit ID>
+Pass: <pass number>; focus: <pass focus>; already handled for this unit: <candidate summaries or none>
 Repository: <absolute path>; revision: <commit SHA and branch>
 Scope: <unit paths and any cross-cutting contracts>
 Model target: <provider, model, and options evidence>

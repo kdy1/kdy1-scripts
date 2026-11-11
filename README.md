@@ -16,6 +16,7 @@ A collection of standalone [T3 Chat skills](./skills) for GitHub, product planni
 | `main-qa` | Explicitly run parallel functional and usability QA with GPT-5.6 Luna `xhigh` subagents and report discovered problems through `$add-issue`. |
 | `manage-stacked-prs` | Modify existing stacked PRs, fix necessary lower-layer causes, and restack and verify only affected upper layers. |
 | `merge-pr` | Squash merge authorized GitHub PRs without overriding the commit subject, then verify the result. |
+| `disk-cleanup` | On explicit invocation, free disk space to 400 GB without questions by removing only regenerable build output and caches, then settle the thread. |
 | `design-ui` | Design and preview new or changed UI, including plans, specifications, and issues; obtain approval and implement in the same conversation when authorized, without a mode switch. |
 | `repair-pr` | Repair merge conflicts, actionable bot feedback, and failing CI on a pull request. |
 | `research-comment` | Investigate a question and post English GitHub findings after human approval, with AI-use disclosure, a reviewer mention, and the research harness and model. |

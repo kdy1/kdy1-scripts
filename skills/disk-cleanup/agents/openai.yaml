@@ -1,0 +1,7 @@
+interface:
+  display_name: "Disk Cleanup"
+  short_description: "Free disk space to 400 GB by removing regenerable build output and caches"
+  default_prompt: "Use $disk-cleanup to free disk space until at least 400 GB is free, removing only regenerable build output and caches without asking questions, and settle the thread when the target is met."
+
+policy:
+  allow_implicit_invocation: false

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Deterministic helpers for Review PR Once: targets, checkouts, prompts, checks."""
+"""Deterministic helpers for Review Once: targets, checkouts, prompts, checks."""
 
 import argparse
 import json
@@ -121,7 +121,7 @@ def prepare(ref, repo=None, run_dir=None):
     if pr["state"] != "OPEN":
         print(f"warning: PR state is {pr['state']}", file=sys.stderr)
     created = run_dir is None
-    root = Path(tempfile.mkdtemp(prefix="review-pr-once-")) if created else Path(run_dir)
+    root = Path(tempfile.mkdtemp(prefix="review-once-")) if created else Path(run_dir)
     root.mkdir(parents=True, exist_ok=True)
     try:
         return _prepare_checkouts(root, host, owner, name, number, pr)
@@ -211,8 +211,8 @@ def verify(manifest):
 
 def cleanup(manifest):
     root = Path(manifest["runDir"])
-    if not (root / "manifest.json").is_file() or not root.name.startswith("review-pr-once-"):
-        raise ValueError(f"Refusing to delete {root}: not a Review PR Once run directory")
+    if not (root / "manifest.json").is_file() or not root.name.startswith("review-once-"):
+        raise ValueError(f"Refusing to delete {root}: not a Review Once run directory")
     shutil.rmtree(root)
 
 
@@ -256,7 +256,7 @@ def main():
             cleanup(load_manifest(args.manifest))
             print("removed")
     except (OSError, ValueError, RuntimeError, KeyError) as error:
-        parser.exit(1, f"review-pr-once: {error}\n")
+        parser.exit(1, f"review-once: {error}\n")
 
 
 if __name__ == "__main__":

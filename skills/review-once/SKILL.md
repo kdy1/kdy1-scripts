@@ -1,13 +1,13 @@
 ---
-name: review-pr-once
-description: "Review one GitHub PR once with four independent subagents (codex/gpt-6-astra, codex/gpt-6.1-sol, claudeAgent/claude-opus-5-5, claudeAgent/claude-sonnet-5-5) that each judge whether the change goes in the right direction, then report each verdict and a verified synthesis in chat. Use when the user invokes $review-pr-once or asks to review a PR with these four independent model subagents. Read-only; never posts to GitHub."
+name: review-once
+description: "Review one GitHub PR once with four independent subagents (codex/gpt-6-astra, codex/gpt-6.1-sol, claudeAgent/claude-opus-5-5, claudeAgent/claude-sonnet-5-5) that each judge whether the change goes in the right direction, then report each verdict and a verified synthesis in chat. Use when the user invokes $review-once or asks to review a PR with these four independent model subagents. Read-only; never posts to GitHub."
 ---
 
-# Review PR Once
+# Review Once
 
 Get four independent, single-pass opinions on whether a pull request's change goes in the right direction. Each reviewer uses a different model and its own clean checkout. The coordinator compares the four results, checks disputed claims against the code, and reports in chat.
 
-Helper: `scripts/review_pr_once.py` (Python 3.9+, `gh`, Git 2.27+). Reviewer brief: `references/reviewer-prompt.md`. Run the helper with its absolute path.
+Helper: `scripts/review_once.py` (Python 3.9+, `gh`, Git 2.27+). Reviewer brief: `references/reviewer-prompt.md`. Run the helper with its absolute path.
 
 ## Boundaries
 
@@ -22,7 +22,7 @@ Helper: `scripts/review_pr_once.py` (Python 3.9+, `gh`, Git 2.27+). Reviewer bri
 2. Run:
 
    ```sh
-   python3 <skill>/scripts/review_pr_once.py prepare <PR_URL>
+   python3 <skill>/scripts/review_once.py prepare <PR_URL>
    ```
 
    The helper fetches the PR into a new private temporary directory. It does not use the user's working tree. It pins the head and base SHAs, computes the merge base, creates one detached checkout per reviewer (`astra`, `sol`, `opus`, `sonnet`), and prints a manifest that includes the `manifest` path. A warning about a non-open PR is not a blocker; mention it in the report.
@@ -33,7 +33,7 @@ Helper: `scripts/review_pr_once.py` (Python 3.9+, `gh`, Git 2.27+). Reviewer bri
 2. Run:
 
    ```sh
-   python3 <skill>/scripts/review_pr_once.py targets <run-dir>/capabilities.json [--set SLUG:OPTION=VALUE ...]
+   python3 <skill>/scripts/review_once.py targets <run-dir>/capabilities.json [--set SLUG:OPTION=VALUE ...]
    ```
 
    Add `--set` only for settings that the user explicitly requested, for example `--set astra:reasoningEffort=xhigh`. Otherwise reviewers use each model's catalog default; say so in the report. The helper prints one `target` per slug, or exits non-zero with the missing model or unsupported setting.
@@ -43,10 +43,10 @@ Helper: `scripts/review_pr_once.py` (Python 3.9+, `gh`, Git 2.27+). Reviewer bri
 1. For each slug, render the brief:
 
    ```sh
-   python3 <skill>/scripts/review_pr_once.py prompt <manifest> <slug>
+   python3 <skill>/scripts/review_once.py prompt <manifest> <slug>
    ```
 
-2. Launch all four in the same response with `delegate_task`: the slug's `target`, the rendered brief as the task, `mode: "async"`, a title like `Review PR Once: <repo>#<n> (<slug>)`, and `clientRequestId: review-pr-once-<run-dir-name>-<slug>`. Use the default shared isolation; do not use `isolation: "worktree"`, because the brief points each reviewer at its own pinned checkout. Record each `taskId`.
+2. Launch all four in the same response with `delegate_task`: the slug's `target`, the rendered brief as the task, `mode: "async"`, a title like `Review Once: <repo>#<n> (<slug>)`, and `clientRequestId: review-once-<run-dir-name>-<slug>`. Use the default shared isolation; do not use `isolation: "worktree"`, because the brief points each reviewer at its own pinned checkout. Record each `taskId`.
    - You may use your native subagent tool instead only for a reviewer whose model is your own model and needs no extra settings, and only with a fresh context. Never use a fork that inherits this conversation.
    - Give reviewers only the brief. Do not pass your own opinion, other reviewers' results, or the user's hypothesis.
 3. Async completion wakes you. Do not poll. While reviewers run, read the PR description, linked issues, applicable `AGENTS.md`, and the diff yourself, so that you can check their claims later.
@@ -54,7 +54,7 @@ Helper: `scripts/review_pr_once.py` (Python 3.9+, `gh`, Git 2.27+). Reviewer bri
 
 ## 4. Check and compare results
 
-1. Run `python3 <skill>/scripts/review_pr_once.py verify <manifest>`. A reviewer whose checkout moved or changed is incomplete; report that. If the PR head changed after the review started, tell the user that the review applies to the pinned head.
+1. Run `python3 <skill>/scripts/review_once.py verify <manifest>`. A reviewer whose checkout moved or changed is incomplete; report that. If the PR head changed after the review started, tell the user that the review applies to the pinned head.
 2. Read every result. Each must have `VERDICT`, `CONFIDENCE`, `SUMMARY`, `APPROACH`, `FINDINGS`, and `COVERAGE`. A result without a verdict is incomplete.
 3. Check findings against the pinned code before you repeat them. Prioritize findings that only one reviewer reported, findings that conflict with another reviewer, and every P0 or P1. Label each as confirmed, rejected (with the reason), or unverified. Do not silently drop a reviewer's finding.
 4. Group findings with the same root cause and note which reviewers reported each one.
@@ -73,4 +73,4 @@ Do not say that the PR is proven correct. When no issues are found, say that no 
 
 ## 6. Clean up
 
-After the report, run `python3 <skill>/scripts/review_pr_once.py cleanup <manifest>`. It deletes only a temporary `review-pr-once-*` run directory that contains a manifest. If any reviewer is still running or was cancelled with an unknown state, keep the directory and give its path.
+After the report, run `python3 <skill>/scripts/review_once.py cleanup <manifest>`. It deletes only a temporary `review-once-*` run directory that contains a manifest. If any reviewer is still running or was cancelled with an unknown state, keep the directory and give its path.

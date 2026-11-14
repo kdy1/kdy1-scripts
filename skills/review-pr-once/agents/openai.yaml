@@ -1,4 +1,0 @@
-interface:
-  display_name: "Review PR Once"
-  short_description: "Four independent model reviews of whether a PR goes in the right direction"
-  default_prompt: "Use $review-pr-once. <PR URL>을 독립적인 model:codex/gpt-6-astra model:codex/gpt-6.1-sol model:claudeAgent/claude-opus-5-5 model:claudeAgent/claude-sonnet-5-5 서브에이전트들로 각각 PR의 수정이 맞는 방향인지 리뷰해줘"

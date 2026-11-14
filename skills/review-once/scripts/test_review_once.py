@@ -1,6 +1,6 @@
 import unittest
 
-from review_pr_once import parse_pr, parse_settings, render_prompt, select_targets
+from review_once import parse_pr, parse_settings, render_prompt, select_targets
 
 
 def catalog(drop=None, values_shape=True):

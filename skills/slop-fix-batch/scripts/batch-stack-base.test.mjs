@@ -34,50 +34,69 @@ function fixture(fn) {
 }
 const input = source => ({ version: 1, checkout: source, remote: 'origin', targetBranch: 'main' });
 
-test('sync-base fast-forwards a clean main and leaves an existing stack anchor unchanged', () => fixture(({ source, writer, initial }) => {
+// The user's checkout must keep its branch, HEAD, local main, index and files.
+function snapshot(source) {
+  return {
+    branch: git(source, 'branch', '--show-current'),
+    head: git(source, 'rev-parse', 'HEAD'),
+    main: git(source, 'rev-parse', 'refs/heads/main'),
+    status: git(source, 'status', '--porcelain'),
+  };
+}
+
+test('sync-base pins fetched main without moving local main or an existing stack anchor', () => fixture(({ source, writer, initial }) => {
   git(source, 'branch', 'pinned-stack-base', initial);
   const next = commit(writer, 'remote-change');
   git(writer, 'push', 'origin', 'main');
+  const before = snapshot(source);
 
   const result = syncBase(input(source));
   assert.equal(result.baseSha, next);
-  assert.equal(result.previousSha, initial);
-  assert.equal(result.updated, true);
-  assert.equal(git(source, 'rev-parse', 'main'), next);
+  assert.equal(result.remoteRef, 'refs/remotes/origin/main');
+  assert.equal(git(source, 'rev-parse', 'origin/main'), next);
+  assert.deepEqual(snapshot(source), before);
+  assert.equal(before.main, initial);
   assert.equal(git(source, 'rev-parse', 'pinned-stack-base'), initial);
-  assert.equal(git(source, 'status', '--porcelain'), '');
-
-  const again = syncBase(input(source));
-  assert.equal(again.updated, false);
-  assert.equal(again.baseSha, next);
+  assert.equal(syncBase(input(source)).baseSha, next);
 }));
 
-test('sync-base leaves a dirty source checkout unchanged', () => fixture(({ source, writer, initial }) => {
-  commit(writer, 'remote-change');
-  git(writer, 'push', 'origin', 'main');
-  writeFileSync(join(source, 'untracked.txt'), 'work in progress');
-  assert.throws(() => syncBase(input(source)), /must be clean/);
-  assert.equal(git(source, 'rev-parse', 'main'), initial);
-}));
-
-test('sync-base leaves a checkout on another branch unchanged', () => fixture(({ source, writer, initial }) => {
-  commit(writer, 'remote-change');
+test('sync-base leaves a dirty checkout on another branch untouched', () => fixture(({ source, writer }) => {
+  const next = commit(writer, 'remote-change');
   git(writer, 'push', 'origin', 'main');
   git(source, 'switch', '-c', 'other-work');
-  assert.throws(() => syncBase(input(source)), /must be on main/);
-  assert.equal(git(source, 'rev-parse', 'main'), initial);
+  writeFileSync(join(source, 'untracked.txt'), 'work in progress');
+  writeFileSync(join(source, 'initial.txt'), 'modified');
+  const before = snapshot(source);
+
+  assert.equal(syncBase(input(source)).baseSha, next);
+  assert.deepEqual(snapshot(source), before);
 }));
 
-test('sync-base leaves a diverged main unchanged', () => fixture(({ source, writer }) => {
+test('sync-base pins fetched main when local main is ahead or diverged', () => fixture(({ source, writer }) => {
   const local = commit(source, 'local-change');
-  commit(writer, 'remote-change');
+  const next = commit(writer, 'remote-change');
   git(writer, 'push', 'origin', 'main');
-  assert.throws(() => syncBase(input(source)), /ahead of or diverged/);
+
+  assert.equal(syncBase(input(source)).baseSha, next);
   assert.equal(git(source, 'rev-parse', 'main'), local);
+  assert.equal(git(source, 'status', '--porcelain'), '');
 }));
 
-test('sync-base leaves a main ahead of origin unchanged', () => fixture(({ source }) => {
-  const local = commit(source, 'local-change');
-  assert.throws(() => syncBase(input(source)), /ahead of or diverged/);
-  assert.equal(git(source, 'rev-parse', 'main'), local);
+test('sync-base pins another target branch without checking it out', () => fixture(({ source, writer }) => {
+  git(writer, 'switch', '-c', 'release');
+  const release = commit(writer, 'release-change');
+  git(writer, 'push', 'origin', 'release');
+  const before = snapshot(source);
+
+  const result = syncBase({ ...input(source), targetBranch: 'release' });
+  assert.equal(result.baseSha, release);
+  assert.equal(result.remoteRef, 'refs/remotes/origin/release');
+  assert.deepEqual(snapshot(source), before);
+  assert.throws(() => git(source, 'rev-parse', '--verify', 'refs/heads/release'));
+}));
+
+test('sync-base rejects an invalid target branch before fetching', () => fixture(({ source }) => {
+  for (const targetBranch of ['bad..name', '-main', 'main.lock', 'a/.b', 'main:other'])
+    assert.throws(() => syncBase({ ...input(source), targetBranch }), /Invalid target branch/);
+  assert.equal(git(source, 'rev-parse', '--verify', '-q', 'refs/remotes/origin/main'), git(source, 'rev-parse', 'main'));
 }));

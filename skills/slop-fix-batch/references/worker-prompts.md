@@ -77,7 +77,7 @@ In execution mode, the coordinator confirms groups and may dispatch implementati
 while unrelated investigation continues; it owns closures.
 ```
 
-Investigators can read other fixed-list issues to understand dependencies, but cannot add work outside the fixed list. If they need writable test resources, assign an isolated checkout and record any generated artifacts; do not use the user's dirty checkout.
+Investigators can read other fixed-list issues to understand dependencies, but cannot add work outside the fixed list. Give them the detached investigation worktree at the inspected SHA, never the source checkout. If they need writable test resources, assign a separate isolated worktree and record any generated artifacts.
 
 ## Dependent-group preparation
 

@@ -193,25 +193,13 @@ export function prepareWorktree(input, { run = runCommand } = {}) {
   return { version: 1, complete: true, path: input.path, startSha: input.startSha };
 }
 export function syncBase(input, { run = runCommand } = {}) {
-  version(input); absolute(input.checkout); nonempty(input.remote, 'verified remote');
+  version(input); absolute(input.checkout); nonempty(input.remote, 'verified remote'); nonempty(input.targetBranch, 'target branch');
   check(/^[\w.-]+$/.test(input.remote), 'Invalid remote name');
-  check(input.targetBranch === 'main', 'Only main base synchronization is supported');
-  check(run('git', ['branch', '--show-current'], input.checkout) === 'main', 'Source checkout must be on main');
-  check(!run('git', ['status', '--porcelain'], input.checkout), 'Source checkout must be clean');
-
-  const localBefore = run('git', ['rev-parse', 'refs/heads/main'], input.checkout);
-  const remoteRef = `refs/remotes/${input.remote}/main`;
-  run('git', ['fetch', '--no-tags', input.remote, `refs/heads/main:${remoteRef}`], input.checkout);
-  const remoteSha = run('git', ['rev-parse', remoteRef], input.checkout);
-  check(run('git', ['rev-parse', 'refs/heads/main'], input.checkout) === localBefore, 'Local main moved during base synchronization');
-  check(run('git', ['merge-base', localBefore, remoteSha], input.checkout) === localBefore, 'Local main is ahead of or diverged from fetched main');
-
-  if (localBefore !== remoteSha) run('git', ['merge', '--ff-only', `${input.remote}/main`], input.checkout);
-  check(run('git', ['rev-parse', 'HEAD'], input.checkout) === remoteSha &&
-    run('git', ['rev-parse', 'refs/heads/main'], input.checkout) === remoteSha &&
-    run('git', ['rev-parse', remoteRef], input.checkout) === remoteSha &&
-    !run('git', ['status', '--porcelain'], input.checkout), 'Base synchronization needs reconciliation');
-  return { version: 1, complete: true, baseSha: remoteSha, previousSha: localBefore, updated: localBefore !== remoteSha };
+  check(/^\w[\w.-]*(\/[\w-][\w.-]*)*$/.test(input.targetBranch) && !/\.\.|\.lock(\/|$)|\.$/.test(input.targetBranch), 'Invalid target branch');
+  // Updates only the remote-tracking ref. The source checkout's HEAD, branches, index and files stay untouched.
+  const remoteRef = `refs/remotes/${input.remote}/${input.targetBranch}`;
+  run('git', ['fetch', '--no-tags', input.remote, `refs/heads/${input.targetBranch}:${remoteRef}`], input.checkout);
+  return { version: 1, complete: true, baseSha: sha(run('git', ['rev-parse', `${remoteRef}^{commit}`], input.checkout)), remoteRef };
 }
 cli(import.meta.url, 'batch-stack.mjs <run|reconcile|worktree|sync-base> input.json', ([command, path]) => {
   check(path, 'Missing input'); const input = readJson(path);

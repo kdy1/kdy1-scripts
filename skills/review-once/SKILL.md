@@ -1,11 +1,11 @@
 ---
 name: review-once
-description: "Review a change once with four independent subagents (codex/gpt-6-astra, codex/gpt-6.1-sol, claudeAgent/claude-opus-5-5, claudeAgent/claude-sonnet-5-5) that each review the diff line by line for defects, then report each verdict and the verified findings in chat. The change is a GitHub PR, or local branch and working-tree changes before a PR exists. Use when the user invokes $review-once or asks to review a PR or local changes with these four independent model subagents. Never posts to GitHub."
+description: "Review a change once with four independent subagents (codex/gpt-6-astra, codex/gpt-6.1-sol, claudeAgent/claude-opus-5-5, claudeAgent/claude-sonnet-5-5) that each review the diff for defects, then report each verdict and the verified findings in chat. The change is a GitHub PR, or local branch and working-tree changes before a PR exists. Use when the user invokes $review-once or asks to review a PR or local changes with these four independent model subagents. Never posts to GitHub."
 ---
 
 # Review Once
 
-Get four independent, single-pass code reviews of a diff. Each reviewer uses a different model and its own clean checkout, reads every changed hunk, and reports concrete defects with `path:line` evidence. The coordinator compares the four results, checks the findings against the code, and reports in chat.
+Get four independent, single-pass code reviews of a diff. Each reviewer uses a different model and its own clean checkout, and reports defects in the diff with `path:line` evidence. The coordinator compares the four results, checks the findings against the code, and reports in chat.
 
 The change is one of these:
 
@@ -80,7 +80,7 @@ Both modes create one detached checkout per reviewer (`astra`, `sol`, `opus`, `s
 ## 4. Check and compare results
 
 1. Run `python3 <skill>/scripts/review_once.py verify <manifest>`. A reviewer whose checkout moved is incomplete; report that. A `note:` line means the PR head or the local files changed after the review started, or that a reviewer edited its checkout (for example for instrumentation); tell the user that the review applies to the pinned snapshot and mention such edits.
-2. Read every result. Each must have `VERDICT`, `CONFIDENCE`, `SUMMARY`, `FINDINGS`, and `COVERAGE`. A result without a verdict, or whose `COVERAGE` shows that it skipped changed files, is incomplete.
+2. Read every result. Each must have `VERDICT`, `CONFIDENCE`, `SUMMARY`, `FINDINGS`, and `COVERAGE`. A result without a verdict is incomplete.
 3. Check findings against the pinned code before you repeat them. Prioritize findings that only one reviewer reported, findings that conflict with another reviewer, and every P0 or P1. Label each as confirmed, rejected (with the reason), or unverified. Do not silently drop a reviewer's finding.
    - **Behavior claims need a run on both sides.** A finding that says the change fixes, breaks, or alters behavior (a regression, a fix, a different output) is `confirmed` only when the same input was run on the base and on the head, by a reviewer or by you. Reading the code, or a PR comment, gives `unverified`. If it is cheap, run the missing side yourself instead of leaving it unverified: build the base and head once, in separate target directories, and run every repro on both.
    - **Check that the change solves what it claims.** Run the motivating input, and the other forms of the same problem (other callers of the changed function), on the base and the head. Report each as fixed, unchanged, or worse. Do not report a bug as "fix first" or "existing" until you know whether this change already fixes it.

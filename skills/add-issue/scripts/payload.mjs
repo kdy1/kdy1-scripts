@@ -30,6 +30,45 @@ export function images(manifest) {
   }
   return result(errors.length ? 'blocked' : 'verified', errors, { files });
 }
+// Tracker-neutral candidate checks shared by the GitHub and Linear payload contracts.
+export function validateCandidateCore(c) {
+  check(['Bug', 'Feature', 'Task'].includes(c.classification), 'Invalid classification');
+  check(c.readiness === 'ready', 'Candidate is not ready');
+  check(/^[a-f\d]{40,64}$/i.test(c.revision), 'Missing exact revision');
+  text(c.evidence, 'candidate evidence'); text(c.authorization?.origin, 'authorization origin'); text(c.authorization?.request, 'original request');
+  check(['human', 'main-qa', 'static-analysis', 'collect-review'].includes(c.authorization.kind), 'Invalid authorization kind');
+  text(c.authorization.context, 'trusted authorization context');
+  if (c.authorization.kind !== 'human') { text(c.authorization.runId, 'handoff run identity'); text(c.authorization.delegation, 'handoff delegation chain'); text(c.authorization.scope, 'authorized handoff scope'); }
+  if (['static-analysis', 'collect-review'].includes(c.authorization.kind)) check(c.classification === 'Bug', 'Handoff permits Bugs only');
+  check(typeof c.restrictions?.draftOnly === 'boolean' && typeof c.restrictions?.diagnosisOnly === 'boolean' && typeof c.restrictions?.noRepair === 'boolean' && c.restrictions?.noImplementation === true, 'Missing restrictions');
+  validateBaseline(c.workspace?.original); validateBaseline(c.workspace?.baseline);
+  if (!same(c.workspace.original, c.workspace.baseline)) {
+    check(c.workspace.baseline.originalRef === c.workspace.original.ref && c.workspace.baseline.repairLedger.length > 0, 'Missing original baseline/repair link');
+  }
+  check(c.workspace.cleanupVerified === true, 'Workspace cleanup not verified');
+  if (c.environment === 'local') {
+    check(c.restrictions.noCodeChanges === true, 'Missing local code-change prohibition');
+    text(c.logs, 'sanitized logs or availability gaps'); text(c.runtime, 'runtime provenance or applicability');
+  } else text(c.environment, 'investigation environment');
+  check(actions.includes(c.action), 'Invalid action'); text(c.title, 'exact title');
+  check(Array.isArray(c.allowedActions) && c.allowedActions.includes(c.action), 'Action is not audited');
+  check(typeof c.body === 'string' && typeof c.comment === 'string', 'Missing exact text fields');
+  if (c.action === 'new issue') { text(c.body, 'issue body'); check(!c.comment, 'Unexpected duplicate comment'); }
+  if (c.action === 'duplicate comment') { text(c.comment, 'duplicate comment'); check(!c.body, 'Unexpected issue body'); }
+  if (['metadata update', 'existing issue'].includes(c.action)) check(!c.body && !c.comment, 'No text permitted for this action');
+}
+export function validateImageFields(image, c, iid, captions) {
+  text(image.id, 'image identity'); check(!iid.has(image.id), 'Duplicate image identity'); iid.add(image.id);
+  for (const key of ['approval','path','surface','viewport','state','caption','provenance']) text(image[key], `image ${key}`);
+  check(!/[\[\]\\\n\r]/.test(image.caption) && !captions.has(image.caption), 'Image captions must be unique plain Markdown alt text'); captions.add(image.caption);
+  check(![c.body,c.comment,c.imageComment ?? ''].some(value => value.includes(image.path)), 'Published text includes private saved path');
+  check(/^[a-f\d]{64}$/.test(image.sha256) && typeof image.generated === 'boolean', 'Missing image hash/provenance');
+  if (image.generated) {
+    text(image.prompt, 'final image prompt');
+    const published = image.destination === 'existing' ? [c.duplicate.issue?.body ?? '', ...(c.duplicate.comments ?? []).map(x => x.body)] : image.destination === 'body' ? [c.body] : [c.body,c.comment,c.imageComment ?? '', c.duplicate.issue?.body ?? '', ...(c.duplicate.comments ?? []).map(x => x.body)];
+    check(published.some(value => value.includes(image.prompt)), 'Generated prompt missing from published text');
+  }
+}
 export function validatePayload(p) {
   version(p); text(p.runId, 'run identity'); target(p.target); text(p.account, 'authenticated account');
   check(p.preparationMode === undefined || ['plan', 'default'].includes(p.preparationMode), 'Invalid preparation mode');
@@ -37,31 +76,8 @@ export function validatePayload(p) {
   const ids = new Set();
   for (const c of p.candidates) {
     text(c.id, 'candidate identity'); check(!ids.has(c.id), 'Duplicate candidate identity'); ids.add(c.id);
-    check(['Bug', 'Feature', 'Task'].includes(c.classification), 'Invalid classification');
-    check(c.readiness === 'ready', 'Candidate is not ready');
-    check(/^[a-f\d]{40,64}$/i.test(c.revision), 'Missing exact revision');
-    text(c.evidence, 'candidate evidence'); text(c.authorization?.origin, 'authorization origin'); text(c.authorization?.request, 'original request');
-    check(['human', 'main-qa', 'static-analysis', 'collect-review'].includes(c.authorization.kind), 'Invalid authorization kind');
-    text(c.authorization.context, 'trusted authorization context');
-    if (c.authorization.kind !== 'human') { text(c.authorization.runId, 'handoff run identity'); text(c.authorization.delegation, 'handoff delegation chain'); text(c.authorization.scope, 'authorized handoff scope'); }
-    if (['static-analysis', 'collect-review'].includes(c.authorization.kind)) check(c.classification === 'Bug', 'Handoff permits Bugs only');
-    check(typeof c.restrictions?.draftOnly === 'boolean' && typeof c.restrictions?.diagnosisOnly === 'boolean' && typeof c.restrictions?.noRepair === 'boolean' && c.restrictions?.noImplementation === true, 'Missing restrictions');
-    validateBaseline(c.workspace?.original); validateBaseline(c.workspace?.baseline);
-    if (!same(c.workspace.original, c.workspace.baseline)) {
-      check(c.workspace.baseline.originalRef === c.workspace.original.ref && c.workspace.baseline.repairLedger.length > 0, 'Missing original baseline/repair link');
-    }
-    check(c.workspace.cleanupVerified === true, 'Workspace cleanup not verified');
-    if (c.environment === 'local') {
-      check(c.restrictions.noCodeChanges === true, 'Missing local code-change prohibition');
-      text(c.logs, 'sanitized logs or availability gaps'); text(c.runtime, 'runtime provenance or applicability');
-    } else text(c.environment, 'investigation environment');
-    check(actions.includes(c.action), 'Invalid action'); text(c.title, 'exact title');
-    check(Array.isArray(c.allowedActions) && c.allowedActions.includes(c.action), 'Action is not audited');
+    validateCandidateCore(c);
     check(c.action === 'new issue' ? c.issueUrl === null : !!issueNumber(c.issueUrl, p.target), 'Invalid action target');
-    check(typeof c.body === 'string' && typeof c.comment === 'string', 'Missing exact text fields');
-    if (c.action === 'new issue') { text(c.body, 'issue body'); check(!c.comment, 'Unexpected duplicate comment'); }
-    if (c.action === 'duplicate comment') { text(c.comment, 'duplicate comment'); check(!c.body, 'Unexpected issue body'); }
-    if (['metadata update', 'existing issue'].includes(c.action)) check(!c.body && !c.comment, 'No text permitted for this action');
     check(c.duplicate?.complete === true && Number.isInteger(c.duplicate.limit) && c.duplicate.limit > 0 && c.duplicate.limit <= 100, 'Missing bounded duplicate evidence');
     text(c.duplicate.query, 'bounded duplicate query'); text(c.duplicate.evidence, 'duplicate decision evidence');
     check(Array.isArray(c.duplicate.issues), 'Missing duplicate observations');
@@ -98,16 +114,7 @@ export function validatePayload(p) {
     check(Array.isArray(c.images) && typeof c.noApprovedImages === 'boolean' && c.noApprovedImages === (c.images.length === 0), 'Missing explicit image manifest');
     const iid = new Set(), captions = new Set();
     for (const image of c.images) {
-      text(image.id, 'image identity'); check(!iid.has(image.id), 'Duplicate image identity'); iid.add(image.id);
-      for (const key of ['approval','path','surface','viewport','state','caption','provenance']) text(image[key], `image ${key}`);
-      check(!/[\[\]\\\n\r]/.test(image.caption) && !captions.has(image.caption), 'Image captions must be unique plain Markdown alt text'); captions.add(image.caption);
-      check(![c.body,c.comment,c.imageComment ?? ''].some(value => value.includes(image.path)), 'Published text includes private saved path');
-      check(/^[a-f\d]{64}$/.test(image.sha256) && typeof image.generated === 'boolean', 'Missing image hash/provenance');
-      if (image.generated) {
-        text(image.prompt, 'final image prompt');
-        const published = image.destination === 'existing' ? [c.duplicate.issue?.body ?? '', ...(c.duplicate.comments ?? []).map(x => x.body)] : image.destination === 'body' ? [c.body] : [c.body,c.comment,c.imageComment ?? '', c.duplicate.issue?.body ?? '', ...(c.duplicate.comments ?? []).map(x => x.body)];
-        check(published.some(value => value.includes(image.prompt)), 'Generated prompt missing from published text');
-      }
+      validateImageFields(image, c, iid, captions);
       check(['body', 'comment', 'image-comment', 'existing'].includes(image.destination), 'Invalid image destination');
       check(c.action === 'new issue' ? ['body','image-comment'].includes(image.destination) : image.destination === 'existing' || c.action === 'duplicate comment' && image.destination === 'comment', 'Image action mismatch');
       if (image.destination === 'existing') {

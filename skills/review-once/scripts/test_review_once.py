@@ -35,8 +35,23 @@ class TargetTests(unittest.TestCase):
     def test_selects_four_reviewers_in_stable_order(self):
         targets = select_targets(catalog())
         self.assertEqual([t["slug"] for t in targets], ["astra", "sol", "opus", "sonnet"])
-        self.assertEqual(targets[1]["target"], {"providerInstanceId": "codex", "model": "gpt-6.1-sol"})
-        self.assertNotIn("options", targets[2]["target"])
+        self.assertEqual(targets[1]["target"], {"providerInstanceId": "codex", "model": "gpt-6.1-sol",
+                                                "options": {"reasoningEffort": "high"}})
+        self.assertEqual(targets[2]["target"]["options"], {"effort": "high"})
+
+    def test_defaults_to_high_effort_and_user_settings_override(self):
+        targets = select_targets(catalog(), parse_settings(["opus:effort=xhigh"]))
+        options = {t["slug"]: t["target"]["options"] for t in targets}
+        self.assertEqual(options, {"astra": {"reasoningEffort": "high"},
+                                   "sol": {"reasoningEffort": "high"},
+                                   "opus": {"effort": "xhigh"},
+                                   "sonnet": {"effort": "high"}})
+
+    def test_missing_default_effort_blocks(self):
+        data = catalog()
+        data["providers"][1]["models"][1]["options"] = []
+        with self.assertRaisesRegex(ValueError, "sonnet: claude-sonnet-5-5 does not support effort=high"):
+            select_targets(data)
 
     def test_accepts_structured_content_and_legacy_option_shape(self):
         settings = parse_settings(["astra:reasoningEffort=xhigh"])

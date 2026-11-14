@@ -60,7 +60,7 @@ Both modes create one detached checkout per reviewer (`astra`, `sol`, `opus`, `s
    python3 <skill>/scripts/review_once.py targets <run-dir>/capabilities.json [--set SLUG:OPTION=VALUE ...]
    ```
 
-   Add `--set` only for settings that the user explicitly requested, for example `--set astra:reasoningEffort=xhigh`. Otherwise reviewers use each model's catalog default; say so in the report. The helper prints one `target` per slug, or exits non-zero with the missing model or unsupported setting.
+   All four reviewers use `high` effort by default (`reasoningEffort=high` for the Codex models, `effort=high` for the Claude models). Add `--set` only for settings that the user explicitly requested, for example `--set astra:reasoningEffort=xhigh`; a user setting overrides the default. The helper prints one `target` per slug, with its options, or exits non-zero with the missing model or unsupported setting.
 
 ## 3. Launch four independent reviewers
 
@@ -91,7 +91,7 @@ Write the report in the user's language. Include:
 2. A table with one row per reviewer: model, verdict, confidence, and a one-line reason. Mark missing or incomplete reviewers.
 3. Synthesis: where reviewers agree and disagree on direction, and your judgment after checking the code. If you recommend a different approach, say which reviewer proposed it and why it is better.
 4. Findings, most severe first: priority, `path:line`, short description, reporting reviewers, and confirmed/rejected/unverified status.
-5. Limits: model settings used (catalog defaults or user-requested), retries, coverage gaps, and checks that reviewers could not run.
+5. Limits: model settings used (default `high` effort or user-requested), retries, coverage gaps, and checks that reviewers could not run.
 
 Do not say that the change is proven correct. When no issues are found, say that no reportable issues were found in the reviewed scope.
 

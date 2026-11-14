@@ -21,6 +21,13 @@ REVIEWERS = (
     ("opus", "claudeAgent", "claude-opus-5-5"),
     ("sonnet", "claudeAgent", "claude-sonnet-5-5"),
 )
+# Default options per reviewer; explicit user settings override them.
+DEFAULT_OPTIONS = {
+    "astra": {"reasoningEffort": "high"},
+    "sol": {"reasoningEffort": "high"},
+    "opus": {"effort": "high"},
+    "sonnet": {"effort": "high"},
+}
 PR_URL = re.compile(r"^https://([^/]+)/([^/]+)/([^/]+)/pull/(\d+)(?:[/?#].*)?$")
 PR_FIELDS = "number,url,title,state,isDraft,baseRefName,baseRefOid,headRefName,headRefOid"
 RUN_PREFIX = "review-once-"
@@ -68,7 +75,7 @@ def parse_settings(entries):
 
 
 def select_targets(response, settings=None):
-    """Validate the four reviewer models in a capabilities response and return targets."""
+    """Validate the four reviewer models and their options, and return targets."""
     if response.get("isError"):
         raise ValueError("T3 capabilities returned an error")
     catalog = response.get("structuredContent", response)
@@ -94,12 +101,13 @@ def select_targets(response, settings=None):
                             "(rerun orchestrator_capabilities with search if it was omitted)")
             continue
         options = {option.get("id"): option for option in model.get("options") or []}
-        for key, value in settings.get(slug, {}).items():
+        chosen = {**DEFAULT_OPTIONS.get(slug, {}), **settings.get(slug, {})}
+        for key, value in chosen.items():
             if key not in options or value not in option_values(options[key]):
                 problems.append(f"{slug}: {model_id} does not support {key}={value}")
         target = {"providerInstanceId": provider_id, "model": model_id}
-        if settings.get(slug):
-            target["options"] = settings[slug]
+        if chosen:
+            target["options"] = chosen
         targets.append({"slug": slug, "target": target})
     if problems:
         raise ValueError("; ".join(problems))
@@ -355,7 +363,7 @@ def main():
     targets = sub.add_parser("targets", help="Validate reviewer models in a capabilities JSON")
     targets.add_argument("capabilities", type=Path)
     targets.add_argument("--set", action="append", metavar="SLUG:OPTION=VALUE",
-                         help="Explicit user-requested model option, e.g. astra:reasoningEffort=xhigh")
+                         help="User-requested option that overrides the default, e.g. astra:reasoningEffort=xhigh")
     pr = sub.add_parser("prepare-pr", help="Fetch a PR and create reviewer checkouts")
     pr.add_argument("pr", help="PR URL, or a number with --repo")
     pr.add_argument("--repo", help="[HOST/]OWNER/REPO when the PR is a number")

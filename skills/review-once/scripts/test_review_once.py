@@ -171,8 +171,9 @@ class LocalTests(unittest.TestCase):
         (self.repo / "new.txt").write_text("edited\n")
         (checkout / "a.txt").write_text("tampered\n")
         problems, notes = verify(self.manifest)
-        self.assertEqual(len(problems), 1)
-        self.assertIn("changed after the review started", notes[0])
+        self.assertEqual(problems, [])
+        self.assertTrue(any("changed files in its checkout" in note for note in notes))
+        self.assertTrue(any("changed after the review started" in note for note in notes))
 
     def test_committed_changes_and_explicit_head(self):
         self.manifest = prepare_local(str(self.repo), base_ref="main", intent="  ")

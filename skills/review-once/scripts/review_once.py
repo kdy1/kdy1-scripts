@@ -333,7 +333,8 @@ def verify(manifest):
         if head != manifest["headSha"]:
             problems.append(f"{slug}: checkout moved to {head}")
         if status:
-            problems.append(f"{slug}: checkout has changes:\n{status}")
+            # Reviewers may edit their throwaway checkout (instrumentation, test files), so this is not a failure.
+            notes.append(f"{slug}: reviewer changed files in its checkout, so it ran on a modified copy:\n{status}")
     if manifest["kind"] == "pr":
         owner, name = manifest["repository"].split("/")
         current = pr_metadata(manifest["host"], owner, name, manifest["number"])

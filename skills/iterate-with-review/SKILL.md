@@ -61,13 +61,13 @@ Repeat until a round is clean:
 3. **Judge each finding.** Give each one a disposition:
    - `applied`: the finding is a real defect, a missing case, test, or update, or a clearly better approach within the change's scope. Severity does not matter.
    - `rejected`: the code shows that the claim is false; or it contradicts the stated intent, a repository rule, or an earlier user decision. Write the evidence, for example `src/x.rs:42 already checks for null`. A finding that was rejected before can come back; check it again against the current code, and reject it again only if the evidence still holds.
-   - **Ask the user** when a finding needs a product or design decision, when a `wrong-direction` verdict argues for a different approach, or when findings in different rounds pull in opposite directions. Then apply or reject according to the answer, and use `User decision: <answer>` as the evidence. Add the decision to the intent file, so that later reviewers know it was made deliberately.
+   - **Ask the user** when a finding needs a product or design decision, when a finding argues for a different approach, or when findings in different rounds pull in opposite directions. Then apply or reject according to the answer, and use `User decision: <answer>` as the evidence. Add the decision to the intent file, so that later reviewers know it was made deliberately.
 4. **Apply.** Fix the `applied` findings in the workspace. Keep each fix minimal and in scope. Run the tests, linters, and builds that cover the changed code. If a check fails, fix it before you continue. Commit each fix, or each group of findings with the same root cause, as a separate commit that follows the repository's commit rules.
 5. **Record.** Write the round result as JSON and run `python3 <skill>/scripts/iterate_with_review.py round-record <ledger> <result.json>`:
 
    ```json
    {
-     "reviewers": [{"slug": "astra", "complete": true, "verdict": "right-direction"}, "... sol, opus, sonnet"],
+     "reviewers": [{"slug": "astra", "complete": true, "verdict": "approve"}, "... sol, opus, sonnet"],
      "findings": [
        {"id": "R1-F1", "priority": "P1", "title": "...", "location": "path:line",
         "reporters": ["opus", "sol"], "disposition": "applied", "commits": ["<sha>"]},

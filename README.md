@@ -22,7 +22,7 @@ A collection of standalone [T3 Chat skills](./skills) for GitHub, product planni
 | `design-ui` | Design and preview new or changed UI, including plans, specifications, and issues; obtain approval and implement in the same conversation when authorized, without a mode switch. |
 | `repair-pr` | Repair merge conflicts, actionable bot feedback, and failing CI on a pull request. |
 | `research-comment` | Investigate a question and post English GitHub findings after human approval, with AI-use disclosure, a reviewer mention, and the research harness and model. |
-| `review-once` | Run one independent pass each with GPT-6 Astra, GPT-6.1 Sol, Claude Opus 5.5, and Claude Sonnet 5.5 on whether a PR, or local changes before a PR, go in the right direction, and report the verdicts in chat. |
+| `review-once` | Run one independent pass each with GPT-6 Astra, GPT-6.1 Sol, Claude Opus 5.5, and Claude Sonnet 5.5 to review the diff of a PR, or of local changes before a PR, and report the verified findings in chat. |
 | `slop-fix-batch` | Fix a fixed issue batch, publish dependency-based PR stacks, and directly maintain and conditionally merge verified stacks. |
 | `slop-fix-issue` | Handle one GitHub issue: close it with evidence if already resolved; otherwise implement and verify it, publish a non-draft PR or a stack for a large issue, and stop. |
 | `static-analysis` | Analyze all code in the requested scope with parallel read-only subagents until every unit is covered, start another pass on each repeated invocation, and hand each confirmed bug to `add-issue` immediately. |
@@ -176,15 +176,15 @@ The skill grounds the proposal in requirements, available UI, and the design sys
 
 When using `$add-issue` in Plan Mode, return a concrete `repair pending` plan for candidates that need local repair; do not finalize their recording payload until the repair is verified outside Plan Mode. For ready candidates, finish investigation and finalize the exact issue title, complete body or duplicate comment, metadata, attachments, and recording action in the final plan. After approval and leaving Plan Mode, it resumes directly at recording with that payload; it does not repeat investigation, classification, reproduction, or drafting. It performs only bounded pre-write checks and verifies the result. A new matching duplicate or changed required condition stops that candidate and is reported without automatically changing the target or content. A missing finalized payload is reported rather than reconstructed. Draft-only restrictions continue after a mode change, and the issue's proposed work is never implemented in the same invocation. A fresh invocation outside Plan Mode retains the full investigation workflow.
 
-To get four independent opinions on a pull request, invoke:
+To get four independent code reviews of a pull request, invoke:
 
 ```text
-$review-once <PR URL>을 독립적인 model:codex/gpt-6-astra model:codex/gpt-6.1-sol model:claudeAgent/claude-opus-5-5 model:claudeAgent/claude-sonnet-5-5 서브에이전트들로 각각 PR의 수정이 맞는 방향인지 리뷰해줘
+$review-once <PR URL>을 독립적인 model:codex/gpt-6-astra model:codex/gpt-6.1-sol model:claudeAgent/claude-opus-5-5 model:claudeAgent/claude-sonnet-5-5 서브에이전트들로 각각 PR의 diff를 리뷰해줘
 ```
 
 Omit the PR URL to review local changes before a PR exists: the current branch's commits since the default base branch, plus uncommitted and untracked files. Name another base branch, or describe what the change is for, to give the reviewers more context.
 
-For a PR, `review-once` fetches the PR into a private temporary directory. For local changes, it snapshots the working tree through a temporary index, so the index, working tree, branches, and stash stay unchanged. Each reviewer gets its own detached checkout at the pinned head, runs one pass through T3 `delegate_task`, and returns a verdict (`right-direction`, `right-direction-with-changes`, `wrong-direction`, or `cannot-judge`) with findings. The coordinator checks disputed findings against the code and reports in chat. It never posts to GitHub and never substitutes a missing model. All four reviewers use `high` effort unless the request specifies other settings.
+For a PR, `review-once` fetches the PR into a private temporary directory. For local changes, it snapshots the working tree through a temporary index, so the index, working tree, branches, and stash stay unchanged. Each reviewer gets its own detached checkout at the pinned head, runs one pass through T3 `delegate_task` over every changed hunk, and returns findings with `path:line` evidence and a verdict (`approve`, `approve-with-changes`, `request-changes`, or `cannot-judge`). The coordinator checks the findings against the code and reports in chat. It never posts to GitHub and never substitutes a missing model. All four reviewers use `high` effort unless the request specifies other settings.
 
 To keep reviewing and fixing until the reviewers find nothing, invoke:
 

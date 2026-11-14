@@ -21,7 +21,7 @@ sys.path.insert(0, str(REVIEW_ONCE_SCRIPTS))
 from review_once import REVIEWERS, default_base, git, parse_pr, run  # noqa: E402
 
 SLUGS = tuple(slug for slug, _, _ in REVIEWERS)
-VERDICTS = ("right-direction", "right-direction-with-changes", "wrong-direction", "cannot-judge")
+VERDICTS = ("approve", "approve-with-changes", "request-changes", "cannot-judge")
 DISPOSITIONS = ("applied", "rejected")
 PRIORITIES = ("P0", "P1", "P2", "P3")
 

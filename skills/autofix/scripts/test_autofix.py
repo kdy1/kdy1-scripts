@@ -16,7 +16,7 @@ def git(repo, *args):
 
 
 def reviewers(complete=True):
-    return [{"slug": slug, "complete": complete, "verdict": "right-direction"}
+    return [{"slug": slug, "complete": complete, "verdict": "approve"}
             for slug in ("astra", "sol", "opus", "sonnet")]
 
 

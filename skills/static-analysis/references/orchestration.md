@@ -61,7 +61,7 @@ Model target: <provider, model, and options evidence>
 
 Rules:
 - Read only. Do not edit, create, or delete files. Do not run autofix, formatters, or code generators.
-- Do not create, comment on, or update GitHub issues. Do not spawn subagents.
+- Do not create, comment on, or update GitHub issues. Do not spawn subagents. Do not settle or archive any thread.
 - Analyze every assigned path. Follow data and control flow into callers, tests, and configuration as needed.
 - Report only defects with causal code evidence. Separate confirmed defects from suspicions.
 

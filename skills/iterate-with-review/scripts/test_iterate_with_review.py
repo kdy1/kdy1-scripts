@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from iterate import init, load, repo_slug, round_record, round_start, summary, worktrees
+from iterate_with_review import init, load, repo_slug, round_record, round_start, summary, worktrees
 
 
 def git(repo, *args):

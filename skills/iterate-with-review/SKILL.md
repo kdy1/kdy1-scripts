@@ -1,9 +1,9 @@
 ---
-name: iterate
-description: "Repeat Review Once on a PR or local change, judge every finding, apply and commit the valid fixes, and review again, until one Review Once round finds no problem. Use only when the user explicitly invokes $iterate or asks to run Iterate. Requires the review-once skill."
+name: iterate-with-review
+description: "Repeat Review Once on a PR or local change, judge every finding, apply and commit the valid fixes, and review again, until one Review Once round finds no problem. Use only when the user explicitly invokes $iterate-with-review or asks to run Iterate with Review. Requires the review-once skill."
 ---
 
-# Iterate
+# Iterate with Review
 
 Improve a change through repeated independent reviews:
 
@@ -13,11 +13,11 @@ Improve a change through repeated independent reviews:
 
 Stop only after a **clean round**. A clean round is a Review Once round in which all four reviewers completed, no finding was applied, and every finding was rejected with code evidence. There is no round limit.
 
-Helper: `scripts/iterate.py` (Python 3.9+, Git 2.31+, and `gh` for PRs). It imports the `review-once` helper from the sibling `review-once` skill directory. Read `../review-once/SKILL.md` before the first round, and follow it for every review. Run the helpers with their absolute paths.
+Helper: `scripts/iterate_with_review.py` (Python 3.9+, Git 2.31+, and `gh` for PRs). It imports the `review-once` helper from the sibling `review-once` skill directory. Read `../review-once/SKILL.md` before the first round, and follow it for every review. Run the helpers with their absolute paths.
 
 ## Boundaries
 
-- An Iterate invocation authorizes edits and local commits on the target branch, in the target workspace. It does not authorize a push, a PR comment, a merge, or a force operation. For a PR, push at the end only if the user asked to update the PR; otherwise report the local commits and ask.
+- An Iterate with Review invocation authorizes edits and local commits on the target branch, in the target workspace. It does not authorize a push, a PR comment, a merge, or a force operation. For a PR, push at the end only if the user asked to update the PR; otherwise report the local commits and ask.
 - Do not edit the workspace while Review Once reviewers are running.
 - Stop early only when the user cancels, or for a blocker that you cannot resolve: a reviewer model is unavailable, authentication fails, or reviewers fail again after retries. Report a blocker as "paused, not finished", with the ledger path. Never describe a paused run as clean.
 - Never reject a valid finding to end the loop. "Minor", "nit", or "not worth it" is not a reason to reject. Small valid findings are applied.
@@ -27,7 +27,7 @@ Helper: `scripts/iterate.py` (Python 3.9+, Git 2.31+, and `gh` for PRs). It impo
 - **PR:** If the current checkout is already on the PR branch, use it. Otherwise run:
 
   ```sh
-  python3 <skill>/scripts/iterate.py pr-workspace <PR_URL> [--repo <local clone>] [--dest <path>]
+  python3 <skill>/scripts/iterate_with_review.py pr-workspace <PR_URL> [--repo <local clone>] [--dest <path>]
   ```
 
   It reuses a worktree that is on the PR branch, or creates one with `gh pr checkout --worktree` next to the clone. It needs a local clone of the repository; if none exists, ask where to clone.
@@ -38,7 +38,7 @@ Each round reviews committed `HEAD`. If the workspace has uncommitted changes at
 ## 2. Start the ledger
 
 ```sh
-python3 <skill>/scripts/iterate.py init --workspace <dir> [--pr <PR_URL>] [--base <ref>] [--intent-file <file>]
+python3 <skill>/scripts/iterate_with_review.py init --workspace <dir> [--pr <PR_URL>] [--base <ref>] [--intent-file <file>]
 ```
 
 - For a PR, the helper fetches the base branch from the remote that points at the PR's repository, uses `<remote>/<base>` as the base for every round, and writes the PR title and body to the intent file.
@@ -50,7 +50,7 @@ python3 <skill>/scripts/iterate.py init --workspace <dir> [--pr <PR_URL>] [--bas
 
 Repeat until a round is clean:
 
-1. **Start:** `python3 <skill>/scripts/iterate.py round-start <ledger>`. It fails if the workspace has uncommitted changes or the previous round was not recorded.
+1. **Start:** `python3 <skill>/scripts/iterate_with_review.py round-start <ledger>`. It fails if the workspace has uncommitted changes or the previous round was not recorded.
 2. **Review:** Follow Review Once steps 1–4 in local mode:
 
    ```sh
@@ -63,7 +63,7 @@ Repeat until a round is clean:
    - `rejected`: the code shows that the claim is false; or it contradicts the stated intent, a repository rule, or an earlier user decision. Write the evidence, for example `src/x.rs:42 already checks for null`. A finding that was rejected before can come back; check it again against the current code, and reject it again only if the evidence still holds.
    - **Ask the user** when a finding needs a product or design decision, when a `wrong-direction` verdict argues for a different approach, or when findings in different rounds pull in opposite directions. Then apply or reject according to the answer, and use `User decision: <answer>` as the evidence. Add the decision to the intent file, so that later reviewers know it was made deliberately.
 4. **Apply.** Fix the `applied` findings in the workspace. Keep each fix minimal and in scope. Run the tests, linters, and builds that cover the changed code. If a check fails, fix it before you continue. Commit each fix, or each group of findings with the same root cause, as a separate commit that follows the repository's commit rules.
-5. **Record.** Write the round result as JSON and run `python3 <skill>/scripts/iterate.py round-record <ledger> <result.json>`:
+5. **Record.** Write the round result as JSON and run `python3 <skill>/scripts/iterate_with_review.py round-record <ledger> <result.json>`:
 
    ```json
    {
@@ -87,7 +87,7 @@ Repeat until a round is clean:
 
 When a round is clean:
 
-1. Run `python3 <skill>/scripts/iterate.py summary <ledger>`.
+1. Run `python3 <skill>/scripts/iterate_with_review.py summary <ledger>`.
 2. Report in the user's language:
    - The target, workspace, branch, and base.
    - The summary table, and the number of rounds.

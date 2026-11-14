@@ -11,7 +11,7 @@ A collection of standalone [T3 Chat skills](./skills) for GitHub, product planni
 | `create-human-reviewed-pr` | Explicitly publish human-reviewed changes as a non-draft PR with AI-use disclosure, a reviewer mention, and known harness, model, and reasoning-effort details. |
 | `create-pr` | Publish changes through a shared PR workflow with verified Closes references for resolved issues and Refs for partial or related work. |
 | `daily-update` | On explicit human invocation, ask for repositories and produce a copyable English update from the authenticated user's daily PR activity, plus reviews and merges on other authors' PRs, with optional extra text. |
-| `iterate` | Repeat `review-once` on a PR or local change, apply and commit valid findings, and stop only when a round finds no problem. |
+| `iterate-with-review` | Repeat `review-once` on a PR or local change, apply and commit valid findings, and stop only when a round finds no problem. |
 | `improve-skill-efficiency` | Use local T3 Chat session history and current API prices to make evidence-backed skill improvements while preserving quality and model settings. |
 | `list-good-prs` | List clean or unstable pull requests that were approved by the review bot. |
 | `main-qa` | Explicitly run parallel functional and usability QA with GPT-5.6 Luna `xhigh` subagents and report discovered problems through `$add-issue`. |
@@ -189,10 +189,10 @@ For a PR, `review-once` fetches the PR into a private temporary directory. For l
 To keep reviewing and fixing until the reviewers find nothing, invoke:
 
 ```text
-$iterate <PR URL>
+$iterate-with-review <PR URL>
 ```
 
-Omit the PR URL to iterate on the current branch's local changes. Each round runs `review-once` on the committed `HEAD`, judges every finding, and commits each valid fix separately. The loop stops only after a clean round: all four reviewers completed and every finding was rejected with code evidence. Valid findings are never rejected because they are minor. Findings that need a product or design decision are asked to the user, and the answer is recorded for later rounds. A ledger under `~/.cache/iterate` records every round so that an interrupted run can resume. `iterate` commits locally and pushes a PR branch only when asked. Install `review-once` alongside it.
+Omit the PR URL to iterate on the current branch's local changes. Each round runs `review-once` on the committed `HEAD`, judges every finding, and commits each valid fix separately. The loop stops only after a clean round: all four reviewers completed and every finding was rejected with code evidence. Valid findings are never rejected because they are minor. Findings that need a product or design decision are asked to the user, and the answer is recorded for later rounds. A ledger under `~/.cache/iterate-with-review` records every round so that an interrupted run can resume. `iterate-with-review` commits locally and pushes a PR branch only when asked. Install `review-once` alongside it.
 
 To run MainQA against an existing app server, explicitly invoke:
 

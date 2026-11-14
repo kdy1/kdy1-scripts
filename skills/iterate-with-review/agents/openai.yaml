@@ -1,0 +1,7 @@
+interface:
+  display_name: "Iterate with Review"
+  short_description: "Repeat Review Once, apply valid findings, and stop at a clean round"
+  default_prompt: "Use $iterate-with-review. <PR URL, 생략하면 현재 브랜치의 로컬 변경>에 Review Once를 실행하고, 리뷰 지적사항을 각각 판단해서 적용할 것들을 적용한 뒤 다시 Review Once 하는 것을 반복해줘. Review Once가 아무 문제도 찾지 못했을 때만 멈춰."
+
+policy:
+  allow_implicit_invocation: false

@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Track Iterate rounds: workspace setup, Review Once results, dispositions, and the stop rule.
+"""Track Iterate with Review rounds: workspace setup, Review Once results, dispositions,
+and the stop rule.
 
-Iterate stops only after a clean round: every reviewer completed, and every finding was
-rejected with evidence, at the commit that the round reviewed.
+Iterate with Review stops only after a clean round: every reviewer completed, and every
+finding was rejected with evidence, at the commit that the round reviewed.
 """
 
 import argparse
@@ -30,7 +31,7 @@ def now():
 
 
 def default_ledger(workspace, branch):
-    base = Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache") / "iterate"
+    base = Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache") / "iterate-with-review"
     digest = hashlib.sha256(f"{Path(workspace).resolve()}\0{branch}".encode()).hexdigest()[:12]
     name = re.sub(r"[^A-Za-z0-9._-]+", "-", f"{Path(workspace).name}-{branch}")
     return base / f"{name}-{digest}.json"
@@ -92,7 +93,7 @@ def pr_workspace(url, repo=".", dest=None):
                 and Path(entry["path"]).is_dir()
                 and is_ancestor(entry["path"], pr["headRefOid"], "HEAD")):
             return {"workspace": entry["path"], "created": False, "branch": pr["headRefName"]}
-    dest = Path(dest) if dest else repo.parent / f"{repo.name}-iterate-pr-{pr['number']}"
+    dest = Path(dest) if dest else repo.parent / f"{repo.name}-iterate-with-review-pr-{pr['number']}"
     if dest.exists():
         raise ValueError(f"{dest} already exists; pass --dest")
     run(["gh", "pr", "checkout", pr["url"], "--worktree", str(dest)], cwd=str(repo))
@@ -265,7 +266,7 @@ def main():
     start.add_argument("--pr", help="PR URL when iterating on a pull request")
     start.add_argument("--base", help="Base ref (default: the PR base, else Review Once's default)")
     start.add_argument("--intent-file", type=Path, help="File with the user's stated intent")
-    start.add_argument("--ledger", help="Ledger path (default: under ~/.cache/iterate)")
+    start.add_argument("--ledger", help="Ledger path (default: under ~/.cache/iterate-with-review)")
     for name, help_text in (("round-start", "Open the next round at the committed HEAD"),
                             ("status", "Print the ledger"), ("summary", "Print a Markdown summary")):
         cmd = sub.add_parser(name, help=help_text)
@@ -290,7 +291,7 @@ def main():
         elif args.command == "summary":
             print(summary(load(args.ledger)))
     except (OSError, ValueError, RuntimeError, KeyError) as error:
-        parser.exit(1, f"iterate: {error}\n")
+        parser.exit(1, f"iterate-with-review: {error}\n")
 
 
 if __name__ == "__main__":

@@ -5,9 +5,21 @@ Apply this contract to the coordinator and every analysis worker. The coordinato
 ## Discover capabilities and select a target
 
 - Read `orchestrator_capabilities` for provider instances, models, model options, app-owned subagent support, and the active interaction mode. Do not infer support from a native tool's model list.
-- Use native subagent tools when the child uses the coordinator's provider and model with no extra settings. Otherwise use `delegate_task` with an explicit `target` verified from the live catalog. Do not create top-level conversations with `create_threads` or `t3_thread_launch`.
-- A human-specified model, reasoning level, or provider takes precedence. Verify the exact ID and option values from the catalog. If the requested target is unavailable, report the affected work as blocked; do not substitute silently.
-- Record the target evidence for each worker. A matching model ID alone does not prove that a reasoning option was applied.
+
+### Model rule
+
+Apply this rule to every subagent of the run: analysis workers, reassignments, continuations, and `$add-issue` investigators and recorders.
+
+1. If the human specified a model, provider, or reasoning level for subagents, use exactly that target. Verify the exact ID and option values from the catalog.
+2. Otherwise, use the coordinator's session model: the provider and model that the human selected when the session started. Read it from trusted runtime or session metadata. Do not add model options that the human did not request.
+3. Do not select any other model. A connected provider, an available catalog entry, a model-pinned native agent type (for example a proxy-routed `ocx-*` agent), a configured default subagent model, a skill default, cost, speed, or diversity is not a reason to use a different model.
+4. If the selected target is unavailable or the session model cannot be established, report the affected work as blocked and analyze it locally. Do not substitute another model.
+
+### Select the tool
+
+- Use native subagent tools only when the child runs on the selected model with no extra settings. Use a general-purpose agent type and confirm that inheritance yields the selected model. If a native agent type pins another model, or a configured default subagent model differs from the selected model, do not use that path.
+- Otherwise use `delegate_task` with an explicit `target` for the selected provider instance and model, verified from the live catalog. Do not create top-level conversations with `create_threads` or `t3_thread_launch`.
+- Record the target evidence for each worker. A matching model ID alone does not prove that a reasoning option was applied. If a worker reports a model that differs from the selected model, cancel it, mark its unit `blocked`, and reassign it on the selected model.
 
 ## Plan units
 

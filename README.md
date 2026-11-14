@@ -21,6 +21,7 @@ A collection of standalone [T3 Chat skills](./skills) for GitHub, product planni
 | `repair-pr` | Repair merge conflicts, actionable bot feedback, and failing CI on a pull request. |
 | `research-comment` | Investigate a question and post English GitHub findings after human approval, with AI-use disclosure, a reviewer mention, and the research harness and model. |
 | `review-full` | Run a sustained three-reviewer pull-request review and publish one consolidated review. |
+| `review-pr-once` | Run one independent pass each with GPT-6 Astra, GPT-6.1 Sol, Claude Opus 5.5, and Claude Sonnet 5.5 on whether a PR goes in the right direction, and report the verdicts in chat. |
 | `slop-fix-batch` | Fix a fixed issue batch, publish dependency-based PR stacks, and directly maintain and conditionally merge verified stacks. |
 | `slop-fix-issue` | Handle one GitHub issue: close it with evidence if already resolved; otherwise implement and verify it, publish a non-draft PR or a stack for a large issue, and stop. |
 | `static-analysis` | Analyze all code in the requested scope with parallel read-only subagents until every unit is covered, start another pass on each repeated invocation, and hand each confirmed bug to `add-issue` immediately. |
@@ -173,6 +174,14 @@ The skill grounds the proposal in requirements, available UI, and the design sys
 `add-issue` defaults to local investigation unless the human or an authorized handoff specifies another environment or revision. A direct invocation permits relevant log inspection and confirmed regenerable-state repair outside Plan Mode, while preserving project code and user data. Local investigation forbids temporary code instrumentation, including in isolated copies. Repair and verify state problems before finalizing the affected candidate; state-only resolution creates no issue and keeps the chat open. MainQA, Static Analysis, and Collect Review handoffs retain their existing scope and restrictions and do not authorize a new repair run. Features and Tasks require runtime evidence only when relevant.
 
 When using `$add-issue` in Plan Mode, return a concrete `repair pending` plan for candidates that need local repair; do not finalize their recording payload until the repair is verified outside Plan Mode. For ready candidates, finish investigation and finalize the exact issue title, complete body or duplicate comment, metadata, attachments, and recording action in the final plan. After approval and leaving Plan Mode, it resumes directly at recording with that payload; it does not repeat investigation, classification, reproduction, or drafting. It performs only bounded pre-write checks and verifies the result. A new matching duplicate or changed required condition stops that candidate and is reported without automatically changing the target or content. A missing finalized payload is reported rather than reconstructed. Draft-only restrictions continue after a mode change, and the issue's proposed work is never implemented in the same invocation. A fresh invocation outside Plan Mode retains the full investigation workflow.
+
+To get four independent opinions on a pull request, invoke:
+
+```text
+$review-pr-once <PR URL>을 독립적인 model:codex/gpt-6-astra model:codex/gpt-6.1-sol model:claudeAgent/claude-opus-5-5 model:claudeAgent/claude-sonnet-5-5 서브에이전트들로 각각 PR의 수정이 맞는 방향인지 리뷰해줘
+```
+
+`review-pr-once` fetches the PR into a private temporary directory and gives each reviewer its own detached checkout at the pinned head. Each reviewer runs one pass through T3 `delegate_task` and returns a verdict (`right-direction`, `right-direction-with-changes`, `wrong-direction`, or `cannot-judge`) with findings. The coordinator checks disputed findings against the code and reports in chat. It never posts to GitHub and never substitutes a missing model. Reviewers use catalog-default settings unless the request specifies settings. Use `review-full` for the sustained review that is published to GitHub.
 
 To run MainQA against an existing app server, explicitly invoke:
 

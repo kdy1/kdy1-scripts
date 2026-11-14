@@ -1,6 +1,6 @@
 # Deterministic helpers
 
-Read this reference when collecting a workspace baseline, auditing a final payload, or recording it. Run the bundled CLI with Node.js. It uses only Node built-ins and installed `git` and `gh`; it does not install or upgrade tools. Paths below are relative to this skill folder.
+Read this reference when collecting a workspace baseline, auditing a final payload, or recording it. For a Linear target, also read [Linear helpers](linear.md). Run the bundled CLI with Node.js. It uses only Node built-ins and installed `git` and `gh`; it does not install or upgrade tools. Paths below are relative to this skill folder.
 
 ## Responsibilities and invocation
 
@@ -181,7 +181,7 @@ If `--attach` is unavailable, the ledger reserves the one audited browser operat
 ## Validation
 
 ```sh
-node --test scripts/add-issue.test.mjs scripts/ledger-storage.test.mjs
+node --test scripts/add-issue.test.mjs scripts/ledger-storage.test.mjs scripts/linear.test.mjs
 ```
 
 Tests use temporary Git repositories and mocked `gh`; they do not authenticate, repair local processes, or create real GitHub records. Run the skill-creator validator after editing the skill. It checks the skill structure, not behavioral correctness.

@@ -1,6 +1,6 @@
 interface:
   display_name: "Add Issue"
-  short_description: "Debug local issues and record confirmed work"
+  short_description: "Debug local issues and record confirmed work on GitHub or Linear"
   default_prompt: "Use $add-issue to investigate this request locally by default without editing project code, inspect relevant logs, repair confirmed regenerable state outside Plan Mode, and record confirmed Bugs or decision-complete Features and Tasks; finalized Plan Mode payloads resume directly at recording."
 
 policy:

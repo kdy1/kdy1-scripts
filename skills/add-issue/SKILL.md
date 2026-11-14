@@ -1,19 +1,31 @@
 ---
 name: add-issue
-description: Investigate explicitly requested work in the local environment by default, inspect relevant logs, repair confirmed regenerable local state, and create evidence-backed GitHub issues for confirmed Bugs or decision-complete Features and Tasks without implementing product changes. Start only on explicit human `$add-issue` invocation or an authorized candidate handoff from human-invoked MainQA, Static Analysis, or Collect Review; ordinary reports, ideas, and skill editing do not start this workflow.
+description: Investigate explicitly requested work in the local environment by default, inspect relevant logs, repair confirmed regenerable local state, and create evidence-backed GitHub or Linear issues for confirmed Bugs or decision-complete Features and Tasks without implementing product changes. Start only on explicit human `$add-issue` invocation or an authorized candidate handoff from human-invoked MainQA, Static Analysis, or Collect Review; ordinary reports, ideas, and skill editing do not start this workflow.
 ---
 
 # Add Issue
 
 ## Goal
 
-Create one durable, implementation-ready GitHub record per independently implementable item. Classify each item as `Bug`, `Feature`, or `Task`, establish all facts and decisions the implementer needs, and apply all clearly supported metadata that the current authenticated account is permitted to modify. Never implement the recorded work in the same invocation, including after a Plan Mode approval.
+Create one durable, implementation-ready issue record per independently implementable item, on GitHub by default or on Linear under `Linear Tracker`. Classify each item as `Bug`, `Feature`, or `Task`, establish all facts and decisions the implementer needs, and apply all clearly supported metadata that the current authenticated account is permitted to modify. Never implement the recorded work in the same invocation, including after a Plan Mode approval.
 
 ## Deterministic Helpers
 
 Use the self-contained [helper contract and CLI](references/helpers.md) for baseline capture/comparison, bounded GitHub observations, final payload and image validation, recording preflight, serialized writes, and result verification. The coordinator retains causal analysis, classification, semantic duplicate decisions, metadata selection, trusted authorization, repairs, and thread settlement. A helper's verified structure or a caller-supplied permission flag does not establish those judgments.
 
 Run `scripts/add-issue.mjs` with Node.js and absolute JSON input paths. Keep private baselines, payloads and ledgers outside the investigated repository. Read the contract only for the active helper phase. Retain the exact final payload and its hash through delegation and continuation; mark a finalized Plan Mode payload with `preparationMode: "plan"`. An approved-design handoff with no finalized payload follows the narrow fresh-preparation path below and produces a default-mode payload. Link bounded duplicate-review revisions through `refresh` only for payloads prepared outside Plan Mode, without discarding prior payloads or recording receipts. Use the dedicated recording subagent for `record`; Plan Mode and draft-only preparation use read-only commands. Never bypass a blocked or uncertain result with an ad hoc write. Follow the contract's receipt recovery or reserved native-browser operation without repeating completed writes.
+
+## Linear Tracker
+
+Select the tracker in step 1, before any duplicate search or drafting. Use Linear when the request names Linear, a Linear team, or a Linear issue URL, or when the target repository's instruction files (such as `AGENTS.md`, `CLAUDE.md`, or `CONTRIBUTING.md`) name Linear as its issue tracker. Otherwise use GitHub. Collect Review handoffs always record on GitHub. If the Linear workspace or team cannot be determined from the request, the repository, or `auth-status`, ask the human before any write. Record the selected tracker and its evidence in the payload context.
+
+For Linear, use the [Linear helper contract](references/linear.md) and `scripts/linear-issue.mjs` in place of the GitHub `collect`, `validate`, `preflight`, `refresh`, `record`, and `verify` commands. Keep `scripts/add-issue.mjs` `snapshot` and `compare` for the workspace. Every rule in this skill about GitHub records, writes, duplicates, metadata, attachments, recording subagents, and outcomes applies to the selected Linear team. Linear labels, priority, estimate, state, project, cycle, and assignee take the place of GitHub labels, Issue Types, fields, milestones, and projects. Linear has no Issue Type, so classification goes in the title or body as the team's conventions require, or in a label when the team has one. Linear file uploads take the place of GitHub-native attachments, and the helper verifies them. Do not use the Linear MCP server or the browser to write Linear records.
+
+Authenticate once per workspace, never per invocation:
+
+- Run `node scripts/linear-issue.mjs auth-status` before Linear collection. A `verified` result means that the stored key works. Do not ask the human for a key in that case.
+- Only when a helper result has `authRequired: true`, call T3 `request_secret` with `delivery: "file"` and the result's `keyUrl`. Then run `auth-store` with the delivered file path in the same command. The helper validates the key and saves it in the macOS Keychain, so later invocations, recording subagents, and continuations read it from there. Then repeat the blocked command with the same payload and ledger.
+- Never put the key in chat, payloads, ledgers, subagent prompts, or logs. Tell recording subagents that the helper reads the key from the Keychain. A subagent that gets `authRequired: true` returns it to the coordinator, and the coordinator requests the key.
 
 ## T3 Runtime
 
@@ -81,7 +93,7 @@ If another required recording precondition changes or cannot be verified, stop t
 ## Non-Negotiable Boundaries
 
 - Follow all active system, developer, repository, and scoped instructions. Read the target repository's authoritative contracts, contribution guidance, issue templates, and applicable instruction files before investigating or drafting.
-- Use `gh` for bounded GitHub reads and writes when possible. Resolve the target from an explicit repository or issue URL, otherwise from the current Git remote. Ask the user before any write when no unique target can be established.
+- Use `gh` for bounded GitHub reads and writes when possible, and the Linear helper for all Linear reads retained in a payload and all Linear writes. Resolve the target from an explicit repository or issue URL, otherwise from the current Git remote. Ask the user before any write when no unique target can be established.
 - Do not implement the recorded work, leave permanent repository changes, update dependencies, generate committed artifacts, commit, push, create a pull request, deploy, or mutate production.
 - For a finalized recording payload, a Plan Mode approval, Plan Mode exit, or generic instruction to execute or continue the approved plan authorizes only the audited GitHub-recording action below. It never authorizes implementation of the recorded work, regardless of the normal meaning of an approved plan.
 - Do not transition into implementation later in the same invocation. Finish the issue record and require a separate explicit implementation request made after this invocation.
@@ -203,6 +215,7 @@ For `Task` candidates, resolve the current state, intended maintenance outcome, 
 Apply `Mode Routing and Final Recording Payload` first. A fresh invocation starts at step 1; an authorized continuation of an approved payload starts at step 5.
 
 1. Ground and classify each candidate.
+   - Select GitHub or Linear under `Linear Tracker`, and run Linear `auth-status` when Linear is selected.
    - Identify the target repository, affected area, intended or expected behavior, current state, impact, environment, evidence, and requested outcome. Apply the local default and capture the starting baseline under `Local Investigation and Repair`.
    - Read applicable repository instructions, authoritative docs, nearby source, tests, configuration, templates, and relevant issue history before asking discoverable questions.
    - Discover metadata conventions, available definitions, and action-specific permissions under `Metadata Selection and Permissions`.

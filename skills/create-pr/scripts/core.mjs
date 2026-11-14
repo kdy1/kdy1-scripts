@@ -87,8 +87,14 @@ export function proseLines(body) {
   }
   return lines;
 }
+const linearId = /^[A-Z][A-Z0-9]*-[1-9]\d*$/;
+// GitHub issues key by repository and number; Linear issues key by identifier.
+export function issueKey(issue) { return issue.tracker === 'linear' ? `linear:${issue.identifier}` : `${issue.repository}#${issue.number}`; }
 export function references(body, repository, host = 'github.com') {
   return proseLines(body).flatMap(line => {
+    // Linear recognizes `ref`, not `refs`, as a non-closing magic word.
+    const linear = line.match(/^ *(Closes|Ref) +([A-Z][A-Z0-9]*-[1-9]\d*) *$/);
+    if (linear) return [{ kind: linear[1] === 'Closes' ? 'Closes' : 'Refs', tracker: 'linear', identifier: linear[2], line: line.trim() }];
     const m = line.match(/^ *(Closes|Refs) +(?:([\w.-]+\/[\w.-]+))?#([1-9]\d*) *$/);
     if (m && Number.isSafeInteger(Number(m[3]))) return [{ kind: m[1], repository: m[2] ?? repository, number: Number(m[3]), line: line.trim() }];
     const full = line.match(/^ *(Closes|Refs) +(https:\/\/\S+) *$/);
@@ -101,7 +107,12 @@ export function references(body, repository, host = 'github.com') {
   });
 }
 export function issueLine(issue, repository) {
-  check(['closes', 'refs'].includes(issue.kind) && /^[\w.-]+\/[\w.-]+$/.test(issue.repository) && Number.isSafeInteger(issue.number) && issue.number > 0, 'Invalid issue classification');
+  check(['closes', 'refs'].includes(issue.kind), 'Invalid issue classification');
+  if (issue.tracker === 'linear') {
+    check(typeof issue.identifier === 'string' && linearId.test(issue.identifier), 'Invalid Linear issue identifier');
+    return `${issue.kind === 'closes' ? 'Closes' : 'Ref'} ${issue.identifier}`;
+  }
+  check([undefined, 'github'].includes(issue.tracker) && /^[\w.-]+\/[\w.-]+$/.test(issue.repository) && Number.isSafeInteger(issue.number) && issue.number > 0, 'Invalid issue classification');
   return `${issue.kind === 'closes' ? 'Closes' : 'Refs'} ${issue.repository === repository ? '' : issue.repository}#${issue.number}`;
 }
 export function images(body) { return [...body.matchAll(/!\[[^\]]*\]\([^\s)]+\)/g)].map(m => m[0]); }
@@ -114,12 +125,12 @@ export function content(p, body) {
   check(/^[a-f0-9]{40,64}$/.test(p.headSha ?? ''), 'Expected published head SHA');
   if (!/^[a-z][a-z0-9-]*(?:\([^()\r\n]+\))?!?: [^\r\n]+$/.test(p.title)) errors.push('Invalid Conventional Commits title');
   const refs = references(body, p.repository, p.host), seen = new Set();
-  for (const ref of refs) { const key = `${ref.repository}#${ref.number}`; if (seen.has(key)) errors.push(`Duplicate or conflicting reference: ${key}`); seen.add(key); }
+  for (const ref of refs) { const key = issueKey(ref); if (seen.has(key)) errors.push(`Duplicate or conflicting reference: ${key}`); seen.add(key); }
   const classified = new Set();
   for (const issue of p.issues) {
-    const expected = issueLine(issue, p.repository), key = `${issue.repository}#${issue.number}`;
+    const expected = issueLine(issue, p.repository), key = issueKey(issue);
     check(!classified.has(key), 'Duplicate manifest issue'); classified.add(key);
-    if (!refs.some(x => x.kind === (issue.kind === 'closes' ? 'Closes' : 'Refs') && x.repository === issue.repository && x.number === issue.number)) errors.push(`Missing standalone ${expected}`);
+    if (!refs.some(x => x.kind === (issue.kind === 'closes' ? 'Closes' : 'Refs') && issueKey(x) === key)) errors.push(`Missing standalone ${expected}`);
   }
   for (const fixed of p.requiredText) { check(typeof fixed === 'string' && fixed, 'Invalid requiredText'); if (!body.includes(fixed)) errors.push(`Missing required text: ${fixed}`); }
   if (/(?:file:\/\/|\/Users\/|\/home\/|[A-Za-z]:\\)/.test(body)) errors.push('Local path in published body');
@@ -130,7 +141,7 @@ export function preserve(p, before, body) {
   const errors = [];
   for (const image of images(before)) if (!body.includes(image)) errors.push('Existing image removed or changed');
   for (const ref of references(before, p.repository, p.host)) {
-    if (p.issues.some(x => x.repository === ref.repository && x.number === ref.number)) continue;
+    if (p.issues.some(x => issueKey(x) === issueKey(ref))) continue;
     if (!references(body, p.repository, p.host).some(x => x.line === ref.line)) errors.push(`Existing reference removed: ${ref.line}`);
   }
   return errors;

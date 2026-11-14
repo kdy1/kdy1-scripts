@@ -25,7 +25,10 @@ For the other commands, provide all fields below. `headSha` is the exact intende
   "draft": false,
   "bodyFile": "/absolute/task/body.md",
   "requiredText": ["Local validation was not performed."],
-  "issues": [{"repository": "owner/repo", "number": 123, "kind": "closes"}],
+  "issues": [
+    {"repository": "owner/repo", "number": 123, "kind": "closes"},
+    {"tracker": "linear", "identifier": "ENG-45", "kind": "refs"}
+  ],
   "attachments": []
 }
 ```
@@ -35,6 +38,8 @@ Each missing screenshot uses `{"path":"/absolute/image.png","alt":"Captured sett
 `requiredText` carries exact required disclosures, reviewer mentions, template text, and validation statements selected by the agent. Language and factual correctness remain manual checks. The script validates Conventional Commits syntax; the agent selects a permitted type/scope and decides whether `!` is appropriate.
 
 Keep every issue classification in `issues` when the body uses full URLs. Standalone `Closes` and `Refs` accept `#number`, `owner/repo#number`, or an HTTPS issue URL on the manifest's `host`. The helper compares kind, repository and issue number across these formats and rejects duplicate or conflicting references. URLs with a different host, credentials, a query, a fragment or a non-issue path cannot satisfy a classification. Use `requiredText` when a caller requires an exact URL line in addition to semantic classification.
+
+A Linear issue uses `{"tracker": "linear", "identifier": "ENG-45", "kind": "closes" | "refs"}`. The identifier is the uppercase team key and number. The body line is `Closes ENG-45` or `Ref ENG-45`. Linear does not recognize `Refs`, so the helper does not accept `Refs ENG-45` as a Linear reference. The helper cannot read Linear: verify each Linear issue with the Linear tools before publication. `publish` skips the GitHub issue lookup for Linear entries, and `verify` adds a manual check for Linear status automation.
 
 ## Commands
 
@@ -48,7 +53,7 @@ node /absolute/create-pr/scripts/create-pr.mjs verify /absolute/task/publication
 
 - `inspect` collects authentication, checkout/remotes, diff file summary, repository default branch, exact matching PR, remote head SHA, and attachment capabilities. It does not choose a remote or establish the intended change scope. Read applicable instructions/templates and the full diff separately.
 - `check-content` checks title syntax, fixed text, required standalone references outside fenced/indented code, duplicate/conflicting references, and common local-path leaks. It does not edit the body. Additional existing issue references can remain; verify their identity and classification yourself.
-- `publish` verifies referenced issues exist and are not PRs, checks the pushed SHA, selects an existing PR or creates one, preserves existing image Markdown and unrelated standalone issue lines, snapshots the exact prepared body, and publishes with explicit CLI arguments. Existing unrelated prose must be preserved by the agent. The helper checks the selected PR and head again before writing, but GitHub provides no atomic create-or-update lock; a concurrent external publisher can still race. Resolve concurrent changes before any further write.
+- `publish` verifies referenced GitHub issues exist and are not PRs, checks the pushed SHA, selects an existing PR or creates one, preserves existing image Markdown and unrelated standalone issue lines, snapshots the exact prepared body, and publishes with explicit CLI arguments. Existing unrelated prose must be preserved by the agent. The helper checks the selected PR and head again before writing, but GitHub provides no atomic create-or-update lock; a concurrent external publisher can still race. Resolve concurrent changes before any further write.
 - `reconcile` reads the journal's original manifest/body and actual GitHub state. It performs no writes. Use it after any failure or uncertain result, even when `gh` returned a non-zero exit.
 - `verify` re-fetches the matching PR and checks identity, revision, base, draft, title, prepared body, and references. It accepts only appended recognized attachment Markdown after the prepared body. CLI wrappers or other appended text require inspection and reconciliation. Use `reconcile` to account for the journal's selected screenshots; standalone `verify` has no upload journal.
 

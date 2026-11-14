@@ -40,8 +40,8 @@ export function verify(p, body, actual, { defaultBranch, attachments = [] } = {}
   });
   return { version: 1, status: errors.length ? 'mismatch' : 'verified', complete: !errors.length, errors, pr: actual, attachments: outcomes,
     automaticClosure: defaultBranch === p.baseBranch,
-    limitations: defaultBranch !== p.baseBranch && p.issues.some(x => x.kind === 'closes') ? ['Base is not the default branch; automatic issue closure will not occur'] : [],
-    manualChecks: ['Selected language and factual meaning', 'Preservation of unrelated body prose', 'Screenshot relevance and captured revision', 'Local validation coverage', 'T3 Chat link_pull_request links verified with list_thread_pull_requests'] };
+    limitations: defaultBranch !== p.baseBranch && p.issues.some(x => x.kind === 'closes' && x.tracker !== 'linear') ? ['Base is not the default branch; automatic issue closure will not occur'] : [],
+    manualChecks: ['Selected language and factual meaning', 'Preservation of unrelated body prose', 'Screenshot relevance and captured revision', 'Local validation coverage', 'T3 Chat link_pull_request links verified with list_thread_pull_requests', ...(p.issues.some(x => x.tracker === 'linear') ? ['Linear issue identity and status automation for the target branch'] : [])] };
 }
 
 export function reconcile(journal, client = new GitHub(journal.plan)) {
@@ -66,7 +66,8 @@ export function publish(p, body, journalPath, client = new GitHub(p)) {
     const comparison = client.comparison();
     check(Array.isArray(comparison.files), 'Comparison unavailable');
     if (!comparison.files.length) return { version: 1, status: 'stopped', reason: 'No intended change against base', pr: selected.pr };
-    for (const issue of p.issues) client.issue(issue.repository, issue.number);
+    // Linear issue existence is verified by the agent; gh cannot read Linear.
+    for (const issue of p.issues) if (issue.tracker !== 'linear') client.issue(issue.repository, issue.number);
     if (selected.pr) check(!preserve(p, selected.pr.body, body).length, preserve(p, selected.pr.body, body).join('; '));
     const action = selected.pr ? 'edit' : 'create';
     const help = client.command(['pr', action, '--help']);

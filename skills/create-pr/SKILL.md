@@ -20,7 +20,7 @@ Read [$write-ste](../write-ste/SKILL.md) and resolve its installed `SKILL.md` to
 Reuse reliable information from the current task. A calling skill supplies the following when known:
 
 - GitHub host and repository, absolute checkout/worktree path, intended change set, head repository/remote/branch, and base branch.
-- Exact issue URLs or qualified numbers, distinguishing fully resolved issues from partial or related work.
+- Exact GitHub issue URLs or qualified numbers and Linear issue identifiers, distinguishing fully resolved issues from partial or related work.
 - Validation commands, actual results, and the revision or changes they covered.
 - Existing actual screenshots relevant to the changes, with absolute file paths or verified GitHub attachment URLs, descriptions, and known captured states and revisions.
 - Required body content and any disclosure section, requested draft state, and constraints such as preserving human-reviewed source.
@@ -62,7 +62,7 @@ Summarize the full intended change set against the PR base in the title. Use exi
 
 Follow the repository's template and preserve its required fixed text. Write new or revised body prose in the selected language. Lead with the concrete problem and resulting behavior. Report existing validation results and their coverage, or state that local validation was not performed when no results cover the intended changes. Incorporate the caller's required body content. For an existing PR, preserve unrelated content and update equivalent sections rather than duplicating them. Preserve supplied disclosures and known execution details without inventing missing facts.
 
-Determine issue identity and completion from the human request, authorized handoff, task history, issue requirements, and intended changes. Verify the referenced GitHub issues and their repositories; do not guess an issue number from a branch name or invent an issue for unrelated work. If the task fixes or relates to an issue but its identity cannot be determined, resolve it before publishing.
+Determine issue identity and completion from the human request, authorized handoff, task history, issue requirements, and intended changes. Verify the referenced GitHub issues and their repositories, and verify referenced Linear issues with the available Linear tools; do not guess an issue number or identifier from a branch name or invent an issue for unrelated work. If the task fixes or relates to an issue but its identity cannot be determined, resolve it before publishing.
 
 For **every fully resolved issue**, put a standalone closing line in the **PR body**, outside code fences:
 
@@ -70,22 +70,24 @@ For **every fully resolved issue**, put a standalone closing line in the **PR bo
 Closes #123
 Closes #456
 Closes owner/other-repo#789
+Closes ENG-123
 ```
 
-Use the caller's required reference format. By default, use `Closes #123` for an issue in the PR's repository and `Closes owner/repo#123` for another repository. A standalone full issue URL, such as `Closes https://github.com/owner/repo/issues/123`, is also supported for the selected GitHub host. Repeat the syntax on a separate line for each issue. A title reference, plain link, comment, commit message, `Refs`, `Fixes`, or `Resolves` is not a substitute for the required `Closes` line. Do not duplicate an existing correct line, including the same issue written in another supported format.
+Use the caller's required reference format. By default, use `Closes #123` for an issue in the PR's repository and `Closes owner/repo#123` for another repository. A standalone full issue URL, such as `Closes https://github.com/owner/repo/issues/123`, is also supported for the selected GitHub host. For a Linear issue, use its identifier, such as `Closes ENG-123`. Repeat the syntax on a separate line for each issue. A title reference, plain link, comment, commit message, `Refs`, `Fixes`, or `Resolves` is not a substitute for the required `Closes` line. Do not duplicate an existing correct line, including the same issue written in another supported format.
 
 For **every issue partially addressed or otherwise related to the changes**, use a standalone non-closing reference in the PR body instead:
 
 ```markdown
 Refs #234
 Refs owner/other-repo#567
+Ref ENG-234
 ```
 
-Use the same repository qualification and full-URL rules as for `Closes`, with a separate line for each issue. Choose `Closes` when fully resolved and `Refs` otherwise; do not retain both standalone kinds for the same issue. A PR may contain both kinds for different issues. Do not add references when no associated issue exists.
+Use the same repository qualification and full-URL rules as for `Closes`, with a separate line for each issue. For a Linear issue, write `Ref` instead of `Refs`, because Linear recognizes `ref` but not `refs` as a non-closing magic word. Choose `Closes` when fully resolved and `Refs` (or `Ref` for Linear) otherwise; do not retain both standalone kinds for the same issue. A PR may contain both kinds for different issues. Do not add references when no associated issue exists.
 
 Preserve existing issue references in body edits and avoid duplicate lines. When an issue's verified completion changes, replace its existing standalone line with the appropriate `Closes` or `Refs` line, preserving other references and unrelated content. Correct a confirmed closing reference that would incorrectly close a partially resolved issue; if its scope or completion is unclear, resolve that ambiguity before publishing.
 
-Closing keywords are interpreted by GitHub only when the PR targets the repository's default branch; `Refs` does not close issues. Honor an explicitly requested base and report that automatic closure will not occur for a different base; do not silently change it. See [GitHub's closing-reference documentation](https://docs.github.com/en/issues/tracking-your-work-with-issues/using-issues/linking-a-pull-request-to-an-issue).
+Closing keywords are interpreted by GitHub only when the PR targets the repository's default branch; `Refs` does not close issues. Honor an explicitly requested base and report that automatic closure will not occur for a different base; do not silently change it. See [GitHub's closing-reference documentation](https://docs.github.com/en/issues/tracking-your-work-with-issues/using-issues/linking-a-pull-request-to-an-issue). Linear links the PR and changes the issue status through its GitHub integration and the team's workflow settings, including branch-specific rules, not through this GitHub rule. Do not claim a Linear status change that you did not observe. See [Linear's magic words](https://linear.app/docs/github-integration).
 
 ## Publish, Verify, and Return
 

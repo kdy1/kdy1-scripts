@@ -68,6 +68,27 @@ test('URL publication and reconciliation verify the original issue classificatio
     assert.equal(client.writes, 1);
   } finally { rmSync(dir, { recursive: true }); }
 });
+test('Linear issues use Closes and Ref lines without GitHub issue lookup', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'create-pr-linear-test-'));
+  try {
+    const p = plan(), checked = [];
+    p.issues.push({ tracker: 'linear', identifier: 'ENG-123', kind: 'closes' }, { tracker: 'linear', identifier: 'DES-5', kind: 'refs' });
+    const linearBody = body + 'Closes ENG-123\nRef DES-5\n';
+    assert.equal(content(p, linearBody).status, 'verified');
+    assert.equal(content(p, body + 'Closes ENG-123\nRefs DES-5\n').status, 'mismatch');
+    assert.equal(content(p, body + 'Ref ENG-123\nRef DES-5\n').status, 'mismatch');
+    assert.equal(content(p, linearBody + 'Ref ENG-123\n').status, 'mismatch');
+    assert.equal(content(p, body + '```\nCloses ENG-123\n```\nRef DES-5\n').status, 'mismatch');
+    assert.throws(() => content({ ...p, issues: [{ tracker: 'linear', identifier: 'eng-1', kind: 'closes' }] }, linearBody), /Linear/);
+    assert.deepEqual(preserve(plan(), 'Ref OPS-9\n', body), ['Existing reference removed: Ref OPS-9']);
+    const client = fake(p);
+    client.issue = (repository, number) => { checked.push([repository, number]); return {}; };
+    const result = publish(p, linearBody, join(dir, 'journal.json'), client);
+    assert.equal(result.status, 'verified');
+    assert.deepEqual(checked, [['owner/repo', 12]]);
+    assert.ok(result.manualChecks.some(x => x.startsWith('Linear')));
+  } finally { rmSync(dir, { recursive: true }); }
+});
 test('existing unrelated references/images survive edits but explicit classification can change', () => {
   const p = plan(), image = '![Screen](https://github.com/user-attachments/assets/abc)';
   assert.deepEqual(preserve(p, `Refs #12\nRefs #13\n${image}`, `${body}\nRefs #13\n${image}`), []);

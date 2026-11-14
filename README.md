@@ -11,7 +11,7 @@ A collection of standalone [T3 Chat skills](./skills) for GitHub, product planni
 | `create-human-reviewed-pr` | Explicitly publish human-reviewed changes as a non-draft PR with AI-use disclosure, a reviewer mention, and known harness, model, and reasoning-effort details. |
 | `create-pr` | Publish changes through a shared PR workflow with verified Closes references for resolved issues and Refs for partial or related work. |
 | `daily-update` | On explicit human invocation, ask for repositories and produce a copyable English update from the authenticated user's daily PR activity, plus reviews and merges on other authors' PRs, with optional extra text. |
-| `fix-issue` | On explicit invocation, fix one GitHub or Linear issue from its URL, run `iterate-with-review` on the local fix until a clean round, and only then publish a non-draft PR through `create-pr` with an AI attribution footer. |
+| `autofix` | On explicit invocation, fix one GitHub or Linear issue from its URL, run `iterate-with-review` on the local fix until a clean round, and only then publish a non-draft PR through `create-pr` with an AI attribution footer. |
 | `iterate-with-review` | Repeat `review-once` on a PR or local change, apply and commit valid findings, and stop only when a round finds no problem. |
 | `improve-skill-efficiency` | Use local T3 Chat session history and current API prices to make evidence-backed skill improvements while preserving quality and model settings. |
 | `list-good-prs` | List clean or unstable pull requests that were approved by the review bot. |
@@ -81,7 +81,7 @@ npx skills add kdy1/kdy1-scripts --list
 
 Select the agent used by your T3 Chat session when prompted. It also prompts for the installation method when necessary. Add `--copy` to use independent copies instead of symlinks.
 
-When installing selected skills, include their skill dependencies. `create-pr` requires `write-ste`. `write-comment` requires `write-ste` for technical comments. `create-human-reviewed-pr`, `slop-fix-issue`, and `slop-fix-batch` require both `create-pr` and its `write-ste` dependency. `fix-issue` requires `iterate-with-review` with its `review-once` dependency, and `create-pr` with `write-ste`; it uses `add-issue`'s Linear helper for Linear issues. Installing every skill includes these dependencies. The same rule applies when copying individual skill directories manually.
+When installing selected skills, include their skill dependencies. `create-pr` requires `write-ste`. `write-comment` requires `write-ste` for technical comments. `create-human-reviewed-pr`, `slop-fix-issue`, and `slop-fix-batch` require both `create-pr` and its `write-ste` dependency. `autofix` requires `iterate-with-review` with its `review-once` dependency, and `create-pr` with `write-ste`; it uses `add-issue`'s Linear helper for Linear issues. Installing every skill includes these dependencies. The same rule applies when copying individual skill directories manually.
 
 `slop-fix-batch` directly manages its published PRs and requires `repair-pr`, `manage-stacked-prs`, and `merge-pr` for repairs, alignment, and conditional merging. `repair-pr` uses `manage-stacked-prs` for stacked repairs; stack-edit workflows use the shared coordination helper bundled with `repair-pr`. Include both skills when installing either for stack work.
 
@@ -198,10 +198,10 @@ Omit the PR URL to iterate on the current branch's local changes. Each round run
 To fix an issue and publish the fix only after it survives repeated review, invoke:
 
 ```text
-$fix-issue <issue URL>
+$autofix <issue URL>
 ```
 
-The URL can be a GitHub or Linear issue. `fix-issue` reads the issue and its comments, fixes it on a branch from the fresh default branch, and commits the fix with its tests. It then runs `iterate-with-review` on the local change, with the issue text as the reviewers' intent. A PR is created only after the `gate` helper confirms that the ledger finished with a clean round at the exact `HEAD` that is published. Any commit after the clean round needs another round. `create-pr` publishes the non-draft PR with a `Closes` line for the issue. The last line of the body is a small-text footer in the `static-analysis` format, with the harness, model, and reasoning effort that wrote the fix, the number of review rounds, and the reviewer models. The skill does not comment on or close the issue, merge the PR, or maintain it after publication.
+The URL can be a GitHub or Linear issue. `autofix` reads the issue and its comments, fixes it on a branch from the fresh default branch, and commits the fix with its tests. It then runs `iterate-with-review` on the local change, with the issue text as the reviewers' intent. A PR is created only after the `gate` helper confirms that the ledger finished with a clean round at the exact `HEAD` that is published. Any commit after the clean round needs another round. `create-pr` publishes the non-draft PR with a `Closes` line for the issue. The last line of the body is a small-text footer in the `static-analysis` format, with the harness, model, and reasoning effort that wrote the fix, the number of review rounds, and the reviewer models. The skill does not comment on or close the issue, merge the PR, or maintain it after publication.
 
 To run MainQA against an existing app server, explicitly invoke:
 

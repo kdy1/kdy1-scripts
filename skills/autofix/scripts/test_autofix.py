@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from fix_issue import attribution, gate, intake, parse_issue, reference
+from autofix import attribution, gate, intake, parse_issue, reference
 from iterate_with_review import init, load, round_record, round_start
 
 
@@ -96,11 +96,11 @@ class GateTests(unittest.TestCase):
     def test_attribution_lists_fixer_and_reviewers(self):
         self.clean_round()
         footer = attribution("Claude Code", "claude-opus-5-5", "high", load(self.ledger))
-        self.assertEqual(footer, "<sub>Fix issue — Harness: Claude Code; Model: claude-opus-5-5; "
+        self.assertEqual(footer, "<sub>Autofix — Harness: Claude Code; Model: claude-opus-5-5; "
                                  "Reasoning effort: high; Review: Iterate with Review, 1 round; "
                                  "Reviewers: codex/gpt-6-astra, codex/gpt-6.1-sol, "
                                  "claudeAgent/claude-opus-5-5, claudeAgent/claude-sonnet-5-5</sub>")
-        self.assertEqual(attribution("", "<x>"), "<sub>Fix issue — Harness: unknown; Model: &lt;x&gt;</sub>")
+        self.assertEqual(attribution("", "<x>"), "<sub>Autofix — Harness: unknown; Model: &lt;x&gt;</sub>")
 
 
 if __name__ == "__main__":

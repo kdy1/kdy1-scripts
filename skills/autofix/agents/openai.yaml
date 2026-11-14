@@ -1,0 +1,7 @@
+interface:
+  display_name: "Autofix"
+  short_description: "Fix an issue, iterate with review until clean, then open a PR"
+  default_prompt: "Use $autofix <issue URL>. 이슈를 고치고 커밋한 다음, 로컬 변경에 $iterate-with-review를 깨끗한 라운드가 나올 때까지 실행해줘. 그게 통과한 다음에만 $create-pr로 PR을 만들고, PR 본문 맨 아래에 사용한 AI 정보를 적어줘."
+
+policy:
+  allow_implicit_invocation: false

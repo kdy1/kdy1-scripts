@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Deterministic helpers for Fix Issue: issue intake, the PR gate, and the AI footer.
+"""Deterministic helpers for Autofix: issue intake, the PR gate, and the AI footer.
 
 The PR gate passes only when an Iterate with Review ledger finished with a clean round
 at the exact commit that is about to be published.
@@ -69,7 +69,7 @@ def fetch_linear(issue):
     """Read the issue and comments through the add-issue Linear helper."""
     if not LINEAR_HELPER.is_file():
         raise ValueError(f"Linear issues need the add-issue skill: {LINEAR_HELPER} is missing")
-    with tempfile.TemporaryDirectory(prefix="fix-issue-") as tmp:
+    with tempfile.TemporaryDirectory(prefix="autofix-") as tmp:
         request, output = Path(tmp, "collect.json"), Path(tmp, "observations.json")
         request.write_text(json.dumps({
             "version": 1, "target": {"workspace": issue["workspace"], "team": issue["team"]},
@@ -106,7 +106,7 @@ def intent_text(issue, details):
 
 
 def default_dir():
-    return Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache") / "fix-issue"
+    return Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache") / "autofix"
 
 
 def intake(url, out_dir=None, fetch=None):
@@ -172,7 +172,7 @@ def attribution(harness, model, effort=None, ledger=None):
         reviewers = reviewer_models(ledger)
         if reviewers:
             fields.append(f"Reviewers: {identity(', '.join(reviewers))}")
-    return f"<sub>Fix issue — {'; '.join(fields)}</sub>"
+    return f"<sub>Autofix — {'; '.join(fields)}</sub>"
 
 
 def main():
@@ -180,7 +180,7 @@ def main():
     sub = parser.add_subparsers(dest="command", required=True)
     read = sub.add_parser("issue", help="Read the issue and write the review intent file")
     read.add_argument("url")
-    read.add_argument("--out-dir", help="Directory for the intent file (default: ~/.cache/fix-issue)")
+    read.add_argument("--out-dir", help="Directory for the intent file (default: ~/.cache/autofix)")
     check = sub.add_parser("gate", help="Allow a PR only after a clean Iterate with Review round")
     check.add_argument("ledger")
     footer = sub.add_parser("attribution", help="Print the AI attribution footer for the PR body")
@@ -198,7 +198,7 @@ def main():
             print(attribution(args.harness, args.model, args.effort,
                               load(args.ledger) if args.ledger else None))
     except (OSError, ValueError, RuntimeError, KeyError) as error:
-        parser.exit(1, f"fix-issue: {error}\n")
+        parser.exit(1, f"autofix: {error}\n")
 
 
 if __name__ == "__main__":

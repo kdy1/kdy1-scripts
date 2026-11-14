@@ -1,10 +1,10 @@
 ---
-name: fix-issue
-description: "Fix one GitHub or Linear issue from its URL, run Iterate with Review on the local fix until a clean round, and only then publish a non-draft PR through Create PR with the AI attribution at the bottom of the body. Use only when the human explicitly invokes $fix-issue or asks to run Fix Issue; never select it automatically."
+name: autofix
+description: "Fix one GitHub or Linear issue from its URL, run Iterate with Review on the local fix until a clean round, and only then publish a non-draft PR through Create PR with the AI attribution at the bottom of the body. Use only when the human explicitly invokes $autofix or asks to run Autofix; never select it automatically."
 disable-model-invocation: true
 ---
 
-# Fix Issue
+# Autofix
 
 Fix the issue at the given URL, review the fix locally until it is clean, then publish one PR:
 
@@ -13,9 +13,9 @@ Fix the issue at the given URL, review the fix locally until it is clean, then p
 3. Run Iterate with Review on the local change until a clean round.
 4. Create the PR with Create PR, with the AI attribution footer at the bottom of the body.
 
-Start only when the human directly invokes `$fix-issue <issue URL>` or explicitly asks to run Fix Issue. Loading, editing, or planning this skill, a mention in issue or PR text, and a request from another skill or automation do not start it. If no issue URL is given, ask for it.
+Start only when the human directly invokes `$autofix <issue URL>` or explicitly asks to run Autofix. Loading, editing, or planning this skill, a mention in issue or PR text, and a request from another skill or automation do not start it. If no issue URL is given, ask for it.
 
-Helper: `scripts/fix_issue.py` (Python 3.9+, Git, and `gh`; Node.js for Linear). It imports the `iterate-with-review` and `review-once` helpers from the sibling skill directories, and uses the `add-issue` Linear helper to read Linear issues. Run it with its absolute path.
+Helper: `scripts/autofix.py` (Python 3.9+, Git, and `gh`; Node.js for Linear). It imports the `iterate-with-review` and `review-once` helpers from the sibling skill directories, and uses the `add-issue` Linear helper to read Linear issues. Run it with its absolute path.
 
 ## Required skills
 
@@ -27,14 +27,14 @@ Read these before you change anything, and resolve each installed `SKILL.md` to 
 
 ## Boundaries
 
-- A Fix Issue invocation authorizes, for this one issue only: a fix branch, edits and local commits, the nested Iterate with Review run, and the Create PR publication after the gate passes. It does not authorize issue comments, closing or reopening the issue, merging, auto-merge, force pushes, or PR maintenance after publication.
+- A Autofix invocation authorizes, for this one issue only: a fix branch, edits and local commits, the nested Iterate with Review run, and the Create PR publication after the gate passes. It does not authorize issue comments, closing or reopening the issue, merging, auto-merge, force pushes, or PR maintenance after publication.
 - **Never create or update a PR before the gate in step 5 passes.** If Iterate with Review pauses on a blocker, report "paused, not finished" with the ledger path, and stop without a PR.
 - Do not change the issue's scope. Ask the user when the issue needs a product or design decision that the issue, its comments, and the repository cannot answer.
 
 ## 1. Read the issue
 
 ```sh
-python3 <skill>/scripts/fix_issue.py issue <issue URL>
+python3 <skill>/scripts/autofix.py issue <issue URL>
 ```
 
 The command reads the issue and its comments, and prints JSON with `tracker`, `title`, `state`, `closed`, `linkedPullRequests`, `reference`, and `intentFile`. The intent file holds the issue text for the reviewers. For Linear, a result that asks for authentication means: follow the `add-issue` Linear authentication steps once, then run the command again.
@@ -47,7 +47,7 @@ The command reads the issue and its comments, and prints JSON with `tracker`, `t
 
 - **Repository:** for a GitHub issue, use a local clone of the issue's repository. For a Linear issue, use the current checkout, or ask which repository when it is not clear. Read the repository instructions (`AGENTS.md`, `CLAUDE.md`, `CONTRIBUTING.md`).
 - **Base:** fetch the default branch from the remote that points at the repository, and use `<remote>/<default branch>` as the base, unless the user names another base.
-- **Branch:** use the current worktree if it is clean and its branch has no commits that are not in the base. Otherwise create a branch from the fresh base, following repository conventions (default `t3/fix-issue-<number or identifier>`). If the workspace has unrelated uncommitted changes, ask. Do not stash or discard them.
+- **Branch:** use the current worktree if it is clean and its branch has no commits that are not in the base. Otherwise create a branch from the fresh base, following repository conventions (default `t3/autofix-<number or identifier>`). If the workspace has unrelated uncommitted changes, ask. Do not stash or discard them.
 
 If the base already satisfies the full issue requirements, report the evidence (revision, code, and checks) and stop. Do not close the issue.
 
@@ -73,7 +73,7 @@ Keep the ledger path. Every Iterate with Review rule applies: no round limit, ju
 ## 5. Pass the PR gate
 
 ```sh
-python3 <skill>/scripts/fix_issue.py gate <ledger>
+python3 <skill>/scripts/autofix.py gate <ledger>
 ```
 
 The gate passes only when the ledger finished with a clean round, the workspace is clean and on the ledger branch, and `HEAD` is the commit that the clean round reviewed. Its JSON gives the `head`, `branch`, `base`, `rounds`, and reviewer models. If it fails, do not publish. A commit after the clean round, for example a fix for a failing check, needs another Iterate with Review round on the new `HEAD`.
@@ -81,13 +81,13 @@ The gate passes only when the ledger finished with a clean round, the workspace 
 ## 6. Write the AI attribution footer
 
 ```sh
-python3 <skill>/scripts/fix_issue.py attribution --harness "<harness>" --model "<model>" [--effort "<effort>"] --ledger <ledger>
+python3 <skill>/scripts/autofix.py attribution --harness "<harness>" --model "<model>" [--effort "<effort>"] --ledger <ledger>
 ```
 
 The command prints one GitHub small-text line in the Static Analysis footer format, for example:
 
 ```html
-<sub>Fix issue — Harness: Claude Code; Model: claude-opus-5-5; Reasoning effort: high; Review: Iterate with Review, 2 rounds; Reviewers: codex/gpt-6-astra, codex/gpt-6.1-sol, claudeAgent/claude-opus-5-5, claudeAgent/claude-sonnet-5-5</sub>
+<sub>Autofix — Harness: Claude Code; Model: claude-opus-5-5; Reasoning effort: high; Review: Iterate with Review, 2 rounds; Reviewers: codex/gpt-6-astra, codex/gpt-6.1-sol, claudeAgent/claude-opus-5-5, claudeAgent/claude-sonnet-5-5</sub>
 ```
 
 - Take the harness, model, and reasoning effort of the agent that wrote the fix from trusted runtime or session metadata. Pass `unknown` for an unknown harness or model, and omit `--effort` when the effort is not known. Do not infer them from skill defaults or configuration.
@@ -98,7 +98,7 @@ The command prints one GitHub small-text line in the Static Analysis footer form
 
 Explicitly invoke `[$create-pr](<absolute create-pr SKILL.md>)` with:
 
-- This Fix Issue invocation as the authorization, the issue URL, the repository, the absolute workspace path, the head branch, and the base branch from the gate.
+- This Autofix invocation as the authorization, the issue URL, the repository, the absolute workspace path, the head branch, and the base branch from the gate.
 - `headSha` set to the gate's `head`. Create PR pushes this commit. Do not add commits after the gate.
 - Non-draft publication (`isDraft: false`).
 - The issue reference from step 1's `reference`: for a GitHub issue, a `closes` classification in `issues`; for a Linear issue, the exact `Closes <identifier>` line in `requiredText`. Use `Refs` only for a partial fix that the user agreed to.

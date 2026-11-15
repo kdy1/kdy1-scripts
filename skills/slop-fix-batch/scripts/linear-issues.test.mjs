@@ -80,8 +80,10 @@ test('a key for another workspace or a missing key asks for authentication', asy
   const fake = new FakeLinear({ workspace: 'other' });
   const wrong = await run('collect', { version: 1, workspace: 'acme', filter }, { env, fetch: fake.fetch });
   assert.equal(wrong.authRequired, true);
-  const none = await run('read', { version: 1, workspace: 'acme', identifiers: ['ENG-1'] }, { env: {}, keychain: { read: () => null }, config: { default: null, workspaces: {} } });
+  const none = await run('read', { version: 1, workspace: 'acme', identifiers: ['ENG-1'] }, { env: {}, store: { read: () => ({ token: null, locked: false }) }, config: { default: null, workspaces: {} } });
   assert.equal(none.authRequired, true); assert.equal(none.complete, false);
+  const locked = await run('read', { version: 1, workspace: 'acme', identifiers: ['ENG-1'] }, { env: {}, store: { read: () => ({ token: null, locked: true }) }, config: { default: null, workspaces: {} } });
+  assert.equal(locked.keyringLocked, true); assert.equal(locked.authRequired, undefined); assert.equal(locked.complete, false);
 });
 
 test('read returns body, comments, relations, attachments and truncation', async () => {

@@ -10,7 +10,7 @@ The GitHub repository, push remote, and target branch are still resolved through
 
 ## Authentication
 
-The helper reuses the `$add-issue` Linear client and its key resolution: `LINEAR_API_KEY` first, then the macOS Keychain item for the workspace. Check the key with `node /installed/add-issue/scripts/linear-issue.mjs auth-status <workspace>`. When any command returns `authRequired: true`, follow the [add-issue authentication procedure](../../add-issue/references/linear.md#authentication) once: `request_secret` with `delivery: "file"`, then `auth-store` in the same command. Then repeat the same command. Do not ask for a key at any other time, and never put the key in chat, ledgers, handoffs, or files.
+The helper reuses the `$add-issue` Linear client and its key resolution: `LINEAR_API_KEY` first, then the stored key for the workspace: the macOS Keychain, or on Linux the Secret Service keyring or the mode-600 key file (see the [add-issue key stores](../../add-issue/references/linear.md#authentication)). Check the key with `node /installed/add-issue/scripts/linear-issue.mjs auth-status <workspace>`. When any command returns `authRequired: true`, follow the [add-issue authentication procedure](../../add-issue/references/linear.md#authentication) once: `request_secret` with `delivery: "file"`, then `auth-store` in the same command. Then repeat the same command. When a command returns `keyringLocked: true`, do not request a key: ask the human to unlock the keyring, then repeat the command. Do not ask for a key at any other time, and never put the key in chat, ledgers, handoffs, or files.
 
 ## Commands
 

@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { check, version, nonempty, absolute, readJson, cli } from './helper-common.mjs';
 import { LINEAR_ID } from './issue-refs.mjs';
-// Reuse $add-issue's Linear GraphQL client and Keychain-backed API key resolution.
+// Reuse $add-issue's Linear GraphQL client and its stored API key resolution (Keychain, keyring, or key file).
 import { Linear, sameText } from '../../add-issue/scripts/linear.mjs';
 import { resolveToken } from '../../add-issue/scripts/linear-auth.mjs';
 
@@ -27,6 +27,8 @@ const STATE = 'query($id:String!){ issue(id:$id){ id identifier url state { id n
 
 const outcome = (status, fields = {}) => ({ version: 1, complete: !['blocked', 'uncertain'].includes(status), status, ...fields });
 const authRequired = (workspace, reason) => outcome('blocked', { reason, authRequired: true, workspace, keyUrl: 'https://linear.app/settings/account/security' });
+// A locked keyring may still hold a valid key, so it is not a reason to ask for a new one.
+const keyringLocked = workspace => outcome('blocked', { reason: 'The Secret Service keyring is locked. Ask the human to log in to the desktop session or unlock the keyring, then repeat the command', keyringLocked: true, workspace });
 const optional = async promise => { try { return await promise; } catch (e) { if (e.kind === 'not-found') return null; throw e; } };
 
 export function issueKey(workspace, identifier) { return `linear.app/${workspace}/${identifier}`.toLowerCase(); }
@@ -131,7 +133,8 @@ const commands = { collect, read, close };
 export async function run(command, input, deps = {}) {
   check(commands[command], USAGE); version(input);
   check(WORKSPACE.test(input.workspace ?? ''), 'Expected the Linear workspace URL key');
-  const { token } = resolveToken(input.workspace, deps);
+  const { token, locked } = resolveToken(input.workspace, deps);
+  if (!token && locked) return keyringLocked(input.workspace);
   if (!token) return authRequired(input.workspace, `No Linear API key stored for workspace ${input.workspace}`);
   const client = deps.client ?? new Linear({ token, fetch: deps.fetch });
   try {

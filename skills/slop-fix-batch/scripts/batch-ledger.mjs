@@ -3,6 +3,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { check, version, nonempty, sha, absolute, readJson, load, save, lock, cli } from './helper-common.mjs';
 import { emptyCheckpoints, checkpoint, validateCheckpoints } from './batch-checkpoints.mjs';
 import { verifyPublication } from './verify-publication.mjs';
+import { LINEAR_ID, isLinear, issueReference } from './issue-refs.mjs';
 import { ledgerRuntime, matchRuntime, runtimeName } from './runtime.mjs';
 import { workerSettings } from './worker-settings.mjs';
 import { rankTasks } from './batch-scheduler.mjs';
@@ -23,6 +24,8 @@ export function initialize(input) {
   check(input.selection?.complete === true && Array.isArray(input.selection.issues), 'Complete fixed selection required');
   check(input.selection.query === input.query, 'Selection query mismatch');
   check(input.selection.host === undefined || `${input.selection.host}/${input.selection.repository}`.toLowerCase() === input.repository.toLowerCase(), 'Selection repository mismatch');
+  // A Linear selection is not tied to the code repository; its issues must all come from Linear.
+  check(input.selection.tracker !== 'linear' || input.selection.issues.every(isLinear), 'Selection tracker mismatch');
   sha(input.inspectedSha); check(/^[\w.-]+\/[\w.-]+\/[\w.-]+$/.test(input.repository), 'Expected host/owner/repository');
   nonempty(input.baseBranch, 'base branch'); nonempty(input.remote, 'remote'); nonempty(input.authorization, 'original authorization');
   const ledger = { version: 1, revision: 0, batchId: input.batchId, coordinator: input.coordinator, query: input.query,
@@ -35,7 +38,7 @@ export function groupReferences(ledger, groupId) {
   const closes = [], refs = [];
   for (const key of ledger.groups[groupId].issues) {
     const plan = ledger.splitPlans?.[key];
-    (plan && plan.completionGroup !== groupId ? refs : closes).push(ledger.fixedIssues.find(i => i.key === key).url);
+    (plan && plan.completionGroup !== groupId ? refs : closes).push(issueReference(ledger.fixedIssues.find(i => i.key === key)));
   }
   return { closes: closes.sort(), refs: refs.sort() };
 }
@@ -45,7 +48,12 @@ export function validateLedger(ledger) {
   for (const key of ['batchId', 'coordinator', 'query', 'repository', 'baseBranch', 'remote', 'authorization']) nonempty(ledger[key], key);
   sha(ledger.inspectedSha);
   check(Array.isArray(ledger.fixedIssues) && new Set(ledger.fixedIssues.map(i => i.key)).size === ledger.fixedIssues.length, 'Invalid fixed list');
-  ledger.fixedIssues.forEach((issue, i) => { nonempty(issue.key, 'issue identity'); nonempty(issue.url, 'issue URL'); check(issue.canonicalOrder === i, 'Canonical order changed'); });
+  ledger.fixedIssues.forEach((issue, i) => {
+    nonempty(issue.key, 'issue identity'); nonempty(issue.url, 'issue URL'); check(issue.canonicalOrder === i, 'Canonical order changed');
+    // An absent tracker is a GitHub issue, as in ledgers written before Linear support.
+    check([undefined, 'github', 'linear'].includes(issue.tracker), 'Unknown issue tracker');
+    if (isLinear(issue)) check(LINEAR_ID.test(issue.identifier ?? ''), 'Invalid Linear issue identifier');
+  });
   for (const key of ['groups', 'stacks', 'assignments', 'assessments']) check(ledger[key] && typeof ledger[key] === 'object' && !Array.isArray(ledger[key]), `Missing ${key}`);
   check(Array.isArray(ledger.events) && ledger.checkpoints && typeof ledger.implementationEnded === 'boolean', 'Missing ledger recovery state');
   validateCheckpoints(ledger.checkpoints);
@@ -272,7 +280,8 @@ export function applyEvent(ledger, event, owner) {
         const identity = x => {
           const { headSha, baseSha, body, ...rest } = x;
           const issueDirectives = body.split('\n').map(line => line.trim()).filter(line =>
-            /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?|refs)\s*:?\s+(?:https?:\/\/|(?:[\w.-]+\/[\w.-]+)?#)/i.test(line)).sort();
+            /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?|refs)\s*:?\s+(?:https?:\/\/|(?:[\w.-]+\/[\w.-]+)?#)/i.test(line) ||
+            /^(?:closes|ref)\s+[A-Z][A-Z0-9]*-[1-9]\d*$/i.test(line)).sort();
           return { ...rest, issueDirectives };
         };
         check(isDeepStrictEqual(identity(current), identity(old)), 'Repair cannot replace membership, metadata or issue scope');
@@ -347,7 +356,10 @@ export function applyEvent(ledger, event, owner) {
     case 'resume-stack': check(next.stacks[event.stackId]?.phase === 'held', 'Only held construction stack may resume'); nonempty(event.evidence, 'reconciliation evidence'); next.stacks[event.stackId].phase = 'building'; delete next.stacks[event.stackId].blocker; break;
     case 'closure':
       check(ledger.fixedIssues.some(i => i.key === event.issueKey), 'Issue outside fixed list'); sha(event.value?.targetSha);
-      check(event.value.state === 'CLOSED' && event.value.stateReason === 'COMPLETED', 'Closure not verified'); nonempty(event.value.commentUrl, 'verified evidence comment URL'); nonempty(event.value.evidence, 'closure evidence');
+      // GitHub closure reports CLOSED/COMPLETED; Linear closure reports a workflow state of type completed.
+      check(isLinear(ledger.fixedIssues.find(i => i.key === event.issueKey))
+        ? event.value.state === 'completed' && typeof event.value.stateName === 'string' && event.value.stateName.trim()
+        : event.value.state === 'CLOSED' && event.value.stateReason === 'COMPLETED', 'Closure not verified'); nonempty(event.value.commentUrl, 'verified evidence comment URL'); nonempty(event.value.evidence, 'closure evidence');
       next.assessments[event.issueKey] = { ...next.assessments[event.issueKey], closure: event.value }; break;
     case 'hold': check(next.stacks[event.stackId]?.phase === 'building', 'Cannot hold maintenance-owned stack from construction'); nonempty(event.evidence, 'blocker'); next.stacks[event.stackId].phase = 'held'; next.stacks[event.stackId].blocker = event.evidence; break;
     default: throw new Error('Unknown ledger event');

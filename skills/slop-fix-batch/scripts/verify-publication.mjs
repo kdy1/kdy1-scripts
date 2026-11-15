@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { check, version, sha, readJson, cli } from './helper-common.mjs';
 import { runtimeName, matchRuntime } from './runtime.mjs';
+import { closesReference, isLinearReference, linksLinearIssue, referenceLine } from './issue-refs.mjs';
 export function verifyPublication(input, expectedRuntime) {
   version(input); const { expected, observed } = input; const errors = [];
   const runtime = runtimeName(input.runtime);
@@ -28,17 +29,13 @@ export function verifyPublication(input, expectedRuntime) {
     if (urls.has(actual.url)) errors.push('Duplicate PR identity'); urls.add(actual.url);
     if (actual.state !== 'OPEN' || actual.isDraft !== false) errors.push(`Layer ${i + 1}: expected open non-draft PR`);
     if (runtime === 'codex' && !(observed.attachments ?? []).includes(actual.url)) errors.push(`Layer ${i + 1}: missing attachment`);
+    const hasLine = line => actual.body?.split('\n').some(x => x.trim() === line);
     for (const issue of layer.refs ?? []) {
-      if (!actual.body?.split('\n').some(line => line.trim() === `Refs ${issue}`)) errors.push(`Layer ${i + 1}: missing standalone Refs ${issue}`);
-      const number = issue.match(/\/issues\/(\d+)$/)?.[1];
-      const repository = issue.match(/^https?:\/\/[^/]+\/(.+)\/issues\/\d+$/)?.[1];
-      const targets = [issue, ...(number ? [`#${number}`, `${repository}#${number}`] : [])];
-      const closing = /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s*:?\s+([^\n]+)/gi;
-      for (const match of (actual.body ?? '').matchAll(closing)) {
-        if (targets.some(target => new RegExp('(?:^|[\\s,(\\[<])' + target.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?=$|[\\s),.;\\]>])').test(match[1]))) errors.push(`Layer ${i + 1}: premature closure of ${issue}`);
-      }
+      if (!hasLine(referenceLine('refs', issue))) errors.push(`Layer ${i + 1}: missing standalone ${referenceLine('refs', issue)}`);
+      if (closesReference(actual.body, issue)) errors.push(`Layer ${i + 1}: premature closure of ${issue}`);
+      if (isLinearReference(issue) && (linksLinearIssue(actual.title, issue) || linksLinearIssue(actual.headBranch, issue))) errors.push(`Layer ${i + 1}: title or branch links ${issue} for closure`);
     }
-    for (const issue of layer.closes) if (!actual.body?.split('\n').some(line => line.trim() === `Closes ${issue}`)) errors.push(`Layer ${i + 1}: missing standalone Closes ${issue}`);
+    for (const issue of layer.closes) if (!hasLine(referenceLine('closes', issue))) errors.push(`Layer ${i + 1}: missing standalone Closes ${issue}`);
   });
   return { version: 1, runtime, attachmentStatus: runtime === 'claude-code' ? 'not-applicable' : (errors.length ? 'unverified' : 'verified'), complete: errors.length === 0, status: errors.length ? 'blocked' : 'verified', publicationOnly: true, stackId: expected.stackId, errors, verifiedLayers: errors.length ? [] : structuredClone(expected.layers) };
 }

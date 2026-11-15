@@ -4,9 +4,10 @@ import argparse
 from pathlib import Path
 import shutil
 
+# add-issue provides the Linear client and Keychain authentication for linear-issues.mjs.
 SKILLS = (
     "slop-fix-batch", "create-pr", "write-ste", "repair-pr",
-    "manage-stacked-prs", "merge-pr",
+    "manage-stacked-prs", "merge-pr", "add-issue",
 )
 
 

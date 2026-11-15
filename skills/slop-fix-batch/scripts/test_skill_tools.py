@@ -23,6 +23,7 @@ class SkillToolsTest(unittest.TestCase):
             self.assertEqual({Path(p).name for p in paths}, set(installer.SKILLS))
             validator.validate(destination / 'slop-fix-batch')
             self.assertTrue((destination / 'repair-pr/scripts/stack-coordination.mjs').is_file())
+            self.assertTrue((destination / 'add-issue/scripts/linear.mjs').is_file())
             with self.assertRaisesRegex(ValueError, 'already exists'):
                 installer.prepare(destination)
 

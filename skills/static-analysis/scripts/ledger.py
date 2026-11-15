@@ -9,6 +9,11 @@ import sys
 from pathlib import Path
 
 STATUSES = ("pending", "running", "complete", "blocked")
+# A validated candidate is "ready" until its $add-issue handoff starts.
+CANDIDATE_OPEN = ("ready", "handed-off")
+CANDIDATE_TERMINAL = ("new-issue", "duplicate-comment", "metadata-update",
+                      "existing-issue", "unconfirmed", "failed", "rejected")
+CANDIDATE_STATUSES = CANDIDATE_OPEN + CANDIDATE_TERMINAL
 FIRST_FOCUS = "full coverage of every assigned path"
 PASS_FOCI = (
     "cross-unit contracts, callers, and configuration",
@@ -64,6 +69,7 @@ def init(path, plan_data, revision):
         "pass": 1,
         "focus": focus_for(1),
         "history": [],
+        "candidates": {},
         "units": {unit["id"]: new_unit(unit["label"], unit["paths"])
                   for unit in plan_data["units"]},
     }
@@ -87,6 +93,35 @@ def mark(ledger, unit_id, status, owner, note):
         unit["note"] = note
 
 
+def candidate(ledger, candidate_id, status, unit, title, source, issue, note):
+    """Create or update a candidate. Candidates persist across passes."""
+    candidates = ledger.setdefault("candidates", {})
+    entry = candidates.get(candidate_id)
+    if entry is None:
+        if status != "ready":
+            raise ValueError(f"New candidate must start as ready: {candidate_id}")
+        if not title or not source:
+            raise ValueError("A new candidate needs --title and --source")
+        entry = candidates[candidate_id] = {
+            "pass": ledger["pass"], "unit": unit, "title": title, "source": source,
+            "status": status, "issue": None, "note": None}
+    elif entry["status"] in CANDIDATE_TERMINAL and status != entry["status"]:
+        raise ValueError(f"Candidate already has a terminal outcome: {candidate_id}")
+    entry["status"] = status
+    for key, value in (("unit", unit), ("title", title), ("source", source),
+                       ("issue", issue), ("note", note)):
+        if value is not None:
+            entry[key] = value
+
+
+def candidates_by_status(ledger):
+    groups = {"ready": [], "handed-off": [], "closed": []}
+    for candidate_id in sorted(ledger.get("candidates", {})):
+        status = ledger["candidates"][candidate_id]["status"]
+        groups[status if status in CANDIDATE_OPEN else "closed"].append(candidate_id)
+    return groups
+
+
 def by_status(ledger):
     groups = {status: [] for status in STATUSES}
     for unit_id in sorted(ledger["units"]):
@@ -97,7 +132,10 @@ def by_status(ledger):
 def next_action(ledger):
     """Return the coordinator's next required action for this ledger."""
     groups = by_status(ledger)
-    if groups["pending"]:
+    handoffs = candidates_by_status(ledger)
+    if handoffs["ready"]:
+        action = "handoff"
+    elif groups["pending"]:
         action = "dispatch"
     elif groups["blocked"]:
         action = "reassign"
@@ -111,6 +149,8 @@ def next_action(ledger):
         "focus": ledger["focus"],
         "revision": ledger["revision"],
         **groups,
+        "readyCandidates": handoffs["ready"],
+        "openHandoffs": handoffs["handed-off"],
     }
 
 
@@ -159,6 +199,16 @@ def main():
     mark_parser.add_argument("--owner")
     mark_parser.add_argument("--note")
 
+    candidate_parser = commands.add_parser(
+        "candidate", parents=[common], help="Record a candidate or its handoff outcome")
+    candidate_parser.add_argument("--id", required=True)
+    candidate_parser.add_argument("--status", required=True, choices=CANDIDATE_STATUSES)
+    candidate_parser.add_argument("--unit")
+    candidate_parser.add_argument("--title", help="One-line defect summary")
+    candidate_parser.add_argument("--source", help="Primary path:line")
+    candidate_parser.add_argument("--issue", help="Verified issue or comment URL")
+    candidate_parser.add_argument("--note")
+
     commands.add_parser("next", parents=[common], help="Print the next required action")
 
     pass_parser = commands.add_parser("new-pass", parents=[common],
@@ -185,6 +235,9 @@ def main():
             add(ledger, args.id, args.label, args.paths)
         elif args.command == "mark":
             mark(ledger, args.unit, args.status, args.owner, args.note)
+        elif args.command == "candidate":
+            candidate(ledger, args.id, args.status, args.unit, args.title, args.source,
+                      args.issue, args.note)
         elif args.command == "new-pass":
             new_pass(ledger, args.focus)
         elif args.command == "status":

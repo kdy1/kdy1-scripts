@@ -78,6 +78,37 @@ class LedgerTests(unittest.TestCase):
             self.assertEqual(state, "created")
             self.assertEqual(fresh["units"]["unit-01"]["status"], "pending")
 
+    def test_ready_candidate_requires_handoff_before_dispatch(self):
+        ledger_module.candidate(self.ledger, "c1", "ready", "unit-01", "panic on empty input",
+                                "a/one.py:3", None, None)
+        result = ledger_module.next_action(self.ledger)
+        self.assertEqual(result["action"], "handoff")
+        self.assertEqual(result["readyCandidates"], ["c1"])
+        ledger_module.candidate(self.ledger, "c1", "handed-off", None, None, None, None, "task-1")
+        result = ledger_module.next_action(self.ledger)
+        self.assertEqual(result["action"], "dispatch")
+        self.assertEqual(result["openHandoffs"], ["c1"])
+
+    def test_candidate_outcomes_are_final_and_survive_new_pass(self):
+        ledger_module.candidate(self.ledger, "c1", "ready", "unit-01", "t", "a/one.py:3",
+                                None, None)
+        ledger_module.candidate(self.ledger, "c1", "new-issue", None, None, None,
+                                "https://github.com/o/r/issues/1", None)
+        with self.assertRaises(ValueError):
+            ledger_module.candidate(self.ledger, "c1", "ready", None, None, None, None, None)
+        for unit_id in ("unit-01", "unit-02"):
+            ledger_module.mark(self.ledger, unit_id, "complete", None, None)
+        ledger_module.new_pass(self.ledger, None)
+        self.assertEqual(self.ledger["candidates"]["c1"]["status"], "new-issue")
+        self.assertEqual(ledger_module.next_action(self.ledger)["openHandoffs"], [])
+
+    def test_new_candidate_must_start_ready_with_summary(self):
+        with self.assertRaises(ValueError):
+            ledger_module.candidate(self.ledger, "c2", "handed-off", None, "t", "x:1",
+                                    None, None)
+        with self.assertRaises(ValueError):
+            ledger_module.candidate(self.ledger, "c2", "ready", None, None, "x:1", None, None)
+
 
 if __name__ == "__main__":
     unittest.main()

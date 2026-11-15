@@ -142,7 +142,7 @@ worker before handoff. Never bypass Git hooks or defer checks to integration
 or a final tip. Preserve required execution times. If preparation findings exist, reconcile
 them with relevant prerequisite changes at the assigned starting SHA. Use the implementation role’s explicit worker settings. Ask the coordinator before changing the
 assignment or using nested slots. Never modify another worker's refs/checkout,
-publish a PR, change GitHub issues/comments, or run gh stack. Do not invoke
+publish a PR, change GitHub or Linear issues/comments, or run gh stack. Do not invoke
 $slop-fix-issue: this assignment ends at implementation handoff.
 
 Perform real-world validation in this worker before handoff, even when the issue

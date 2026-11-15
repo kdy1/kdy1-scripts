@@ -37,7 +37,7 @@ Read these before you change anything, and resolve each installed `SKILL.md` to 
 python3 <skill>/scripts/autofix.py issue <issue URL>
 ```
 
-The command reads the issue and its comments, and prints JSON with `tracker`, `title`, `state`, `closed`, `linkedPullRequests`, `reference`, and `intentFile`. The intent file holds the issue text for the reviewers. For Linear, a result that asks for authentication means: follow the `add-issue` Linear authentication steps once, then run the command again.
+The command reads the issue and its comments, and prints JSON with `tracker`, `title`, `state`, `closed`, `linkedPullRequests`, `reference`, and `intentFile`. The intent file holds the issue text for the reviewers. For Linear, a result that asks for authentication means: follow the `add-issue` Linear authentication steps once, then run the command again. A result that says the keyring is locked means: ask the human to unlock it, then run the command again. Do not request a new key.
 
 - If `closed` is true, report the state and stop.
 - If `linkedPullRequests` is not empty, or `gh pr list --repo <repo> --state open --search "<issue number or identifier>"` finds an open PR for the issue, report the PRs and ask whether to continue.

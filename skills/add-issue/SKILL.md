@@ -24,8 +24,9 @@ For Linear, use the [Linear helper contract](references/linear.md) and `scripts/
 Authenticate once per workspace, never per invocation:
 
 - Run `node scripts/linear-issue.mjs auth-status` before Linear collection. A `verified` result means that the stored key works. Do not ask the human for a key in that case.
-- Only when a helper result has `authRequired: true`, call T3 `request_secret` with `delivery: "file"` and the result's `keyUrl`. Then run `auth-store` with the delivered file path in the same command. The helper validates the key and saves it in the macOS Keychain, so later invocations, recording subagents, and continuations read it from there. Then repeat the blocked command with the same payload and ledger.
-- Never put the key in chat, payloads, ledgers, subagent prompts, or logs. Tell recording subagents that the helper reads the key from the Keychain. A subagent that gets `authRequired: true` returns it to the coordinator, and the coordinator requests the key.
+- Only when a helper result has `authRequired: true`, call T3 `request_secret` with `delivery: "file"` and the result's `keyUrl`. Then run `auth-store` with the delivered file path in the same command. The helper validates the key and saves it in the macOS Keychain, or on Linux in the Secret Service keyring (or a mode-600 key file when no keyring runs). Later invocations, recording subagents, and continuations read it from there. Then repeat the blocked command with the same payload and ledger.
+- When a helper result has `keyringLocked: true`, do not request a key. The stored key is still there. Ask the human to log in to the desktop session or unlock the keyring, then repeat the command. When `auth-store` reports that `secret-tool` is missing, ask the human to install it (for example `sudo apt install libsecret-tools`) and repeat `auth-store` with a new key request.
+- Never put the key in chat, payloads, ledgers, subagent prompts, or logs. Tell recording subagents that the helper reads the stored key itself. A subagent that gets `authRequired: true` or `keyringLocked: true` returns it to the coordinator, and the coordinator handles it.
 
 ## T3 Runtime
 

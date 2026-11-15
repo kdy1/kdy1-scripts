@@ -1,13 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync, statSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { hash } from './common.mjs';
 import { snapshot } from './workspace.mjs';
 import { Linear, validateLinearPayload, record, refresh, collect, preflight, normalizeText } from './linear.mjs';
-import { Keychain, SERVICE, resolveToken } from './linear-auth.mjs';
+import { Keychain, KeyFile, KeyStore, SecretService, SERVICE, resolveToken } from './linear-auth.mjs';
 import { auth, dispatch } from './linear-issue.mjs';
 
 const TEAM = '11111111-1111-4111-8111-111111111111';
@@ -190,7 +190,7 @@ test('reports an invalid key as authRequired without writing', async t => {
   const s = setup(t); const fake = new FakeLinear(); fake.authFail = true;
   const value = await dispatch('record', { version: 1, payload: s.payload, statePath: s.statePath, context: s.context }, { env: { LINEAR_API_KEY: KEY }, fetch: fake.fetch });
   assert.equal(value.authRequired, true); assert.equal(value.status, 'blocked');
-  const missing = await dispatch('collect', { version: 1, target: { workspace: 'acme', team: 'ENG' } }, { env: {}, keychain: { read: () => null }, config: { default: null, workspaces: {} } });
+  const missing = await dispatch('collect', { version: 1, target: { workspace: 'acme', team: 'ENG' } }, { env: {}, store: { read: () => ({ token: null, locked: false }) }, config: { default: null, workspaces: {} } });
   assert.equal(missing.authRequired, true);
 });
 
@@ -225,32 +225,97 @@ test('Keychain stores the key through stdin and env overrides it', () => {
     return { status: 0, stdout: '' };
   };
   const keychain = new Keychain({ transport, platform: 'darwin' });
-  keychain.write('acme', KEY);
+  const keys = new KeyStore({ platform: 'darwin', keychain });
+  assert.equal(keys.write('acme', KEY), 'keychain');
   assert.ok(calls.every(c => !c.args.join(' ').includes(KEY)), 'key appeared in argv');
   assert.ok(calls[0].input.includes(SERVICE));
-  assert.deepEqual(resolveToken('acme', { env: {}, keychain, config: { default: null, workspaces: {} } }), { token: KEY, source: 'keychain', workspace: 'acme' });
-  assert.equal(resolveToken(undefined, { env: {}, keychain, config: { default: 'acme', workspaces: {} } }).token, KEY);
-  assert.equal(resolveToken('acme', { env: { LINEAR_API_KEY: 'lin_api_env' }, keychain }).source, 'env');
+  assert.deepEqual(resolveToken('acme', { env: {}, store: keys, config: { default: null, workspaces: {} } }), { token: KEY, source: 'keychain', workspace: 'acme', locked: false });
+  assert.equal(resolveToken(undefined, { env: {}, store: keys, config: { default: 'acme', workspaces: {} } }).token, KEY);
+  assert.equal(resolveToken('acme', { env: { LINEAR_API_KEY: 'lin_api_env' }, store: keys }).source, 'env');
   assert.throws(() => keychain.write('acme', 'bad"key with spaces'), /Unexpected/);
   assert.equal(new Keychain({ transport, platform: 'linux' }).read('acme'), null);
+});
+
+// Fake `busctl` and `secret-tool`: `locked` is null when no Secret Service owns the bus name.
+function fakeSecretService({ locked = false, tool = true } = {}) {
+  const items = new Map(); const calls = [];
+  const transport = (program, args, options) => {
+    calls.push({ program, args, input: options.input });
+    if (program === 'busctl') return locked === null ? { status: 1, stdout: '' } : { status: 0, stdout: `b ${locked}\n` };
+    if (!tool) return { error: Object.assign(new Error('spawn secret-tool ENOENT'), { code: 'ENOENT' }) };
+    const account = args[args.indexOf('account') + 1];
+    if (args[0] === 'store') { items.set(account, options.input); return { status: 0, stdout: '' }; }
+    if (args[0] === 'lookup') return items.has(account) ? { status: 0, stdout: items.get(account) } : { status: 1, stdout: '' };
+    if (args[0] === 'clear') { items.delete(account); return { status: 0, stdout: '' }; }
+    return { status: 0, stdout: '' };
+  };
+  return { items, calls, service: new SecretService({ transport, env: { DBUS_SESSION_BUS_ADDRESS: 'unix:path=/run/user/1000/bus' } }) };
+}
+function linuxStore(t, options) {
+  const dir = mkdtempSync(join(tmpdir(), 'linear-keys-')); t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const fake = fakeSecretService(options); const keyFile = new KeyFile({ path: join(dir, 'cfg', 'linear-keys.json') });
+  return { ...fake, keyFile, keys: new KeyStore({ platform: 'linux', secretService: fake.service, keyFile }) };
+}
+
+test('Linux stores the key in an unlocked Secret Service keyring through stdin', t => {
+  const s = linuxStore(t);
+  s.keyFile.write('acme', KEY); // An older plain-file copy is removed once the keyring holds the key.
+  assert.equal(s.keys.write('acme', KEY), 'secret-service');
+  assert.equal(s.items.get('acme'), KEY); assert.equal(s.keyFile.read('acme'), null);
+  assert.ok(s.calls.every(c => !c.args.join(' ').includes(KEY)), 'key appeared in argv');
+  assert.ok(s.calls.some(c => c.args[0] === 'store' && c.args.includes(SERVICE)));
+  assert.deepEqual(s.keys.read('acme'), { token: KEY, source: 'secret-service', locked: false });
+  assert.equal(s.keys.remove('acme'), true); assert.equal(s.items.size, 0);
+});
+
+test('Linux falls back to a mode-600 key file only when no keyring runs', t => {
+  const s = linuxStore(t, { locked: null });
+  assert.equal(s.keys.write('acme', KEY), 'file');
+  assert.equal(statSync(s.keyFile.path).mode & 0o777, 0o600);
+  assert.equal(statSync(join(s.keyFile.path, '..')).mode & 0o777, 0o700);
+  assert.deepEqual(s.keys.read('acme'), { token: KEY, source: 'file', locked: false });
+  chmodSync(s.keyFile.path, 0o644);
+  assert.throws(() => s.keys.read('acme'), /mode 600/);
+  chmodSync(s.keyFile.path, 0o600);
+  assert.equal(s.keys.remove('acme'), true); assert.ok(!existsSync(s.keyFile.path));
+  assert.equal(new KeyStore({ platform: 'linux', env: {}, secretService: new SecretService({ env: {} }), keyFile: s.keyFile }).write('acme', KEY), 'file');
+});
+
+test('Linux never writes the plain file while a keyring is locked or secret-tool is missing', async t => {
+  const locked = linuxStore(t, { locked: true });
+  assert.throws(() => locked.keys.write('acme', KEY), /keyring is locked/);
+  assert.ok(!existsSync(locked.keyFile.path));
+  assert.deepEqual(locked.keys.read('acme'), { token: null, source: null, locked: true });
+  assert.ok(!locked.calls.some(c => c.program === 'secret-tool'), 'touched a locked keyring');
+  const noTool = linuxStore(t, { tool: false });
+  assert.throws(() => noTool.keys.write('acme', KEY), /libsecret-tools/);
+  assert.ok(!existsSync(noTool.keyFile.path));
+
+  const status = await auth('auth-status', ['acme'], { store: locked.keys, env: {}, configPath: join(locked.keyFile.path, '..', 'linear.json') });
+  assert.equal(status.keyringLocked, true); assert.equal(status.authRequired, undefined);
+  const collected = await dispatch('collect', { version: 1, target: { workspace: 'acme', team: 'ENG' } }, { env: {}, store: locked.keys, config: { default: null, workspaces: {} } });
+  assert.equal(collected.keyringLocked, true); assert.equal(collected.authRequired, undefined);
+  const keyFile = join(locked.keyFile.path, '..', '..', 'key'); writeFileSync(keyFile, KEY);
+  const stored = await auth('auth-store', [keyFile], { store: locked.keys, fetch: new FakeLinear().fetch, configPath: join(locked.keyFile.path, '..', 'linear.json') });
+  assert.equal(stored.stored, false); assert.equal(stored.keyringLocked, true);
 });
 
 test('auth-store validates the key, stores it once, and status never prints it', async t => {
   const dir = mkdtempSync(join(tmpdir(), 'linear-auth-')); t.after(() => rmSync(dir, { recursive: true, force: true }));
   const keyFile = join(dir, 'key'); writeFileSync(keyFile, `${KEY}\n`);
-  const store = new Map(); const keychain = { read: w => store.get(w) ?? null, write: (w, k) => store.set(w, k), remove: w => store.delete(w) };
+  const store = new Map(); const keys = { read: w => ({ token: store.get(w) ?? null, source: store.has(w) ? 'secret-service' : null, locked: false }), write: (w, k) => (store.set(w, k), 'secret-service'), remove: w => store.delete(w) };
   const fake = new FakeLinear(); const configPath = join(dir, 'cfg', 'linear.json');
-  const stored = await auth('auth-store', [keyFile], { keychain, fetch: fake.fetch, configPath });
-  assert.equal(stored.status, 'verified'); assert.equal(stored.workspace, 'acme'); assert.equal(store.get('acme'), KEY);
+  const stored = await auth('auth-store', [keyFile], { store: keys, fetch: fake.fetch, configPath });
+  assert.equal(stored.status, 'verified'); assert.equal(stored.workspace, 'acme'); assert.equal(stored.source, 'secret-service'); assert.equal(store.get('acme'), KEY);
   assert.ok(!JSON.stringify(stored).includes(KEY)); assert.ok(!readFileSync(configPath, 'utf8').includes(KEY));
-  const status = await auth('auth-status', [], { keychain, fetch: fake.fetch, configPath, env: {} });
-  assert.equal(status.status, 'verified'); assert.equal(status.source, 'keychain'); assert.deepEqual(status.teams.map(x => x.key), ['ENG']);
+  const status = await auth('auth-status', [], { store: keys, fetch: fake.fetch, configPath, env: {} });
+  assert.equal(status.status, 'verified'); assert.equal(status.source, 'secret-service'); assert.deepEqual(status.teams.map(x => x.key), ['ENG']);
   assert.ok(!JSON.stringify(status).includes(KEY));
   fake.authFail = true;
-  const revoked = await auth('auth-status', [], { keychain, fetch: fake.fetch, configPath, env: {} });
+  const revoked = await auth('auth-status', [], { store: keys, fetch: fake.fetch, configPath, env: {} });
   assert.equal(revoked.authRequired, true);
-  const rejected = await auth('auth-store', [keyFile], { keychain: { write: () => assert.fail('stored a rejected key') }, fetch: fake.fetch, configPath });
+  const rejected = await auth('auth-store', [keyFile], { store: { write: () => assert.fail('stored a rejected key') }, fetch: fake.fetch, configPath });
   assert.equal(rejected.stored, false);
-  await auth('auth-delete', ['acme'], { keychain, configPath });
+  await auth('auth-delete', ['acme'], { store: keys, configPath });
   assert.equal(store.size, 0); assert.ok(existsSync(configPath));
 });

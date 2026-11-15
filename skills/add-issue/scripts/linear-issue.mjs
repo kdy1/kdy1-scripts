@@ -3,11 +3,14 @@ import { fileURLToPath } from 'node:url';
 import { realpathSync } from 'node:fs';
 import { check, readJson, result, save, outside, version } from './common.mjs';
 import { images } from './payload.mjs';
-import { Keychain, configPath, forgetWorkspace, readConfig, readKeyFile, rememberWorkspace, resolveToken } from './linear-auth.mjs';
+import { KeyStore, configPath, forgetWorkspace, readConfig, readKeyFile, rememberWorkspace, resolveToken } from './linear-auth.mjs';
 import { Linear, collect, preflight, record, refresh, validateLinearPayload, verifyRecording } from './linear.mjs';
 
 const USAGE = 'node linear-issue.mjs auth-status [workspace] | auth-store /absolute/key-file [--default] | auth-delete workspace | validate|collect|preflight|refresh|record|verify /absolute/input.json [/absolute/output.json]';
 const authRequired = (workspace, reason) => result('blocked', [reason], { authRequired: true, workspace: workspace ?? null, keyUrl: 'https://linear.app/settings/account/security' });
+// A locked keyring may still hold a valid key, so it is not a reason to ask for a new one.
+const keyringLocked = workspace => result('blocked', ['The Secret Service keyring is locked. Ask the human to log in to the desktop session or unlock the keyring, then repeat the command'], { keyringLocked: true, workspace: workspace ?? null });
+const missingKey = (workspace, locked, reason) => locked ? keyringLocked(workspace) : authRequired(workspace, reason);
 
 function workspaceOf(command, input) {
   return command === 'collect' ? input.target?.workspace : (input.payload ?? input.previousPayload)?.target?.workspace;
@@ -21,8 +24,8 @@ export async function dispatch(command, input, deps = {}) {
     return result(checks.every(x => x.complete) ? 'verified' : 'blocked', checks.flatMap(x => x.errors), { payloadHash });
   }
   const workspace = workspaceOf(command, input);
-  const { token } = resolveToken(workspace, deps);
-  if (!token) return authRequired(workspace, `No Linear API key stored for workspace ${workspace}`);
+  const { token, locked } = resolveToken(workspace, deps);
+  if (!token) return missingKey(workspace, locked, `No Linear API key stored for workspace ${workspace}`);
   const client = deps.client ?? new Linear({ token, fetch: deps.fetch });
   try {
     if (command === 'collect') return await collect(input, client);
@@ -41,7 +44,7 @@ export async function dispatch(command, input, deps = {}) {
 }
 
 export async function auth(command, args, deps = {}) {
-  const keychain = deps.keychain ?? new Keychain();
+  const store = deps.store ?? new KeyStore({ env: deps.env ?? process.env });
   const path = deps.configPath ?? configPath();
   if (command === 'auth-store') {
     const [file, flag] = args; check(file && (!flag || flag === '--default'), USAGE);
@@ -50,20 +53,22 @@ export async function auth(command, args, deps = {}) {
     try { identity = await new Linear({ token, fetch: deps.fetch }).identity(); }
     catch (e) { return result('blocked', [e.kind === 'auth' ? 'Linear rejected this API key' : e.message], { stored: false }); }
     const workspace = identity.organization.urlKey;
-    keychain.write(workspace, token);
+    let source;
+    try { source = store.write(workspace, token); }
+    catch (e) { return result('blocked', [e.message], { stored: false, workspace, ...(/keyring is locked/.test(e.message) ? { keyringLocked: true } : {}) }); }
     const info = { workspace, organization: identity.organization.name, viewer: { id: identity.viewer.id, name: identity.viewer.name, email: identity.viewer.email } };
     const config = rememberWorkspace(info, { makeDefault: flag === '--default', path });
-    return result('verified', [], { stored: true, ...info, default: config.default });
+    return result('verified', [], { stored: true, source, ...info, default: config.default });
   }
   if (command === 'auth-delete') {
     const [workspace] = args; check(workspace, USAGE);
-    const removed = keychain.remove(workspace); forgetWorkspace(workspace, path);
+    const removed = store.remove(workspace); forgetWorkspace(workspace, path);
     return result('verified', [], { removed, workspace });
   }
   // auth-status: report where the key comes from and whom it authenticates. Never prints the key.
   const config = readConfig(path);
-  const { token, source, workspace } = resolveToken(args[0], { env: deps.env ?? process.env, keychain, config });
-  if (!token) return authRequired(workspace, workspace ? `No Linear API key stored for workspace ${workspace}` : 'No Linear workspace stored yet');
+  const { token, source, workspace, locked } = resolveToken(args[0], { env: deps.env ?? process.env, store, config });
+  if (!token) return missingKey(workspace, locked, workspace ? `No Linear API key stored for workspace ${workspace}` : 'No Linear workspace stored yet');
   try {
     const client = new Linear({ token, fetch: deps.fetch });
     const identity = await client.identity();
@@ -90,7 +95,7 @@ export async function main(args) {
   const value = await dispatch(command, input);
   if (!output) return value;
   save(output, value);
-  return { ...result(value.status ?? 'verified', value.errors ?? []), output, ...(value.payloadHash ? { payloadHash: value.payloadHash } : {}), ...(value.authRequired ? { authRequired: true } : {}) };
+  return { ...result(value.status ?? 'verified', value.errors ?? []), output, ...(value.payloadHash ? { payloadHash: value.payloadHash } : {}), ...(value.authRequired ? { authRequired: true } : {}), ...(value.keyringLocked ? { keyringLocked: true } : {}) };
 }
 
 // import.meta.url is the real path; argv[1] may run through a symlinked skill directory.

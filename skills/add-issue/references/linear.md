@@ -1,6 +1,6 @@
 # Linear helpers
 
-Read this reference when the selected tracker is Linear. The Linear CLI keeps the workspace, payload, ledger, and authorization rules of [the GitHub helpers](helpers.md). Only the tracker target, duplicate query, metadata kinds, image upload, and authentication differ. It uses only Node built-ins, `git`, and the macOS `security` tool.
+Read this reference when the selected tracker is Linear. The Linear CLI keeps the workspace, payload, ledger, and authorization rules of [the GitHub helpers](helpers.md). Only the tracker target, duplicate query, metadata kinds, image upload, and authentication differ. It uses only Node built-ins, `git`, and the platform key store: the macOS `security` tool, or on Linux `busctl` and `secret-tool` (package `libsecret-tools`) when a Secret Service keyring runs.
 
 ```sh
 node scripts/linear-issue.mjs auth-status [WORKSPACE]
@@ -21,13 +21,23 @@ Use `snapshot` and `compare` from `scripts/add-issue.mjs` for workspace baseline
 The helper reads the Linear personal API key in this order:
 
 1. The `LINEAR_API_KEY` environment variable, when it is set.
-2. The login Keychain item with service `kdy1-scripts.add-issue.linear` and account set to the workspace URL key. When no workspace is named, the helper uses the default workspace from `~/.config/kdy1-scripts/add-issue/linear.json`. That file holds only non-secret workspace names and user IDs.
+2. The stored key for the workspace URL key. When no workspace is named, the helper uses the default workspace from `~/.config/kdy1-scripts/add-issue/linear.json`. That file holds only non-secret workspace names and user IDs.
+
+The key store depends on the platform. `auth-status` and `auth-store` report the store as `source`.
+
+| Platform | Store (`source`) |
+| --- | --- |
+| macOS | The login Keychain item with service `kdy1-scripts.add-issue.linear` and account set to the workspace URL key (`keychain`). |
+| Linux with a Secret Service keyring (gnome-keyring, KWallet) | The keyring item with attributes `service=kdy1-scripts.add-issue.linear` and `account=WORKSPACE` (`secret-service`). The helper reads the default collection's `Locked` property with `busctl` first, so it never starts an unlock prompt. |
+| Linux or another platform without a keyring | `~/.config/kdy1-scripts/add-issue/linear-keys.json` (`file`). The file has mode 600 in a mode-700 directory. The key is not encrypted at rest. The helper refuses to read the file when other users can read or replace it. |
+
+On Linux, reads try the unlocked keyring first and then the key file. Writes go to the keyring when one runs, and then the helper removes an older copy from the key file. The helper never writes the key file while a keyring runs: a locked keyring or a missing `secret-tool` blocks `auth-store` with a message, so the key is not stored unencrypted by accident. The keyring is unlocked at desktop login. A user service that starts at boot, such as T3 Code, sees a locked keyring until the human logs in.
 
 Run `auth-status` first. A `verified` result reports the key source, workspace, authenticated user, and teams. It never prints the key. Ask the human for a key only when a result has `authRequired: true`. This happens when no key is stored, or when Linear rejects the stored key because it expired or was revoked. Do not ask for a key at any other time.
 
-To store a key, call T3 `request_secret` with `delivery: "file"`, `url` set to the result's `keyUrl`, and a reason that says the key is stored in the macOS Keychain. Then run `auth-store` with the delivered file path in the same command. The helper checks the key against Linear before it stores it. It writes the key to the Keychain through stdin, so the key is not in a process argument list. Pass `--default` to make that workspace the default. Do not copy the key into chat, payloads, ledgers, logs, or other files. On a platform without the Keychain, ask the human to set `LINEAR_API_KEY` for the session.
+To store a key, call T3 `request_secret` with `delivery: "file"`, `url` set to the result's `keyUrl`, and a reason that names the store from the platform table. Then run `auth-store` with the delivered file path in the same command. The helper checks the key against Linear before it stores it. It writes the key to the Keychain or keyring through stdin, so the key is not in a process argument list. Pass `--default` to make that workspace the default. Do not copy the key into chat, payloads, ledgers, logs, or other files. When the result has `keyringLocked: true`, the keyring is locked and was not changed. Ask the human to log in to the desktop session or unlock the keyring, then run `auth-store` again with the same file. When the result says that `secret-tool` is missing, ask the human to install it (for example `sudo apt install libsecret-tools`) and request the key again.
 
-When any other command returns `authRequired: true`, stop. Run the secret request and `auth-store` once, then repeat the same command with the same payload and ledger. The ledger keeps all operations that were done before the key failed.
+When any other command returns `keyringLocked: true`, do not request a key: the stored key can still be valid. Ask the human to unlock the keyring, then repeat the command. When any other command returns `authRequired: true`, stop. Run the secret request and `auth-store` once, then repeat the same command with the same payload and ledger. The ledger keeps all operations that were done before the key failed.
 
 ## Target and collection
 
@@ -77,4 +87,4 @@ The ledger, its lock, and refresh history follow the GitHub rules: it is bound t
 node --test scripts/linear.test.mjs
 ```
 
-The tests use a fake Linear GraphQL endpoint and a fake Keychain. They do not read the real Keychain or call Linear.
+The tests use a fake Linear GraphQL endpoint, a fake Keychain, fake `busctl` and `secret-tool` commands, and a temporary key file. They do not read the real Keychain or keyring or call Linear.

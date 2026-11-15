@@ -80,6 +80,9 @@ def fetch_linear(issue):
         observed = json.loads(output.read_text(encoding="utf-8")) if output.is_file() else {}
     if observed.get("authRequired"):
         raise RuntimeError("Linear authentication is required; follow add-issue's Linear auth steps")
+    if observed.get("keyringLocked"):
+        raise RuntimeError("The keyring that holds the Linear API key is locked; "
+                           "unlock it (log in to the desktop session), then run the command again")
     observations = observed.get("observations") or {}
     found = observations.get("issue") or {}
     if not found.get("available"):

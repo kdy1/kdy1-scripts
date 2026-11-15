@@ -17,7 +17,8 @@ Apply this rule to every subagent of the run: analysis workers, reassignments, c
 
 ### Select the tool
 
-- Use native subagent tools only when the child runs on the selected model with no extra settings. Use a general-purpose agent type and confirm that inheritance yields the selected model. If a native agent type pins another model, or a configured default subagent model differs from the selected model, do not use that path.
+- Launch analysis workers with `delegate_task` and an explicit `target` for the selected model, so that they run asynchronously and their candidate reports reach the coordinator during the run. A blocking subagent call returns all candidates of a unit at once, at the end, which batches the handoffs.
+- For other subagents, such as `$add-issue` investigators, use native subagent tools only when the child runs on the selected model with no extra settings. Use a general-purpose agent type and confirm that inheritance yields the selected model. If a native agent type pins another model, or a configured default subagent model differs from the selected model, do not use that path.
 - Otherwise use `delegate_task` with an explicit `target` for the selected provider instance and model, verified from the live catalog. Do not create top-level conversations with `create_threads` or `t3_thread_launch`.
 - Record the target evidence for each worker. A matching model ID alone does not prove that a reasoning option was applied. If a worker reports a model that differs from the selected model, cancel it, mark its unit `blocked`, and reassign it on the selected model.
 
@@ -33,20 +34,25 @@ The output contains `scope`, `root`, `fileCount`, `lineCount`, and `units`. Each
 
 Add units for cross-cutting work that a path partition cannot express: shared contracts and schemas, configuration and build files, public entry points, and callers outside the scope that establish in-scope behavior. Assign each added unit an ID that does not collide with the planner's IDs.
 
-## Coverage ledger
+## Coverage and candidate ledger
 
-Keep unit coverage in the persistent ledger. Keep candidates and evidence in the coordinating chat.
+Keep unit coverage and the handoff state of each candidate in the persistent ledger. Keep candidate evidence in the coordinating chat.
 
 ```sh
 python3 <skill-dir>/scripts/plan-units.py <scope> --max-units <n> > <plan.json>
 python3 <skill-dir>/scripts/ledger.py init --plan <plan.json> --revision <sha>
 python3 <skill-dir>/scripts/ledger.py add --scope <scope> --id <id> --label <label> --path <path>...
 python3 <skill-dir>/scripts/ledger.py mark --scope <scope> --unit <id> --status running --owner <taskId>
+python3 <skill-dir>/scripts/ledger.py candidate --scope <scope> --id <candidate-id> --status ready --unit <id> --title <summary> --source <path:line>
+python3 <skill-dir>/scripts/ledger.py candidate --scope <scope> --id <candidate-id> --status handed-off --note <taskId>
+python3 <skill-dir>/scripts/ledger.py candidate --scope <scope> --id <candidate-id> --status new-issue --issue <url>
 python3 <skill-dir>/scripts/ledger.py next --scope <scope>
 python3 <skill-dir>/scripts/ledger.py new-pass --scope <scope>
 ```
 
 The default ledger path is derived from the resolved scope under `$XDG_CACHE_HOME/static-analysis` or `~/.cache/static-analysis`; `--ledger` overrides it. `init` resumes a ledger with the same scope and revision and replaces one for a different revision. Statuses are `pending`, `running`, `complete`, and `blocked`. A unit is `complete` only when its assigned paths were analyzed and its findings or explicit no-finding result were reconciled. A worker's "no findings" is not proof of correctness. Mark a failed, partial, or idle worker's unit `blocked`, then reassign it.
+
+Candidate statuses are `ready` (validated, not yet handed off), `handed-off`, and the terminal outcomes `new-issue`, `duplicate-comment`, `metadata-update`, `existing-issue`, `unconfirmed`, `failed`, and `rejected` (merged into another candidate or not a defect; give the reason in `--note`). A terminal outcome cannot change. Candidates stay in the ledger across passes. `next` returns `handoff` while any candidate is `ready`, before `dispatch`, `reassign`, `continue`, or `new-pass`, and lists open handoffs in `openHandoffs`.
 
 ## Passes and repeated invocations
 
@@ -68,6 +74,7 @@ Authorization: <original human request and restrictions>
 Run: <run ID>; coordinator thread: <thread ID>; unit: <unit ID>
 Pass: <pass number>; focus: <pass focus>; already handled for this unit: <candidate summaries or none>
 Repository: <absolute path>; revision: <commit SHA and branch>
+Issue tracker: <owner/repo>; duplicate search: python3 <skill-dir>/scripts/find-duplicates.py
 Scope: <unit paths and any cross-cutting contracts>
 Model target: <provider, model, and options evidence>
 
@@ -76,8 +83,9 @@ Rules:
 - Do not create, comment on, or update GitHub issues. Do not spawn subagents. Do not settle or archive any thread.
 - Analyze every assigned path. Follow data and control flow into callers, tests, and configuration as needed.
 - Report only defects with causal code evidence. Separate confirmed defects from suspicions.
+- As soon as you identify a candidate, search for duplicates with find-duplicates.py (--path, the symbol, and the error or symptom text as queries). If an open issue has the same root cause, report the candidate with that URL and do not collect evidence that the issue already contains. Reading GitHub is permitted; writing is not.
 
-Report each candidate immediately to <channel> in the candidate format, then continue the unit.
+Report each candidate immediately to <channel> in the candidate format, then continue the unit. Do not collect candidates to report them together.
 Finish with: paths analyzed, checks performed, candidates reported, and remaining gaps.
 ```
 
@@ -94,13 +102,14 @@ actual: <behavior>
 cause: <causal chain>
 evidence: <code references, tests, logs>
 gaps: <unresolved evidence>
+duplicates: <queries used; probable duplicate URL or "none"; other relevant matches; incomplete queries>
 ```
 
-The coordinator reconciles reports centrally, assigns run-local candidate IDs, and merges reports that share a trigger and affected behavior. Keep aliases and evidence for merged reports. A report without causal evidence stays a suspicion and is not handed to `$add-issue`.
+The coordinator reconciles reports centrally, assigns run-local candidate IDs, and merges reports that share a trigger and affected behavior. It registers each validated candidate as `ready` in the ledger and starts its `$add-issue` handoff in the same turn. Keep aliases and evidence for merged reports. A report without causal evidence stays a suspicion and is not handed to `$add-issue`.
 
 ## Capacity and lifecycle
 
-- Keep at most eight simultaneous subagents across the descendant tree, including `$add-issue` investigators and recorders. Reserve two slots for issue reporting and allocate analysis workers from the remaining budget. Also obey runtime capacity, which may include the coordinator and unrelated agents. Reduce parallelism when the scope is small; a ceiling is not a target.
+- Keep at most eight simultaneous subagents across the descendant tree, including `$add-issue` investigators and recorders. Reserve two slots for issue reporting and allocate analysis workers from the remaining budget. While a ready candidate waits for a slot, give each freed slot to its handoff before a new analysis worker. Also obey runtime capacity, which may include the coordinator and unrelated agents. Reduce parallelism when the scope is small; a ceiling is not a target.
 - Launch each assignment with a unique `title`, a stable `clientRequestId`, and the unit ID. Retain `taskId`, `childThreadId`, and `childRunId` after acceptance.
 - An uncertain spawn keeps its slot. Recover it with the same `clientRequestId` and inspect the recovered task; never create a second request ID to retry.
 - Async completion wakes the coordinator. Continue reconciling reports and dispatching ready handoffs. Use `task_status` only when a result is needed mid-turn, and `task_cancel` for work you replace or no longer need.

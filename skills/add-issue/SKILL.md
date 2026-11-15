@@ -222,6 +222,7 @@ Apply `Mode Routing and Final Recording Payload` first. A fresh invocation start
    - Select `Bug`, `Feature`, or `Task` and partition independently implementable candidates.
    - Use `snapshot` for the original workspace baseline and `collect` for bounded GitHub observations and metadata evidence. Audit inaccessible observations as gaps, not empty successful reads.
    - Build the subagent investigation map, dispatch the bounded research assignments, and record their sourced results in the candidate and evidence ledgers.
+   - For a Static Analysis handoff, check duplicates first. Read the probable duplicate and the top matches of the handoff's early search before you dispatch investigators. If an open issue already covers the same root cause, limit investigation to the evidence and metadata that the issue is missing. Step 4 still makes the final duplicate decision.
 
 2. Establish readiness.
    - For local investigation, inspect logs and runtime provenance when relevant, distinguish state problems from committed defects, and finish authorized local repairs and verification under `Local Investigation and Repair`. Report local-state-only resolution without recording; retain unresolved or `repair pending` candidates without finalizing their payloads.

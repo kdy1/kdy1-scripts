@@ -183,7 +183,7 @@ To review a pull request together with the agent, invoke:
 $co-review <PR URL>. Do what you can yourself, and tell me what I need to check.
 ```
 
-The agent pins the PR in a private temporary checkout and does every check it can do itself: it reads the diff and context, builds and runs tests, runs the motivating case on the base and the head, triages failing CI and unresolved review threads, and tries short fixes. It then reports its findings with evidence and a short checklist of items that need human judgment, access, context, or a decision. The review continues as a conversation. Reports are in English unless you ask for another language. It never posts to GitHub unless you ask.
+The agent pins the PR in a private temporary checkout and does every check it can do itself: it reads the diff and context, builds and runs tests, runs the motivating case on the base and the head, triages failing CI and unresolved review threads, and tries short fixes. It then reports its findings with evidence and a short checklist of items that need human judgment, access, context, or a decision. The review continues as a conversation. Reports are in the language you write in, or in English when your request has only a PR URL; an explicit language request takes precedence. It never posts to GitHub unless you ask.
 
 To get four independent code reviews of a pull request, invoke:
 

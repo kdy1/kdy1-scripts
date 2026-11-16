@@ -7,6 +7,7 @@ A collection of standalone [T3 Chat skills](./skills) for GitHub, product planni
 | Skill | Purpose |
 | --- | --- |
 | `add-issue` | Investigate locally by default, inspect logs, repair confirmed regenerable state, and create evidence-backed GitHub or Linear issues for confirmed work. The Linear API key is stored once in the macOS Keychain, or on Linux in the Secret Service keyring (a mode-600 file when no keyring runs). |
+| `co-review` | Review a PR together with a human: the agent runs every check it can, reports results with evidence, and lists only what needs the human's judgment, access, or decision. |
 | `collect-review` | Collect unresolved review-bot bug candidates from merged PRs, hand them to `add-issue`, resolve handled threads, and summarize verified issue links. |
 | `create-human-reviewed-pr` | Explicitly publish human-reviewed changes as a non-draft PR with AI-use disclosure, a reviewer mention, and known harness, model, and reasoning-effort details. |
 | `create-pr` | Publish changes through a shared PR workflow with verified Closes references for resolved issues and Refs for partial or related work. |
@@ -175,6 +176,14 @@ The skill grounds the proposal in requirements, available UI, and the design sys
 `add-issue` defaults to local investigation unless the human or an authorized handoff specifies another environment or revision. A direct invocation permits relevant log inspection and confirmed regenerable-state repair outside Plan Mode, while preserving project code and user data. Local investigation forbids temporary code instrumentation, including in isolated copies. Repair and verify state problems before finalizing the affected candidate; state-only resolution creates no issue and keeps the chat open. MainQA, Static Analysis, and Collect Review handoffs retain their existing scope and restrictions and do not authorize a new repair run. Features and Tasks require runtime evidence only when relevant.
 
 When using `$add-issue` in Plan Mode, return a concrete `repair pending` plan for candidates that need local repair; do not finalize their recording payload until the repair is verified outside Plan Mode. For ready candidates, finish investigation and finalize the exact issue title, complete body or duplicate comment, metadata, attachments, and recording action in the final plan. After approval and leaving Plan Mode, it resumes directly at recording with that payload; it does not repeat investigation, classification, reproduction, or drafting. It performs only bounded pre-write checks and verifies the result. A new matching duplicate or changed required condition stops that candidate and is reported without automatically changing the target or content. A missing finalized payload is reported rather than reconstructed. Draft-only restrictions continue after a mode change, and the issue's proposed work is never implemented in the same invocation. A fresh invocation outside Plan Mode retains the full investigation workflow.
+
+To review a pull request together with the agent, invoke:
+
+```text
+$co-review <PR URL>. Do what you can yourself, and tell me what I need to check.
+```
+
+The agent pins the PR in a private temporary checkout and does every check it can do itself: it reads the diff and context, builds and runs tests, runs the motivating case on the base and the head, triages failing CI and unresolved review threads, and tries short fixes. It then reports its findings with evidence and a short checklist of items that need human judgment, access, context, or a decision. The review continues as a conversation. Reports are in English unless you ask for another language. It never posts to GitHub unless you ask.
 
 To get four independent code reviews of a pull request, invoke:
 

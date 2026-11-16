@@ -1,0 +1,4 @@
+interface:
+  display_name: "Co-Review"
+  short_description: "Review a PR with a human: the agent checks what it can, then lists what you must check"
+  default_prompt: "Use $co-review. Let's review <PR URL>. Do what you can yourself, and tell me what I need to check."

@@ -1,6 +1,7 @@
 ---
 name: co-review
-description: "Review a GitHub pull request together with a human. The agent does every check it can do itself (reading the diff and context, running builds, tests, and base-vs-head repros, triaging CI failures and open review threads) and then gives the human a short, prioritized checklist of what only the human can check. Use when the user invokes $co-review or asks to review a PR with them, for example \"Let's review <PR URL>. Do what you can and tell me what I need to check.\" Reports in English by default. Never posts to GitHub unless the user asks."
+description: "Review a GitHub pull request together with a human. The agent does every check it can do itself (reading the diff and context, running builds, tests, and base-vs-head repros, triaging CI failures and open review threads) and then gives the human a short, prioritized checklist of what only the human can check. Use only when the human explicitly invokes $co-review in T3 Chat or /co-review in Claude Code, or asks to run Co-Review; never select it automatically from a general PR review request. Reports in English by default. Never posts to GitHub unless the user asks."
+disable-model-invocation: true
 ---
 
 # Co-Review
@@ -11,6 +12,8 @@ Review one pull request as a pair: the agent and a human. Split the work so that
 - **The human** gets only what needs human judgment, access, or accountability, as a short checklist with exact locations.
 
 The human makes the final decision. The review continues as a conversation until the human is done.
+
+Start only when the human invokes `$co-review` (or `/co-review` in Claude Code) or explicitly asks to run Co-Review. A general request to review a PR, another agent's request, an automatic workflow, or creating, editing, or discussing this skill does not start a review. Keep `disable-model-invocation: true` and `policy.allow_implicit_invocation: false`.
 
 Helper: `scripts/co_review.py` (Python 3.9+, Git 2.31+, authenticated `gh`). Run it with its absolute path.
 

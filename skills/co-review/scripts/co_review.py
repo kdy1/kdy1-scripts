@@ -20,6 +20,10 @@ PR_FIELDS = ("number,url,title,body,author,state,isDraft,baseRefName,baseRefOid,
              "headRefOid,labels,reviewDecision,mergeStateStatus,closingIssuesReferences,"
              "statusCheckRollup,latestReviews")
 RUN_PREFIX = "co-review-"
+# Temporary files of a T3 Code worktree go in .t3-tmp/ at its root (see global/AGENTS.md):
+# settling the thread deletes the worktree and them with it.
+T3_WORKTREES = Path.home() / ".t3" / "worktrees"
+T3_TMP = ".t3-tmp"
 LARGE_DIFF_LINES = 500
 THREAD_BODY_LIMIT = 300
 # Markdown images and HTML tags, such as review-bot priority badges, in thread excerpts.
@@ -349,13 +353,43 @@ def write_json(path, data):
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
 
+def t3_worktree_root(cwd=None, worktrees=T3_WORKTREES):
+    """Return the T3 Code worktree that contains cwd, or None outside one."""
+    proc = subprocess.run(["git", "rev-parse", "--show-toplevel"], cwd=cwd or Path.cwd(),
+                          capture_output=True, text=True)
+    if proc.returncode or not proc.stdout.strip():
+        return None
+    top = Path(proc.stdout.strip()).resolve()
+    # A checkout inside .t3-tmp/ (for example a Co-Review head checkout) belongs to the
+    # worktree that holds that .t3-tmp/.
+    if T3_TMP in top.parts:
+        top = Path(*top.parts[:top.parts.index(T3_TMP)])
+    try:
+        top.relative_to(Path(worktrees).resolve())
+    except ValueError:
+        return None
+    return top
+
+
+def temp_parent(cwd=None, worktrees=T3_WORKTREES):
+    """Return the directory for a new run directory: .t3-tmp/ in a T3 Code worktree, else
+    None (the system temporary directory, which TMPDIR sets)."""
+    root = t3_worktree_root(cwd, worktrees)
+    if root is None:
+        return None
+    parent = root / T3_TMP
+    parent.mkdir(exist_ok=True)
+    return str(parent)
+
+
 def prepare(ref, repo=None, run_dir=None):
     """Pin the PR, create a head checkout, and write manifest.json and context.json."""
     host, owner, name, number = parse_pr(ref, repo)
     pr = pr_metadata(host, owner, name, number)
     threads = fetch_threads(host, owner, name, number)
     created = run_dir is None
-    root = Path(tempfile.mkdtemp(prefix=RUN_PREFIX)) if created else Path(run_dir)
+    root = (Path(tempfile.mkdtemp(prefix=RUN_PREFIX, dir=temp_parent())) if created
+            else Path(run_dir))
     root.mkdir(parents=True, exist_ok=True)
     try:
         pinned = fetch_pr(root, f"https://{host}/{owner}/{name}.git", pr["baseRefName"], number,
@@ -422,7 +456,8 @@ def main():
     prep = sub.add_parser("prepare", help="Pin a PR, check out its head, and summarize it")
     prep.add_argument("pr", help="PR URL, or a number with --repo")
     prep.add_argument("--repo", help="[HOST/]OWNER/REPO when the PR is a number")
-    prep.add_argument("--run-dir", help="Run directory (default: new temporary directory)")
+    prep.add_argument("--run-dir", help="Run directory (default: a new directory in .t3-tmp/ at "
+                      "the root of a T3 Code worktree, else in the system temporary directory)")
     base = sub.add_parser("base", help="Create a checkout at the merge base for base-vs-head runs")
     base.add_argument("manifest")
     again = sub.add_parser("refresh", help="Re-read checks, reviews, and threads; report head moves")

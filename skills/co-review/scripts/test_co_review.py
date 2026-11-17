@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 
 from co_review import (changed_files, classify, cleanup, parse_pr, risk_signals,
-                       summarize_checks, unresolved_threads)
+                       summarize_checks, temp_parent, unresolved_threads)
 
 
 class ParseTests(unittest.TestCase):
@@ -109,6 +109,33 @@ class GitTests(unittest.TestCase):
             self.assertEqual((files["keep.py"]["status"], files["keep.py"]["additions"]), ("M", 1))
             self.assertTrue(files["img.bin"]["binary"])
             self.assertEqual(files["with space.md"]["category"], "docs")
+
+
+class TempParentTests(unittest.TestCase):
+    def test_t3_worktree_uses_t3_tmp(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            worktrees = Path(tmp) / "worktrees"
+            root = worktrees / "proj" / "wt"
+            sub = root / "src"
+            sub.mkdir(parents=True)
+            subprocess.run(["git", "init", "-q", str(root)], check=True)
+            expected = str(root.resolve() / ".t3-tmp")
+            self.assertEqual(temp_parent(sub, worktrees), expected)
+            self.assertTrue(Path(expected).is_dir())
+            # A checkout inside .t3-tmp/ maps to the worktree that holds it.
+            nested = root / ".t3-tmp" / "co-review-x" / "head"
+            nested.mkdir(parents=True)
+            subprocess.run(["git", "init", "-q", str(nested)], check=True)
+            self.assertEqual(temp_parent(nested, worktrees), expected)
+
+    def test_other_checkout_uses_system_temp(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            repo.mkdir()
+            subprocess.run(["git", "init", "-q", str(repo)], check=True)
+            self.assertIsNone(temp_parent(repo, Path(tmp) / "worktrees"))
+            self.assertIsNone(temp_parent(Path(tmp), Path(tmp) / "worktrees"))
+            self.assertFalse((repo / ".t3-tmp").exists())
 
 
 class CleanupTests(unittest.TestCase):

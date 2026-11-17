@@ -33,7 +33,7 @@ Find the PR from the request. A PR URL is the usual input. For "this PR" without
 python3 <skill>/scripts/co_review.py prepare <PR_URL>
 ```
 
-The helper fetches the PR into a new private temporary directory, pins the base and head SHAs, and creates a detached checkout at the head. It prints a summary:
+The helper fetches the PR into a new private run directory, pins the base and head SHAs, and creates a detached checkout at the head. When the current directory is in a T3 Code worktree (under `~/.t3/worktrees/`), the run directory is `.t3-tmp/co-review-*` at the worktree root, so settling the thread deletes it. Otherwise it is in the system temporary directory (`TMPDIR`). Run `prepare` from the conversation's working directory, and do not pass `--run-dir` to put it elsewhere. It prints a summary:
 
 - metadata, linked issues, latest reviews, and check results with failing check links;
 - changed files by category (`ci`, `dependencies`, `migrations`, `generated`, `tests`, `docs`, `config`, `source`), with `[sensitive]` marks for security-related paths;

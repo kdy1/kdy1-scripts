@@ -27,6 +27,7 @@ A collection of standalone [T3 Chat skills](./skills) for GitHub, product planni
 | `slop-fix-batch` | Fix a fixed batch of GitHub or Linear issues, publish dependency-based PR stacks, and directly maintain and conditionally merge verified stacks. |
 | `slop-fix-issue` | Handle one GitHub issue: close it with evidence if already resolved; otherwise implement and verify it, publish a non-draft PR or a stack for a large issue, and stop. |
 | `static-analysis` | Analyze all code in the requested scope with parallel read-only subagents until every unit is covered, start another pass on each repeated invocation, and hand each confirmed bug to `add-issue` immediately. |
+| `update-pr-description` | On explicit invocation, rewrite an existing PR's title and body to match its actual change, while keeping issue references, images, templates, and disclosures; applies directly only for the user's own open PR with a clean check. |
 | `write-blog-post` | Develop a blog-post draft from material supplied by the user. |
 | `write-comment` | Explicitly plan exact public comments in Plan Mode, default to English, and publish approved text unchanged after authorized execution. |
 | `write-marketing-copy` | Rephrase source material into LinkedIn, X, and Threads posts. |
@@ -184,6 +185,14 @@ $co-review <PR URL>. Do what you can yourself, and tell me what I need to check.
 ```
 
 The agent pins the PR in a private temporary checkout and does every check it can do itself: it reads the diff and context, builds and runs tests, runs the motivating case on the base and the head, triages failing CI and unresolved review threads, and tries short fixes. It then reports its findings with evidence and a short checklist of items that need human judgment, access, context, or a decision. The review continues as a conversation. Reports are in the language you write in, or in English when your request has only a PR URL; an explicit language request takes precedence. It never posts to GitHub unless you ask.
+
+To make an existing pull request's title and body match its actual change, invoke:
+
+```text
+$update-pr-description <PR URL>
+```
+
+The agent saves a snapshot of the PR, reads the diff, commits, linked issues, and repository rules, and edits only what is wrong, stale, missing, or unclear. It keeps issue reference lines, images, HTML comments, template headings, stack navigation, and disclosures. Its helper checks the draft for dropped content before any write and refuses to apply when the PR text changed on GitHub after the snapshot. For your own open PR with a clean check, it applies the edit directly; otherwise it shows the diff and waits for your approval. It changes only the title and body.
 
 To get four independent code reviews of a pull request, invoke:
 

@@ -1,0 +1,7 @@
+interface:
+  display_name: "Update PR Description"
+  short_description: "Rewrite a PR's title and body to match its actual change"
+  default_prompt: "Use $update-pr-description. Update the title and body of <PR URL> to match the change."
+
+policy:
+  allow_implicit_invocation: false

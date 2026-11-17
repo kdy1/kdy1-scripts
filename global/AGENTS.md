@@ -11,12 +11,10 @@ the thread deletes the worktree, and `.t3-tmp/` is deleted with it. Do not
 put these files in `/tmp`, `$TMPDIR`, or any other path outside the
 worktree: nothing deletes them there.
 
-- Keep `.t3-tmp/` out of git before you put files in it. Create the
-  directory first, then run `git check-ignore -q .t3-tmp`; the check fails
-  for a directory that does not exist yet, even when it is ignored. If it
-  fails, add the line `.t3-tmp/` to the file that
-  `git rev-parse --git-path info/exclude` prints. Do not edit the
-  repository's `.gitignore` for this.
+- `.t3-tmp/` is in the global git excludes file, which `install.sh` in
+  `kdy1/kdy1-scripts` writes, so git ignores it in every repository. If
+  `git status` shows `.t3-tmp/`, tell the user to run that `install.sh`. Do
+  not add it to a repository's `.gitignore` or `info/exclude`.
 - Run a script or skill helper that makes its own temporary directory with
   `TMPDIR="$(git rev-parse --show-toplevel)/.t3-tmp"`, so that its output
   also goes there. This applies even when the skill names another location.

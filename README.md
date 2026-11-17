@@ -63,6 +63,8 @@ Run `./install.sh` again to update the checkout, refresh the links, and reinstal
 
 `install.sh` links both `~/.codex/AGENTS.md` (Codex) and `~/.claude/CLAUDE.md` (Claude Code) to `global/AGENTS.md`. An update to the checkout changes what both agents read, and an edit through either link changes the file in the checkout, so commit and push it to share it with other machines. The script replaces an existing link, and a file with the same content as `global/AGENTS.md`. It stops before it changes anything when either path is a file with different content; merge that content into `global/AGENTS.md`, then run `./install.sh` again.
 
+`install.sh` also adds `.t3-tmp/`, the directory where those instructions put temporary files, to the global git excludes file: the file `core.excludesFile` names, or `~/.config/git/ignore` when it is not set. It adds the line only once.
+
 ### Alternative: `npx skills`
 
 The [`skills` CLI](https://www.skills.sh/docs/cli) recognizes the skills in this repository. Run it from the repository where you want project-scoped skills installed:

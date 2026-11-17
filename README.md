@@ -57,6 +57,12 @@ It also installs [`gh-stack`](https://github.com/github/gh-stack/tree/main/skill
 
 Run `./install.sh` again to update the checkout, refresh the links, and reinstall the external skills. Keep the checkout at the same path so its symlinks remain valid.
 
+### User-wide instructions
+
+[`global/AGENTS.md`](./global/AGENTS.md) holds instructions for every project on the machine, for example where an agent in a T3 Code worktree puts temporary files. The repository's own [`AGENTS.md`](./AGENTS.md) applies only to work in this repository.
+
+`install.sh` links both `~/.codex/AGENTS.md` (Codex) and `~/.claude/CLAUDE.md` (Claude Code) to `global/AGENTS.md`. An update to the checkout changes what both agents read, and an edit through either link changes the file in the checkout, so commit and push it to share it with other machines. The script replaces an existing link, and a file with the same content as `global/AGENTS.md`. It stops before it changes anything when either path is a file with different content; merge that content into `global/AGENTS.md`, then run `./install.sh` again.
+
 ### Alternative: `npx skills`
 
 The [`skills` CLI](https://www.skills.sh/docs/cli) recognizes the skills in this repository. Run it from the repository where you want project-scoped skills installed:

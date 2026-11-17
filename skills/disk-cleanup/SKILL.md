@@ -54,9 +54,10 @@ If the report says `met: false`, find out where the remaining space is, but do n
 ## Completion
 
 - Report briefly: free space before and after, the target, whether it was met, the space freed per tier, the largest removed items, skip counts by reason, and any errors. For a run where the target was already met, report only the free space and the target.
-- Settle the current thread when this skill was the first substantive human task of the thread, cleanup remains its only task, the target is met (including when it was already met before the run), and no background work is still running. Errors on individual items do not prevent settlement if the target is met. Leave the thread open when the target is not met, when the human asked to keep it open, or when the human added another unfinished task.
-- To settle, prepare the final report, then call `mcp__t3_code__t3_thread_organize` with `{"action":"settle"}` and no `threadId`. This completion policy authorizes settlement without another confirmation. Do not archive the thread or its worktree instead. If the tool is unavailable or returns an error or an uncertain result, say that settlement was not confirmed; do not run the cleanup again.
-- A response with `settlesWhenTurnEnds: true` means that settlement is scheduled for when the turn completes successfully. Report it as scheduled, not as done. Claim completed settlement only when the tool confirms that state.
+- Then apply [$settle-thread](../settle-thread/SKILL.md). It owns the settlement procedure and result reporting. The Disk Cleanup conditions are:
+  - Standalone task: this skill was the first substantive human task of the thread, and cleanup remains its only task.
+  - Completion conditions: the target is met, including when it was already met before the run, and no background work is still running. Errors on individual items do not prevent settlement if the target is met. Leave the thread open when the target is not met.
+  - No repeat: if settlement is not confirmed, do not run the cleanup again.
 
 ## Validation
 

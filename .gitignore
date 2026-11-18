@@ -2,3 +2,6 @@
 /skills/synced/
 /skills/gh-stack/
 /skills/codspeed-optimize/
+
+__pycache__/
+*.pyc

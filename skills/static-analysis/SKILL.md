@@ -79,7 +79,7 @@ Search for duplicates at the first point where a candidate exists, not only duri
 
 ## Standalone Chat Completion
 
-Apply [$settle-thread](../settle-thread/SKILL.md) after the run report. It owns the settlement procedure, ownership rules, and result reporting. This section gives the Static Analysis conditions.
+Apply [$auto-settle-t3-thread](../auto-settle-t3-thread/SKILL.md) after the run report. It owns the settlement procedure, ownership rules, and result reporting. This section gives the Static Analysis conditions.
 
 - Standalone task: the thread's first substantive human task explicitly invoked `$static-analysis`, and the analysis run remains its only task. Repeated or queued `$static-analysis` invocations for the same scope, the `$add-issue` handoffs of the run, clarification, and an approved Plan Mode recording continuation belong to that task. A later Static Analysis invocation during another task, or a request to edit or test this skill, does not qualify.
 - Completion conditions: settle only after `ledger.py next` returns `new-pass` for the current pass, every candidate handed to `$add-issue` has a verified `new issue`, `duplicate comment`, `metadata update`, or `existing issue` outcome, and all analysis workers and `$add-issue` subagents have finished. A pass with full coverage and no confirmed candidate qualifies. Leave the chat open for `unconfirmed` or `failed` candidates, uncertain writes, validated candidates not yet handed off, pending decisions or approvals, Plan Mode payloads awaiting recording, draft-only requests, a hard blocker, or an explicit human stop before full coverage.

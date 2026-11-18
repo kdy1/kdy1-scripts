@@ -54,7 +54,7 @@ If the report says `met: false`, find out where the remaining space is, but do n
 ## Completion
 
 - Report briefly: free space before and after, the target, whether it was met, the space freed per tier, the largest removed items, skip counts by reason, and any errors. For a run where the target was already met, report only the free space and the target.
-- Then apply [$settle-thread](../settle-thread/SKILL.md). It owns the settlement procedure and result reporting. The Disk Cleanup conditions are:
+- Then apply [$auto-settle-t3-thread](../auto-settle-t3-thread/SKILL.md). It owns the settlement procedure and result reporting. The Disk Cleanup conditions are:
   - Standalone task: this skill was the first substantive human task of the thread, and cleanup remains its only task.
   - Completion conditions: the target is met, including when it was already met before the run, and no background work is still running. Errors on individual items do not prevent settlement if the target is met. Leave the thread open when the target is not met.
   - No repeat: if settlement is not confirmed, do not run the cleanup again.

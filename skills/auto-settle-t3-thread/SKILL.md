@@ -1,15 +1,15 @@
 ---
-name: settle-thread
-description: Settle the current T3 Code thread at the end of another skill's standalone run, only when nothing remains for the human to check. Use only when another skill's SKILL.md tells you to apply $settle-thread; never select it automatically from task similarity or start it on its own.
+name: auto-settle-t3-thread
+description: Settle the current T3 Code thread at the end of another skill's standalone run, only when nothing remains for the human to check. Use only when another skill's SKILL.md tells you to apply $auto-settle-t3-thread; never select it automatically from task similarity or start it on its own.
 ---
 
-# Settle Thread
+# Auto Settle T3 Thread
 
 ## Goal
 
 Settle the current T3 Code thread when a calling skill's standalone run is complete and nothing remains for the human to check. A settled thread tells the human that they do not need to read it again. Leave the thread open whenever the human still has something to check, decide, or approve.
 
-This skill is a shared completion step. Another skill references it, for example with `[$settle-thread](../settle-thread/SKILL.md)`, and the calling skill's completion policy authorizes the settlement. Do not settle a thread only because this skill is installed or loaded. Editing or testing this skill does not settle a thread.
+This skill is a shared completion step. Another skill references it, for example with `[$auto-settle-t3-thread](../auto-settle-t3-thread/SKILL.md)`, and the calling skill's completion policy authorizes the settlement. Do not settle a thread only because this skill is installed or loaded. Editing or testing this skill does not settle a thread.
 
 ## Caller contract
 

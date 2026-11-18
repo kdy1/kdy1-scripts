@@ -96,7 +96,7 @@ It deletes only a `pr-description-*` run directory that contains a snapshot.
 
 ## 7. Standalone Chat Completion
 
-Apply [$settle-thread](../settle-thread/SKILL.md) after the report and the cleanup. It owns the settlement procedure, ownership rules, and result reporting. This section gives the Update PR Description conditions. Settling the thread is not a change to the PR, so it does not break the Boundaries.
+Apply [$auto-settle-t3-thread](../auto-settle-t3-thread/SKILL.md) after the report and the cleanup. It owns the settlement procedure, ownership rules, and result reporting. This section gives the Update PR Description conditions. Settling the thread is not a change to the PR, so it does not break the Boundaries.
 
 - Standalone task: the thread's first substantive human task explicitly invoked `$update-pr-description` (or `/update-pr-description` in Claude Code) for one PR, and the update remains its only task. Finding the PR, clarification, and the human's approval of the draft belong to that task. A later invocation during another task, a handoff from another skill, or a request to edit or test this skill does not qualify.
 - Completion conditions: settle only when one of these results is verified:

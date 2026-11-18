@@ -1,3 +1,4 @@
+import json
 import unittest
 from unittest import mock
 
@@ -70,6 +71,121 @@ class TargetTests(unittest.TestCase):
         with mock.patch.object(post_text, "gh_api", side_effect=[created, {"body": "changed"}]):
             with self.assertRaises(RuntimeError):
                 post_text.post(body, "https://github.com/o/r/issues/1")
+
+
+PATCH = "@@ -10,4 +10,5 @@ def f():\n ctx\n-old\n+new\n+added\n ctx2\n@@ -40,2 +41,2 @@\n a\n-b\n+c\n\\ No newline at end of file\n"
+FILES = [{"filename": "src/a.py", "patch": PATCH}, {"filename": "img.png"}]
+PULL = "https://github.com/o/r/pull/5"
+
+
+def pull(sha):
+    return {"head": {"sha": sha}}
+
+
+class ReviewTests(unittest.TestCase):
+    def test_commentable_lines_follow_both_sides_and_hunks(self):
+        lines = post_text.commentable_lines(PATCH)
+        self.assertEqual(lines[("RIGHT", 10)], 0)
+        self.assertEqual(lines[("LEFT", 11)], 0)
+        self.assertEqual(lines[("RIGHT", 12)], 0)
+        self.assertEqual(lines[("RIGHT", 13)], 0)
+        self.assertEqual(lines[("LEFT", 12)], 0)
+        self.assertEqual(lines[("RIGHT", 42)], 1)
+        self.assertNotIn(("RIGHT", 20), lines)
+        self.assertNotIn(("RIGHT", 43), lines)
+
+    def test_diff_problems_reports_lines_outside_the_diff(self):
+        comments = [
+            post_text.normalize_comment(0, {"path": "src/a.py", "line": 11, "body": "ok"}),
+            post_text.normalize_comment(1, {"path": "src/a.py", "line": 20, "body": "x"}),
+            post_text.normalize_comment(2, {"path": "other.py", "line": 1, "body": "x"}),
+            post_text.normalize_comment(3, {"path": "img.png", "line": 1, "body": "x"}),
+            post_text.normalize_comment(4, {"path": "src/a.py", "start_line": 12, "line": 42, "body": "x"}),
+            post_text.normalize_comment(5, {"path": "src/a.py", "start_line": 10, "line": 13, "body": "ok"}),
+        ]
+        problems = post_text.diff_problems(comments, FILES)
+        self.assertEqual(len(problems), 4)
+        self.assertTrue(problems[0].startswith("comments[1] src/a.py:20 (RIGHT)"))
+        self.assertIn("not changed", problems[1])
+        self.assertIn("no diff", problems[2])
+        self.assertIn("same diff hunk", problems[3])
+
+    def test_normalize_comment_rejects_bad_input(self):
+        for comment in (
+            {"path": "a", "line": 0, "body": "x"},
+            {"path": "/a", "line": 1, "body": "x"},
+            {"path": "a", "line": 1, "body": " "},
+            {"path": "a", "line": 1, "body": "x", "side": "UP"},
+            {"path": "a", "line": 3, "start_line": 3, "body": "x"},
+            {"path": "a", "line": 1, "body": "x", "start_side": "LEFT"},
+            {"path": "a", "line": 1, "body": "x", "position": 2},
+            {"path": "a", "line": True, "body": "x"},
+        ):
+            with self.subTest(comment=comment), self.assertRaises(ValueError):
+                post_text.normalize_comment(0, comment)
+
+    def test_prepare_review_writes_panel_head_and_comments(self):
+        comments = [{"path": "src/a.py", "line": 12, "body": "Rename this.\r\n"}]
+        with mock.patch.object(post_text, "gh_api", side_effect=[pull("abc"), FILES, pull("abc")]):
+            data = post_text.prepare_review("Summary", comments, PULL + "#x", ["H"], ["A"])
+        review = json.loads(data)
+        self.assertEqual(review["target"], PULL)
+        self.assertEqual(review["commit_id"], "abc")
+        self.assertEqual(review["event"], "COMMENT")
+        self.assertTrue(review["body"].startswith("> [!NOTE]\n"))
+        self.assertTrue(review["body"].endswith("\nSummary\n"))
+        self.assertEqual(review["comments"], [{"path": "src/a.py", "line": 12, "side": "RIGHT", "body": "Rename this.\n"}])
+
+    def test_prepare_review_rejects_issue_urls_moved_heads_and_bad_lines(self):
+        with self.assertRaises(ValueError):
+            post_text.prepare_review("S", [], "https://github.com/o/r/issues/5", ["H"], ["A"])
+        with mock.patch.object(post_text, "gh_api", side_effect=[pull("abc"), FILES, pull("def")]):
+            with self.assertRaises(RuntimeError):
+                post_text.prepare_review("S", [], PULL, ["H"], ["A"])
+        bad = [{"path": "src/a.py", "line": 30, "body": "x"}]
+        with mock.patch.object(post_text, "gh_api", side_effect=[pull("abc"), FILES, pull("abc")]):
+            with self.assertRaisesRegex(ValueError, "review body"):
+                post_text.prepare_review("S", bad, PULL, ["H"], ["A"])
+
+    def review(self):
+        comments = [{"path": "src/a.py", "line": 12, "body": "Note ```code```"}]
+        with mock.patch.object(post_text, "gh_api", side_effect=[pull("abc"), FILES, pull("abc")]):
+            return post_text.prepare_review("Summary", comments, PULL, ["H"], ["A"])
+
+    def test_show_review_prints_destination_and_every_text(self):
+        shown = post_text.show_review(self.review())
+        self.assertIn(f"Destination: {PULL}", shown)
+        self.assertIn("COMMENT", shown)
+        self.assertIn("Inline comment 1: `src/a.py` line 12 (RIGHT)", shown)
+        self.assertIn("````markdown\nNote ```code```\n````", shown)
+
+    def test_post_review_submits_and_reads_back(self):
+        data = self.review()
+        review = json.loads(data)
+        created = {"id": 9, "html_url": PULL + "#pullrequestreview-9"}
+        posted_comments = [{"path": "src/a.py", "body": "Note ```code```\n"}]
+        with mock.patch.object(
+            post_text, "gh_api", side_effect=[pull("abc"), created, {"body": review["body"]}, posted_comments],
+        ) as api:
+            self.assertEqual(post_text.post_review(data), created["html_url"])
+        submit = api.call_args_list[1]
+        self.assertEqual(submit.args[3], "repos/o/r/pulls/5/reviews")
+        self.assertEqual(submit.kwargs["payload"]["event"], "COMMENT")
+        self.assertEqual(submit.kwargs["payload"]["commit_id"], "abc")
+        with mock.patch.object(post_text, "gh_api", side_effect=[pull("abc"), created, {"body": review["body"]}, []]):
+            with self.assertRaises(RuntimeError):
+                post_text.post_review(data)
+
+    def test_post_review_refuses_a_moved_head_before_posting(self):
+        with mock.patch.object(post_text, "gh_api", side_effect=[pull("new")]) as api:
+            with self.assertRaisesRegex(RuntimeError, "approval again"):
+                post_text.post_review(self.review())
+        self.assertEqual(api.call_count, 1)
+
+    def test_load_review_rejects_other_files(self):
+        for data in (b"{}", b'{"kind": "github-pull-request-review", "event": "APPROVE"}'):
+            with self.subTest(data=data), self.assertRaises(ValueError):
+                post_text.load_review(data)
 
 
 if __name__ == "__main__":

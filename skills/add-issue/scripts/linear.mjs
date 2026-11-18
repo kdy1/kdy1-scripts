@@ -171,8 +171,20 @@ const STABLE = { label: ['id', 'name', 'teamId'], state: ['id', 'name', 'type', 
 export const definition = (kind, value) => value && Object.fromEntries(STABLE[kind].filter(k => value[k] !== undefined).map(k => [k, value[k]]));
 
 // Linear may re-render stored Markdown, so text verification compares letters and digits in order.
+//
+// Linear also links bare tokens that look like a host or an address. A file name such as `contract.md:33` reads as a
+// host with a port (`.md` is a country-code domain), and Linear stores it as `[contract.md:33](<http://contract.md:33>)`.
+// An address becomes `[a@b.co](<mailto:a@b.co>)`. Those rewrites add the scheme and the target text, so a comparison of
+// letters and digits would see different text. A link whose label is its own target, with or without the scheme, adds no
+// information: unwrap it to its label on both sides. A link whose label differs from its target stays as it is, because it
+// shows text that hides the target.
+const LINK_SCHEME = /^(?:https?:\/\/|mailto:)/i;
+const MARKDOWN_LINK = /\[([^\]\n]*)\]\(<?([^)\s>]+)>?\)/g;
 export function normalizeText(value) {
-  return String(value ?? '').replace(/\[([^\]]*)\]\(([^)\s]+)\)/g, (all, label, url) => label.trim() === url ? url : all).replace(/[^\p{L}\p{N}]+/gu, '').toLowerCase();
+  return String(value ?? '').replace(MARKDOWN_LINK, (all, label, url) => {
+    const text = label.trim();
+    return text === url || text === url.replace(LINK_SCHEME, '') ? text : all;
+  }).replace(/[^\p{L}\p{N}]+/gu, '').toLowerCase();
 }
 export const sameText = (a, b) => normalizeText(a) === normalizeText(b);
 export function withImages(value, c, ops, destination) {

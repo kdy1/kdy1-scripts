@@ -79,6 +79,8 @@ The recorder writes in this order:
 3. It writes each remaining metadata entry with a separate `issueUpdate`, then reads the issue again to confirm the value.
 4. It verifies the result. It checks the author and title. It checks that the body or comment has the same letters and digits in the same order as the audited text, because Linear can re-render Markdown. It checks each metadata value and that each image URL is on its surface.
 
+   Linear also links a bare token that looks like a host or an address. A file name such as `notes.md:33` reads as a host with a port (`.md` is a country-code domain), and Linear stores it as `[notes.md:33](<http://notes.md:33>)`. An address becomes `[a@b.co](<mailto:a@b.co>)`. The check unwraps a link whose label is its own target, with or without the scheme and the angle brackets, so that rewrite is not a difference. A link whose label differs from its target still counts as a difference. Linear leaves text inside a code span as written, so put file names, paths and addresses in code spans when drafting.
+
 The ledger, its lock, and refresh history follow the GitHub rules: it is bound to the payload hash, it is never reset or replaced, and only the reviewed candidate's duplicate observations can change after any of its operations started.
 
 ## Validation

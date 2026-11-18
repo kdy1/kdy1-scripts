@@ -70,7 +70,7 @@ class FakeLinear {
     }
     if (op === 'commentCreate') {
       const i = v.input, x = this.find(i.issueId);
-      const c = { id: i.id, url: `${x.url}#comment-${i.id.slice(0, 8)}`, body: i.body, user: { id: VIEWER }, issue: { id: x.id } };
+      const c = { id: i.id, url: `${x.url}#comment-${i.id.slice(0, 8)}`, body: this.rewrite(i.body), user: { id: VIEWER }, issue: { id: x.id } };
       this.comments.set(c.id, c); return ok({ commentCreate: { success: true, comment: { id: c.id, url: c.url } } });
     }
     throw new Error(`Unhandled fake query ${op}`);
@@ -214,6 +214,44 @@ test('text verification tolerates Markdown re-rendering only', () => {
   assert.equal(normalizeText('* a\n* b [https://x.y](https://x.y)'), normalizeText('- a\n- b https://x.y'));
   assert.notEqual(normalizeText('fix A'), normalizeText('fix B'));
   assert.equal(normalizeText('한글 *본문*'), normalizeText('한글 본문'));
+});
+
+test('text verification tolerates the autolinks that Linear adds', () => {
+  // Linear read the bare token `name.md:33` as a host with a port (`.md` is a country-code domain) and stored it as a link
+  // that carries the scheme and angle brackets. This is the exact form that made DELI-187 fail verification.
+  const audited = 'Search terms "exclusion probe" and "repository-workflow-contract.md:33" found nothing.';
+  const stored = 'Search terms "exclusion probe" and "[repository-workflow-contract.md:33](<http://repository-workflow-contract.md:33>)" found nothing.';
+  assert.equal(normalizeText(stored), normalizeText(audited));
+  assert.equal(normalizeText('mail [a@b.co](<mailto:a@b.co>)'), normalizeText('mail a@b.co'));
+  assert.equal(normalizeText('see [https://x.y/z](<https://x.y/z>)'), normalizeText('see https://x.y/z'));
+  assert.equal(normalizeText('see [x.y](http://x.y)'), normalizeText('see x.y'));
+  // A link whose label does not equal its own target shows text that hides the target, so it must still differ.
+  assert.notEqual(normalizeText('[docs](<http://other.example>)'), normalizeText('docs'));
+  assert.notEqual(normalizeText('[x.y](<http://z.example>)'), normalizeText('x.y'));
+});
+
+test('records an issue whose bare file-name tokens Linear stored as autolinks', async t => {
+  const body = '## Summary\nSearch terms "exclusion probe" and "repository-workflow-contract.md:33" found nothing. See `docs/code.md:3`.';
+  const s = setup(t, { body }); const fake = new FakeLinear();
+  fake.rewrite = d => d.replace(/(?<![`\w/[])([\w-]+\.md(?::\d+)?)(?![\w`\]])/g, '[$1](<http://$1>)');
+  const result = await record({ version: 1, payload: s.payload, statePath: s.statePath, context: s.context }, new Linear({ token: KEY, fetch: fake.fetch }));
+  const issue = [...fake.issues.values()][0];
+  assert.match(issue.description, /\[repository-workflow-contract\.md:33\]\(<http:\/\/repository-workflow-contract\.md:33>\)/, 'the fake must autolink the bare token');
+  assert.match(issue.description, /`docs\/code\.md:3`/, 'a code span stays as written');
+  assert.equal(result.status, 'verified', result.errors.join('\n')); assert.equal(fake.count('issueCreate'), 1);
+});
+
+test('records a duplicate comment whose bare file-name tokens Linear stored as autolinks', async t => {
+  const fake = new FakeLinear();
+  const existing = fake.addIssue({ title: 'cli: flags drift', description: 'old report' });
+  fake.rewrite = d => d.replace(/(?<![`\w/[])([\w-]+\.md(?::\d+)?)(?![\w`\]])/g, '[$1](<http://$1>)');
+  const s = setup(t, { action: 'duplicate comment', issueUrl: existing.url.replace('/slug', ''), body: '', comment: 'The same defect shows at "notes.md:7".' });
+  s.c.duplicate = { terms: ['flags drift'], limit: 20, complete: true, evidence: 'Same root cause', issues: [{ id: existing.id, identifier: 'ENG-1', url: existing.url, title: existing.title, state: 'backlog' }],
+    issue: { id: existing.id, identifier: 'ENG-1', url: existing.url, title: existing.title, body: 'old report', state: 'backlog' }, comments: [] };
+  s.c.allowedActions = ['duplicate comment'];
+  const result = await record({ version: 1, payload: s.payload, statePath: s.statePath, context: s.context }, new Linear({ token: KEY, fetch: fake.fetch }));
+  assert.match([...fake.comments.values()][0]?.body ?? '', /\[notes\.md:7\]\(<http:\/\/notes\.md:7>\)/, `the fake must autolink the bare token: ${result.errors.join('\n')}`);
+  assert.equal(result.status, 'verified', result.errors.join('\n')); assert.equal(fake.count('commentCreate'), 1);
 });
 
 test('Keychain stores the key through stdin and env overrides it', () => {

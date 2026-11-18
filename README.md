@@ -31,7 +31,6 @@ A collection of standalone [T3 Chat skills](./skills) for GitHub, product planni
 | `static-analysis` | Analyze all code in the requested scope with parallel read-only subagents until every unit is covered, start another pass on each repeated invocation, and hand each confirmed bug to `add-issue` immediately. |
 | `update-pr-description` | On explicit invocation, rewrite an existing PR's title and body to match its actual change, while keeping issue references, images, templates, and disclosures; applies directly only for the user's own open PR with a clean check. |
 | `write-blog-post` | Develop a blog-post draft from material supplied by the user. |
-| `write-comment` | Explicitly plan exact public comments in Plan Mode, default to English, and publish approved text unchanged after authorized execution. |
 | `write-marketing-copy` | Rephrase source material into LinkedIn, X, and Threads posts. |
 | `write-prd` | Capture product decisions and create an implementation-ready GitHub issue. |
 | `write-ste` | Automatically apply practical ASD-STE100 clarity principles to technical text while preserving its language and meaning. |
@@ -92,7 +91,7 @@ npx skills add kdy1/kdy1-scripts --list
 
 Select the agent used by your T3 Chat session when prompted. It also prompts for the installation method when necessary. Add `--copy` to use independent copies instead of symlinks.
 
-When installing selected skills, include their skill dependencies. `create-pr` requires `write-ste`. `write-comment` requires `write-ste` for technical comments. `post-text` uses `write-ste` for technical text when it is installed. `create-human-reviewed-pr`, `slop-fix-issue`, and `slop-fix-batch` require both `create-pr` and its `write-ste` dependency. `autofix` requires `iterate-with-review` with its `review-once` dependency, and `create-pr` with `write-ste`; it uses `add-issue`'s Linear helper for Linear issues. `slop-fix-batch` also uses `add-issue`'s Linear helper for Linear batches. `add-issue`, `static-analysis`, `disk-cleanup`, and `update-pr-description` require `settle-thread`. `update-pr-description` also requires `write-ste`. Installing every skill includes these dependencies. The same rule applies when copying individual skill directories manually.
+When installing selected skills, include their skill dependencies. `create-pr` requires `write-ste`. `post-text` uses `write-ste` for technical text when it is installed. `co-review` and `review-once` use `post-text` to post a result. `create-human-reviewed-pr`, `slop-fix-issue`, and `slop-fix-batch` require both `create-pr` and its `write-ste` dependency. `autofix` requires `iterate-with-review` with its `review-once` dependency, and `create-pr` with `write-ste`; it uses `add-issue`'s Linear helper for Linear issues. `slop-fix-batch` also uses `add-issue`'s Linear helper for Linear batches. `add-issue`, `static-analysis`, `disk-cleanup`, and `update-pr-description` require `settle-thread`. `update-pr-description` also requires `write-ste`. Installing every skill includes these dependencies. The same rule applies when copying individual skill directories manually.
 
 `slop-fix-batch` directly manages its published PRs and requires `repair-pr`, `manage-stacked-prs`, and `merge-pr` for repairs, alignment, and conditional merging. `repair-pr` uses `manage-stacked-prs` for stacked repairs; stack-edit workflows use the shared coordination helper bundled with `repair-pr`. Include both skills when installing either for stack work.
 
@@ -194,7 +193,7 @@ To review a pull request together with the agent, invoke:
 $co-review <PR URL>. Do what you can yourself, and tell me what I need to check.
 ```
 
-The agent pins the PR in a private temporary checkout (in `.t3-tmp/` when it runs in a T3 Code worktree) and does every check it can do itself: it reads the diff and context, builds and runs tests, runs the motivating case on the base and the head, triages failing CI and unresolved review threads, and tries short fixes. It then reports its findings with evidence and a short checklist of items that need human judgment, access, context, or a decision. The review continues as a conversation. Reports are in the language you write in, or in English when your request has only a PR URL; an explicit language request takes precedence. It never posts to GitHub unless you ask.
+The agent pins the PR in a private temporary checkout (in `.t3-tmp/` when it runs in a T3 Code worktree) and does every check it can do itself: it reads the diff and context, builds and runs tests, runs the motivating case on the base and the head, triages failing CI and unresolved review threads, and tries short fixes. It then reports its findings with evidence and a short checklist of items that need human judgment, access, context, or a decision. The review continues as a conversation. Reports are in the language you write in, or in English when your request has only a PR URL; an explicit language request takes precedence. It never posts to GitHub unless you ask, and then it posts through `post-text`.
 
 To make an existing pull request's title and body match its actual change, invoke:
 

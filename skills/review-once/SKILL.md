@@ -16,7 +16,7 @@ Helper: `scripts/review_once.py` (Python 3.9+, Git 2.31+, and `gh` for PRs). Rev
 
 ## Boundaries
 
-- Do not commit, push, comment, approve, request changes, merge, or resolve threads, and do not change the user's own checkout, branches, or stash. Reviewers have the same restrictions. To post the result, the user must ask separately, for example through `$write-comment`.
+- Do not commit, push, comment, approve, request changes, merge, or resolve threads, and do not change the user's own checkout, branches, or stash. Reviewers have the same restrictions. To post the result, the user must ask separately; then post it through `$post-text`.
 - Running is allowed and expected. The reviewer checkouts and scratch directories are throwaway: reviewers and you may build, run tests, add temporary instrumentation, and edit files there. When it helps the judgment, try a suggested fix in a scratch copy or worktree outside the user's own repository, run it, and report the patch with the results. Nothing in this skill makes the review read-only.
 - One pass. Each reviewer runs one review. Do not start follow-up passes.
 - Do not substitute models. If a required model is not available, report which one and stop, unless the user approves a run with fewer reviewers.

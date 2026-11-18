@@ -1,7 +1,7 @@
 interface:
   display_name: "Auto Settle T3 Thread"
-  short_description: "Settle the T3 Code thread after another skill's standalone run"
-  default_prompt: "Apply $auto-settle-t3-thread at the end of this skill's standalone run: settle the current T3 Code thread only when nothing remains for me to check."
+  short_description: "Settle the T3 Code thread when nothing remains for the human to check"
+  default_prompt: "Use $auto-settle-t3-thread: when the requested work is done, settle the current T3 Code thread if nothing remains for me to check."
 
 policy:
   allow_implicit_invocation: false

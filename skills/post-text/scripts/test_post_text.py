@@ -78,8 +78,8 @@ FILES = [{"filename": "src/a.py", "patch": PATCH}, {"filename": "img.png"}]
 PULL = "https://github.com/o/r/pull/5"
 
 
-def pull(sha):
-    return {"head": {"sha": sha}}
+def pull(sha, author="author"):
+    return {"head": {"sha": sha}, "user": {"login": author}}
 
 
 class ReviewTests(unittest.TestCase):
@@ -147,15 +147,38 @@ class ReviewTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "review body"):
                 post_text.prepare_review("S", bad, PULL, ["H"], ["A"])
 
-    def review(self):
+    def test_prepare_review_records_the_requested_event(self):
+        for event in ("REQUEST_CHANGES", "APPROVE"):
+            with self.subTest(event=event):
+                responses = [pull("abc"), {"login": "me"}, FILES, pull("abc")]
+                with mock.patch.object(post_text, "gh_api", side_effect=responses):
+                    data = post_text.prepare_review("Summary", [], PULL, ["H"], ["A"], event)
+                self.assertEqual(json.loads(data)["event"], event)
+
+    def test_prepare_review_rejects_unknown_events_and_own_pull_requests(self):
+        with self.assertRaisesRegex(ValueError, "review event"):
+            post_text.prepare_review("S", [], PULL, ["H"], ["A"], "DISMISS")
+        with mock.patch.object(post_text, "gh_api", side_effect=[pull("abc", "me"), {"login": "me"}]) as api:
+            with self.assertRaisesRegex(ValueError, "own pull request"):
+                post_text.prepare_review("S", [], PULL, ["H"], ["A"], "REQUEST_CHANGES")
+        self.assertEqual(api.call_count, 2)
+
+    def review(self, event="COMMENT"):
         comments = [{"path": "src/a.py", "line": 12, "body": "Note ```code```"}]
-        with mock.patch.object(post_text, "gh_api", side_effect=[pull("abc"), FILES, pull("abc")]):
-            return post_text.prepare_review("Summary", comments, PULL, ["H"], ["A"])
+        responses = [pull("abc"), FILES, pull("abc")]
+        if event != "COMMENT":
+            responses.insert(1, {"login": "me"})
+        with mock.patch.object(post_text, "gh_api", side_effect=responses):
+            return post_text.prepare_review("Summary", comments, PULL, ["H"], ["A"], event)
 
     def test_show_review_prints_destination_and_every_text(self):
         shown = post_text.show_review(self.review())
         self.assertIn(f"Destination: {PULL}", shown)
-        self.assertIn("COMMENT", shown)
+        self.assertIn("Review event: COMMENT (comment only: no approval and no change request)", shown)
+        self.assertIn(
+            "Review event: REQUEST_CHANGES (requests changes on the pull request)",
+            post_text.show_review(self.review("REQUEST_CHANGES")),
+        )
         self.assertIn("Inline comment 1: `src/a.py` line 12 (RIGHT)", shown)
         self.assertIn("````markdown\nNote ```code```\n````", shown)
 
@@ -164,16 +187,33 @@ class ReviewTests(unittest.TestCase):
         review = json.loads(data)
         created = {"id": 9, "html_url": PULL + "#pullrequestreview-9"}
         posted_comments = [{"path": "src/a.py", "body": "Note ```code```\n"}]
+        posted = {"body": review["body"], "state": "COMMENTED"}
         with mock.patch.object(
-            post_text, "gh_api", side_effect=[pull("abc"), created, {"body": review["body"]}, posted_comments],
+            post_text, "gh_api", side_effect=[pull("abc"), created, posted, posted_comments],
         ) as api:
             self.assertEqual(post_text.post_review(data), created["html_url"])
         submit = api.call_args_list[1]
         self.assertEqual(submit.args[3], "repos/o/r/pulls/5/reviews")
         self.assertEqual(submit.kwargs["payload"]["event"], "COMMENT")
         self.assertEqual(submit.kwargs["payload"]["commit_id"], "abc")
-        with mock.patch.object(post_text, "gh_api", side_effect=[pull("abc"), created, {"body": review["body"]}, []]):
+        with mock.patch.object(post_text, "gh_api", side_effect=[pull("abc"), created, posted, []]):
             with self.assertRaises(RuntimeError):
+                post_text.post_review(data)
+
+    def test_post_review_submits_the_event_and_checks_the_state(self):
+        data = self.review("REQUEST_CHANGES")
+        review = json.loads(data)
+        created = {"id": 9, "html_url": PULL + "#pullrequestreview-9"}
+        posted_comments = [{"path": "src/a.py", "body": "Note ```code```\n"}]
+        posted = {"body": review["body"], "state": "CHANGES_REQUESTED"}
+        with mock.patch.object(
+            post_text, "gh_api", side_effect=[pull("abc"), created, posted, posted_comments],
+        ) as api:
+            self.assertEqual(post_text.post_review(data), created["html_url"])
+        self.assertEqual(api.call_args_list[1].kwargs["payload"]["event"], "REQUEST_CHANGES")
+        commented = {"body": review["body"], "state": "COMMENTED"}
+        with mock.patch.object(post_text, "gh_api", side_effect=[pull("abc"), created, commented]):
+            with self.assertRaisesRegex(RuntimeError, "state"):
                 post_text.post_review(data)
 
     def test_post_review_refuses_a_moved_head_before_posting(self):
@@ -183,7 +223,7 @@ class ReviewTests(unittest.TestCase):
         self.assertEqual(api.call_count, 1)
 
     def test_load_review_rejects_other_files(self):
-        for data in (b"{}", b'{"kind": "github-pull-request-review", "event": "APPROVE"}'):
+        for data in (b"{}", b'{"kind": "github-pull-request-review", "event": "DISMISS"}'):
             with self.subTest(data=data), self.assertRaises(ValueError):
                 post_text.load_review(data)
 

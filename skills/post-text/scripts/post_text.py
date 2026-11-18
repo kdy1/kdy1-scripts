@@ -8,9 +8,11 @@ as a comment on a GitHub issue or pull request, and reads the comment back.
 
 For a pull request review, `prepare-review` puts the info panel on the review
 body, checks that each inline comment is on a line of the pull request diff at
-its current head, and writes the review as one JSON file. `show-review` prints
-that file for approval. `post-review` checks the digest and the head, submits
-the review with the COMMENT event, and reads the review and its comments back.
+its current head, and writes the review as one JSON file with its event
+(COMMENT, REQUEST_CHANGES, or APPROVE), so the digest covers the event too.
+`show-review` prints that file for approval. `post-review` checks the digest
+and the head, submits the review with its event, and reads the review, its
+state, and its comments back.
 
 The helper cannot establish human approval. Get approval in the conversation.
 """
@@ -25,7 +27,13 @@ import sys
 
 PANEL_HEADER = "> [!NOTE]"
 REVIEW_KIND = "github-pull-request-review"
-REVIEW_EVENT = "COMMENT"
+# Each review event the helper submits, with the state GitHub reports for the posted review.
+REVIEW_STATES = {"COMMENT": "COMMENTED", "REQUEST_CHANGES": "CHANGES_REQUESTED", "APPROVE": "APPROVED"}
+EVENT_EFFECTS = {
+    "COMMENT": "comment only: no approval and no change request",
+    "REQUEST_CHANGES": "requests changes on the pull request",
+    "APPROVE": "approves the pull request",
+}
 SIDES = ("LEFT", "RIGHT")
 COMMENT_KEYS = {"path", "line", "side", "start_line", "start_side", "body"}
 HUNK_HEADER = re.compile(r"@@ -(?P<old>[0-9]+)(?:,[0-9]+)? \+(?P<new>[0-9]+)(?:,[0-9]+)? @@")
@@ -214,18 +222,36 @@ def diff_problems(comments, files):
     return problems
 
 
+def pull_request(target):
+    return gh_api(target["host"], f"repos/{target['owner']}/{target['repo']}/pulls/{target['number']}")
+
+
 def pull_head(target):
-    pull = gh_api(target["host"], f"repos/{target['owner']}/{target['repo']}/pulls/{target['number']}")
-    return pull["head"]["sha"]
+    return pull_request(target)["head"]["sha"]
 
 
-def prepare_review(text, comments, url, harnesses, agents):
+def review_event(event):
+    if event not in REVIEW_STATES:
+        raise ValueError(f"The review event must be one of: {', '.join(REVIEW_STATES)}.")
+    return event
+
+
+def prepare_review(text, comments, url, harnesses, agents, event="COMMENT"):
     target = parse_pull_target(url)
+    event = review_event(event)
     if not isinstance(comments, list):
         raise ValueError("The comments file must contain a JSON array.")
     comments = [normalize_comment(index, comment) for index, comment in enumerate(comments)]
     body = with_panel(text, harnesses, agents)
-    head = pull_head(target)
+    pull = pull_request(target)
+    head = pull["head"]["sha"]
+    if event != "COMMENT":
+        login = gh_api(target["host"], "user")["login"]
+        if pull["user"]["login"] == login:
+            raise ValueError(
+                f"GitHub does not let {login} approve or request changes on their own pull request. "
+                "Use the COMMENT event, or post from another account."
+            )
     files = gh_api(
         target["host"], f"repos/{target['owner']}/{target['repo']}/pulls/{target['number']}/files?per_page=100",
         paginate=True,
@@ -241,14 +267,14 @@ def prepare_review(text, comments, url, harnesses, agents):
         )
     review = {
         "kind": REVIEW_KIND, "target": canonical_pull_url(target), "commit_id": head,
-        "event": REVIEW_EVENT, "body": body, "comments": comments,
+        "event": event, "body": body, "comments": comments,
     }
     return (json.dumps(review, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode("utf-8")
 
 
 def load_review(data):
     review = json.loads(data.decode("utf-8"))
-    if not isinstance(review, dict) or review.get("kind") != REVIEW_KIND or review.get("event") != REVIEW_EVENT:
+    if not isinstance(review, dict) or review.get("kind") != REVIEW_KIND or review.get("event") not in REVIEW_STATES:
         raise ValueError("The file is not a review that prepare-review wrote.")
     return review
 
@@ -263,7 +289,7 @@ def show_review(data):
     review = load_review(data)
     parts = [
         f"Destination: {review['target']}",
-        f"Review event: {review['event']} (no approval and no change request), at commit `{review['commit_id']}`",
+        f"Review event: {review['event']} ({EVENT_EFFECTS[review['event']]}), at commit `{review['commit_id']}`",
         f"Inline comments: {len(review['comments'])}",
         "",
         "### Review body",
@@ -295,6 +321,10 @@ def post_review(data):
     posted = gh_api(target["host"], f"{prefix}/reviews/{created['id']}")
     if posted.get("body", "").replace("\r\n", "\n") != review["body"]:
         raise RuntimeError(f"Posted review body differs from the approved text: {url}")
+    if posted.get("state") != REVIEW_STATES[review["event"]]:
+        raise RuntimeError(
+            f"Posted review state is {posted.get('state')}, not {REVIEW_STATES[review['event']]}: {url}"
+        )
     posted_comments = gh_api(target["host"], f"{prefix}/reviews/{created['id']}/comments?per_page=100", paginate=True)
     actual = sorted((item["path"], item["body"].replace("\r\n", "\n")) for item in posted_comments)
     expected = sorted((item["path"], item["body"]) for item in review["comments"])
@@ -326,10 +356,16 @@ def main():
     review.add_argument("--target", required=True, help="GitHub pull request URL.")
     review.add_argument("--harness", required=True, action="append", help="Harness actually used. Repeat for several.")
     review.add_argument("--agent", required=True, action="append", help="AI agent actually used. Repeat for several.")
+    review.add_argument(
+        "--event", choices=tuple(REVIEW_STATES), default="COMMENT",
+        help="Review event the human asked for (default COMMENT).",
+    )
     review.add_argument("--output", required=True, type=Path, help="New file for the review JSON. Must not exist.")
     show = commands.add_parser("show-review", help="Print a review file as Markdown for approval.")
     show.add_argument("--review", required=True, type=Path)
-    submit = commands.add_parser("post-review", help="Check the digest and head, submit the review, and read it back.")
+    submit = commands.add_parser(
+        "post-review", help="Check the digest and head, submit the review with its event, and read it back.",
+    )
     submit.add_argument("--review", required=True, type=Path)
     submit.add_argument("--sha256", required=True)
     args = parser.parse_args()
@@ -345,7 +381,7 @@ def main():
         elif args.command == "prepare-review":
             comments = json.loads(args.comments.read_text(encoding="utf-8"))
             body = prepare_review(
-                args.text.read_text(encoding="utf-8"), comments, args.target, args.harness, args.agent,
+                args.text.read_text(encoding="utf-8"), comments, args.target, args.harness, args.agent, args.event,
             )
             with args.output.open("xb") as output:
                 output.write(body)

@@ -98,7 +98,7 @@ class GateTests(unittest.TestCase):
         footer = attribution("Claude Code", "claude-opus-5-5", "high", load(self.ledger))
         self.assertEqual(footer, "<sub>Autofix — Harness: Claude Code; Model: claude-opus-5-5; "
                                  "Reasoning effort: high; Review: Iterate with Review, 1 round; "
-                                 "Reviewers: codex/gpt-6-astra, codex/gpt-6.1-sol, "
+                                 "Reviewers: codex/gpt-6.2-astra, codex/gpt-6.1-sol, "
                                  "claudeAgent/claude-opus-5-5, claudeAgent/claude-sonnet-5-5</sub>")
         self.assertEqual(attribution("", "<x>"), "<sub>Autofix — Harness: unknown; Model: &lt;x&gt;</sub>")
 

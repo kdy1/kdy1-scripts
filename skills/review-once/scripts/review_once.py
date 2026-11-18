@@ -16,7 +16,7 @@ from pathlib import Path
 
 # Stable reviewer order: slug, providerInstanceId, model.
 REVIEWERS = (
-    ("astra", "codex", "gpt-6-astra"),
+    ("astra", "codex", "gpt-6.2-astra"),
     ("sol", "codex", "gpt-6.1-sol"),
     ("opus", "claudeAgent", "claude-opus-5-5"),
     ("sonnet", "claudeAgent", "claude-sonnet-5-5"),

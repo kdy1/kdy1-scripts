@@ -17,7 +17,7 @@ def catalog(drop=None, values_shape=True):
                         "options": [{"id": "low"}, {"id": "high"}, {"id": "xhigh"}]}]
         return {"id": model_id, "options": options}
 
-    codex = [model("gpt-6-astra", "reasoningEffort"), model("gpt-6.1-sol", "reasoningEffort")]
+    codex = [model("gpt-6.2-astra", "reasoningEffort"), model("gpt-6.1-sol", "reasoningEffort")]
     claude = [model("claude-opus-5-5", "effort"), model("claude-sonnet-5-5", "effort")]
     providers = [
         {"providerInstanceId": "codex", "canRunChildTask": True,

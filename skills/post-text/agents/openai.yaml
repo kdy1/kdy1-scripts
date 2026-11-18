@@ -3,4 +3,4 @@ interface:
   short_description: "Draft Markdown text with an AI info panel and post it after approval"
   default_prompt: "Use $post-text to draft this Markdown text with the harness and AI agent info panel on top, show it to me for approval, then post the approved text."
 policy:
-  allow_implicit_invocation: false
+  allow_implicit_invocation: true

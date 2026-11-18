@@ -82,6 +82,14 @@ class DailyUpdateTests(unittest.TestCase):
         self.assertIn("author:sample-user is:merged", search)
         self.assertIn("merged:2026-11-04T15:00:00Z..2026-11-05T14:59:59Z", search)
 
+    def test_own_closed_search_uses_updated_without_upper_bound(self):
+        with patch.object(daily, "gh_json", return_value=page([pr(1)])) as request:
+            daily.search_prs("example/demo", "sample-user", self.start, self.end,
+                             "is:closed is:unmerged", "closed")
+        search = next(arg for arg in request.call_args.args if arg.startswith("search="))
+        self.assertIn("author:sample-user is:closed is:unmerged updated:>=2026-11-04T15:00:00Z", search)
+        self.assertNotIn("closed:2", search)
+
     def test_incomplete_search_and_limit_fail(self):
         truncated = pr(1, reviews={"totalCount": 101, "nodes": []})
         for result in [page([], count=1), page([], count=1001), page([None]), page([truncated])]:
@@ -106,8 +114,9 @@ class DailyUpdateTests(unittest.TestCase):
         self.assertIn("reviewed-by:sample-user -author:sample-user updated:>=2026-11-04T15:00:00Z", searches[0])
         self.assertIn("is:merged -author:sample-user merged:2026-11-04T15:00:00Z..2026-11-05T14:59:59Z",
                       searches[1])
-        self.assertIn("is:closed is:unmerged -author:sample-user "
-                      "closed:2026-11-04T15:00:00Z..2026-11-05T14:59:59Z", searches[2])
+        self.assertIn("is:closed is:unmerged -author:sample-user updated:>=2026-11-04T15:00:00Z",
+                      searches[2])
+        self.assertNotIn("closed:2", searches[2])
 
     def test_classifies_reviews_and_merges_on_others_prs(self):
         other = {"login": "someone-else"}
@@ -193,7 +202,7 @@ class DailyUpdateTests(unittest.TestCase):
         self.assertEqual(len(result["sections"]["WIP"]), 1)
         queries = [arg for call in request.call_args_list for arg in call.args if arg.startswith("search=")]
         self.assertEqual(len(queries), 6)
-        self.assertIn("is:closed is:unmerged closed:", queries[2])
+        self.assertIn("is:closed is:unmerged updated:>=2026-11-04T15:00:00Z", queries[2])
         self.assertEqual([p["number"] for p in result["sections"]["Reviews and merges"]], [3])
         self.assertIn("Reviews and merges:\n - [example/demo#3]", result["markdown"])
 

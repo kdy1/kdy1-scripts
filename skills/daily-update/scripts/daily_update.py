@@ -77,22 +77,26 @@ def login_of(actor):
 
 def search_prs(repo, author, start, end, qualifier, date_field):
     # Search bounds are inclusive and GitHub timestamps have second precision.
-    return run_search(
-        repo, author,
-        f"author:{author} {qualifier} "
-        f"{date_field}:{stamp(start)}..{stamp(end - timedelta(seconds=1))}",
-    )
+    if "is:closed" in qualifier.split():
+        # The `closed:` filter can miss PRs that were just closed. A close updates the PR, so search
+        # `updated:` with no upper bound; classify() checks `closedAt` itself.
+        window = f"updated:>={stamp(start)}"
+    else:
+        window = f"{date_field}:{stamp(start)}..{stamp(end - timedelta(seconds=1))}"
+    return run_search(repo, author, f"author:{author} {qualifier} {window}")
 
 
 def search_others(repo, author, start, end):
     """Find other authors' PRs that the user reviewed, merged, or closed during the day."""
     records = {}
     day = f"{stamp(start)}..{stamp(end - timedelta(seconds=1))}"
-    # A submitted review updates the PR, so its updatedAt is at or after the review.
+    # A submitted review or a close updates the PR, so its updatedAt is at or after the event. The
+    # `closed:` filter can miss PRs that were just closed, so closes use `updated:`; classify_others()
+    # checks `closedAt` and the close actor itself.
     for terms in (
         f"reviewed-by:{author} -author:{author} updated:>={stamp(start)}",
         f"is:merged -author:{author} merged:{day}",
-        f"is:closed is:unmerged -author:{author} closed:{day}",
+        f"is:closed is:unmerged -author:{author} updated:>={stamp(start)}",
     ):
         for pr in run_search(repo, author, terms):
             records[pr["url"]] = pr

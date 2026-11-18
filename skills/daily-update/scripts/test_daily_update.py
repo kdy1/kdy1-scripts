@@ -17,6 +17,7 @@ def pr(number, **changes):
         "author": {"login": "sample-user"}, "isDraft": False, "body": "",
         "mergedAt": None, "closedAt": None, "updatedAt": "2026-11-04T16:00:00Z",
         "mergedBy": None, "reviews": {"totalCount": 0, "nodes": []},
+        "lastClose": {"nodes": []},
     }
     record.update(changes)
     return record
@@ -25,6 +26,10 @@ def pr(number, **changes):
 def reviews(*items):
     nodes = [{"state": state, "submittedAt": at} for state, at in items]
     return {"totalCount": len(nodes), "nodes": nodes}
+
+
+def last_close(login, at):
+    return {"nodes": [{"createdAt": at, "actor": {"login": login} if login else None}]}
 
 
 def page(records, count=None, cursor=None):
@@ -91,14 +96,18 @@ class DailyUpdateTests(unittest.TestCase):
                 daily.search_prs("example/demo", "sample-user", self.start,
                                  self.end, "is:open", "updated")
 
-    def test_others_searches_cover_reviews_and_merges(self):
-        with patch.object(daily, "gh_json", side_effect=[page([pr(1)]), page([pr(1), pr(2)])]) as request:
+    def test_others_searches_cover_reviews_merges_and_closes(self):
+        with patch.object(daily, "gh_json", side_effect=[
+            page([pr(1)]), page([pr(1), pr(2)]), page([pr(3)])
+        ]) as request:
             records = daily.search_others("example/demo", "sample-user", self.start, self.end)
-        self.assertEqual(sorted(p["number"] for p in records), [1, 2])
+        self.assertEqual(sorted(p["number"] for p in records), [1, 2, 3])
         searches = [arg for call in request.call_args_list for arg in call.args if arg.startswith("search=")]
         self.assertIn("reviewed-by:sample-user -author:sample-user updated:>=2026-11-04T15:00:00Z", searches[0])
         self.assertIn("is:merged -author:sample-user merged:2026-11-04T15:00:00Z..2026-11-05T14:59:59Z",
                       searches[1])
+        self.assertIn("is:closed is:unmerged -author:sample-user "
+                      "closed:2026-11-04T15:00:00Z..2026-11-05T14:59:59Z", searches[2])
 
     def test_classifies_reviews_and_merges_on_others_prs(self):
         other = {"login": "someone-else"}
@@ -128,6 +137,35 @@ class DailyUpdateTests(unittest.TestCase):
         self.assertIn(" - [example/demo#2](https://github.com/example/demo/pull/2) (commented, merged)\n",
                       output)
 
+    def test_classifies_closes_on_others_prs(self):
+        other = {"login": "someone-else"}
+        closed = dict(author=other, state="CLOSED", closedAt="2026-11-05T03:00:00Z")
+        records = [
+            # Closed by the user during the day, after a review.
+            pr(1, **closed, lastClose=last_close("SAMPLE-USER", "2026-11-05T03:00:00Z"),
+               reviews=reviews(("CHANGES_REQUESTED", "2026-11-05T01:00:00Z"))),
+            # Closed by someone else.
+            pr(2, **closed, lastClose=last_close("someone-else", "2026-11-05T03:00:00Z")),
+            # Closed with no close event in the record.
+            pr(3, **closed),
+            # Closed by the user on a different day.
+            pr(4, author=other, state="CLOSED", closedAt="2026-11-05T15:00:00Z",
+               lastClose=last_close("sample-user", "2026-11-05T15:00:00Z")),
+            # The user closed it, but it was reopened and is open now.
+            pr(5, author=other, lastClose=last_close("sample-user", "2026-11-05T03:00:00Z")),
+            # Closed by a deleted account.
+            pr(6, **closed, lastClose=last_close(None, "2026-11-05T03:00:00Z")),
+            # The user's own PR belongs to the Closed section instead.
+            pr(7, state="CLOSED", closedAt="2026-11-05T03:00:00Z",
+               lastClose=last_close("sample-user", "2026-11-05T03:00:00Z")),
+        ]
+        activity = daily.classify_others(records, "sample-user", self.start, self.end)
+        self.assertEqual([(p["number"], p["myActivity"]) for p in activity],
+                         [(1, ["changes requested", "closed"])])
+        self.assertIn(" - [example/demo#1](https://github.com/example/demo/pull/1) "
+                      "(changes requested, closed)\n",
+                      daily.render({"Reviews and merges": activity}))
+
     def test_extra_update_and_inline_code_are_preserved(self):
         sections = daily.classify([pr(2, isDraft=True)], "sample-user", self.start, self.end)
         extra = "Team notes:\n\n - Keep `alpha` and **beta**.\n"
@@ -145,7 +183,7 @@ class DailyUpdateTests(unittest.TestCase):
                      page([]), page([pr(2)]), page([]),
                      page([pr(3, author={"login": "someone-else"},
                               reviews=reviews(("APPROVED", "2026-11-05T01:00:00Z")))]),
-                     page([])]
+                     page([]), page([])]
         stdout = io.StringIO()
         with patch("sys.argv", args), patch.object(daily, "gh_json", side_effect=responses) as request:
             with redirect_stdout(stdout):
@@ -154,14 +192,14 @@ class DailyUpdateTests(unittest.TestCase):
         self.assertEqual(result["repositories"], ["example/demo"])
         self.assertEqual(len(result["sections"]["WIP"]), 1)
         queries = [arg for call in request.call_args_list for arg in call.args if arg.startswith("search=")]
-        self.assertEqual(len(queries), 5)
+        self.assertEqual(len(queries), 6)
         self.assertIn("is:closed is:unmerged closed:", queries[2])
         self.assertEqual([p["number"] for p in result["sections"]["Reviews and merges"]], [3])
         self.assertIn("Reviews and merges:\n - [example/demo#3]", result["markdown"])
 
     def test_cli_failure_does_not_emit_partial_update(self):
         args = ["daily_update.py", "--repo", "example/demo", "--repo", "example/private"]
-        responses = [{"login": "sample-user"}, {}, page([]), page([]), page([]), page([]), page([]),
+        responses = [{"login": "sample-user"}, {}, *[page([])] * 6,
                      RuntimeError("repository unavailable")]
         stdout, stderr = io.StringIO(), io.StringIO()
         with patch("sys.argv", args), patch.object(daily, "gh_json", side_effect=responses):

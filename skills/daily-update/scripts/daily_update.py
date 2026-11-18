@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Collect the authenticated user's daily PR, review, and merge activity through read-only gh queries."""
+"""Collect the authenticated user's daily PR, review, merge, and close activity through read-only gh queries."""
 
 import argparse
 from datetime import date, datetime, time, timedelta, timezone
@@ -25,6 +25,9 @@ query($search: String!, $cursor: String, $login: String!) {
         reviews(author: $login, last: 100) {
           totalCount
           nodes { state submittedAt }
+        }
+        lastClose: timelineItems(itemTypes: [CLOSED_EVENT], last: 1) {
+          nodes { ... on ClosedEvent { createdAt actor { login } } }
         }
       }
     }
@@ -82,13 +85,14 @@ def search_prs(repo, author, start, end, qualifier, date_field):
 
 
 def search_others(repo, author, start, end):
-    """Find other authors' PRs that the user reviewed or merged during the day."""
+    """Find other authors' PRs that the user reviewed, merged, or closed during the day."""
     records = {}
+    day = f"{stamp(start)}..{stamp(end - timedelta(seconds=1))}"
     # A submitted review updates the PR, so its updatedAt is at or after the review.
     for terms in (
         f"reviewed-by:{author} -author:{author} updated:>={stamp(start)}",
-        f"is:merged -author:{author} "
-        f"merged:{stamp(start)}..{stamp(end - timedelta(seconds=1))}",
+        f"is:merged -author:{author} merged:{day}",
+        f"is:closed is:unmerged -author:{author} closed:{day}",
     ):
         for pr in run_search(repo, author, terms):
             records[pr["url"]] = pr
@@ -152,7 +156,7 @@ def classify(records, author, start, end):
 
 
 def classify_others(records, author, start, end):
-    """Keep other authors' PRs with the user's latest review state and own merge that day."""
+    """Keep other authors' PRs with the user's latest review state, merge, and close that day."""
     activity = []
     for pr in records:
         if login_of(pr.get("author")) == author.casefold():
@@ -166,10 +170,21 @@ def classify_others(records, author, start, end):
         notes = [REVIEW_LABELS[reviews[-1]["state"]]] if reviews else []
         if merged:
             notes.append("merged")
+        if closed_by(pr, author, start, end):
+            notes.append("closed")
         if notes:
             activity.append({**pr, "myActivity": notes})
     activity.sort(key=lambda pr: (pr["repository"]["nameWithOwner"].casefold(), -pr["number"]))
     return activity
+
+
+def closed_by(pr, author, start, end):
+    """Whether the user's close event, during the day, left the PR closed without merging."""
+    if pr["state"] != "CLOSED" or pr.get("mergedAt") or not within(pr.get("closedAt"), start, end):
+        return False
+    # A PR closed again after a reopen keeps one ClosedEvent per close; the query asks for the latest.
+    events = pr["lastClose"]["nodes"]
+    return bool(events) and login_of(events[-1].get("actor")) == author.casefold()
 
 
 def render(sections, extra=None):

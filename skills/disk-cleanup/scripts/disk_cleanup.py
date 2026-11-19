@@ -22,8 +22,12 @@ AGENT_ROOTS = [
     "~/.codex/collect-review-runs", "/private/tmp",
 ]
 PROJECT_ROOTS = ["~/projects"]
+# Linked git worktrees below these roots (<root>/<repo>/<worktree>) may be removed whole once old.
+WORKTREE_ROOTS = ["~/.t3/worktrees"]
 AGENT_IDLE_HOURS = 24
 PROJECT_IDLE_HOURS = 24 * 7
+WORKTREE_IDLE_HOURS = 24 * 3
+DOCKER_IMAGE_IDLE_HOURS = 24 * 7
 NODE_ARTIFACTS = {".next", ".nuxt", ".parcel-cache", ".svelte-kit", ".turbo", "node_modules"}
 ARTIFACT_NAMES = NODE_ARTIFACTS | {"target", ".build"}
 SKIP_DESCEND = {".git", ".hg", ".svn"}
@@ -39,6 +43,9 @@ TOOL_CACHES = [
     ("homebrew cache", "brew", ["brew", "cleanup", "--prune=all"], ["brew"]),
     ("docker build cache", "docker", ["docker", "builder", "prune", "-af"], []),
     ("docker dangling images", "docker", ["docker", "image", "prune", "-f"], []),
+    # Docker never removes an image that any container, running or stopped, still uses.
+    ("docker unused images", "docker",
+     ["docker", "image", "prune", "-af", "--filter", "until={docker_image_age}"], []),
     ("unavailable simulators", "xcrun", ["xcrun", "simctl", "delete", "unavailable"], ["Simulator"]),
 ]
 DERIVED_DATA = "~/Library/Developer/Xcode/DerivedData"
@@ -208,6 +215,153 @@ def collect(roots, idle_hours, cwds, excludes, now):
     return candidates, skipped
 
 
+def git_output(path, *args, timeout=300):
+    """Run a read-only git command in path; return (exit code, stdout), or (None, "") on failure."""
+    # --no-optional-locks keeps `git status` from refreshing the index, which would look like activity.
+    command = ["git", "--no-optional-locks", "-C", str(path), *args]
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, check=False, timeout=timeout)
+    except (OSError, subprocess.TimeoutExpired):
+        return None, ""
+    return result.returncode, result.stdout
+
+
+def list_worktrees(path):
+    """Return the registered worktrees of the repository that owns path; the first is the main one."""
+    code, out = git_output(path, "worktree", "list", "--porcelain")
+    if code != 0:
+        return None
+    entries, current = [], None
+    for line in out.splitlines():
+        if line.startswith("worktree "):
+            current = {"path": Path(line[len("worktree "):]), "detached": False, "locked": False}
+            entries.append(current)
+        elif current is not None:
+            current["detached"] |= line == "detached"
+            current["locked"] |= line.split(" ", 1)[0] == "locked"
+    return entries
+
+
+def worktree_blocker(path, worktrees):
+    """Return why removing the worktree at path (and any worktree nested in it) could lose work."""
+    if worktrees[0]["path"].resolve() == path:
+        return "main worktree"
+    nested = [w for w in worktrees[1:] if is_within(w["path"].resolve(), path)]
+    if not any(w["path"].resolve() == path for w in nested):
+        return "not a registered worktree"
+    for worktree in nested:
+        where = worktree["path"]
+        if worktree["locked"]:
+            return f"locked worktree {where}"
+        if not where.is_dir():
+            continue
+        code, status = git_output(where, "status", "--porcelain")
+        if code != 0:
+            return f"git status failed in {where}"
+        if status.strip():
+            return f"uncommitted changes in {where}"
+        if worktree["detached"]:
+            # A branch survives removal of its worktree; a detached commit on no ref would not.
+            code, refs = git_output(
+                where, "for-each-ref", "--count=1", "--contains", "HEAD",
+                "refs/heads", "refs/remotes", "refs/tags",
+            )
+            if code != 0 or not refs.strip():
+                return f"detached HEAD in {where} is on no branch, remote branch, or tag"
+    return None
+
+
+def worktree_activity(path, nested):
+    """Newest mtime of a worktree's top-level entries and the git state of it and nested worktrees.
+
+    The worktree directory's own mtime is ignored: deleting its `target` or `node_modules` earlier
+    in the same run updates it and would make a freshly emptied worktree look active.
+    """
+    newest = 0.0
+    try:
+        newest = max([newest, *(mtime(Path(e.path)) for e in os.scandir(path))])
+    except OSError:
+        pass
+    for worktree in nested:
+        for marker in git_markers(worktree["path"]):
+            newest = max(newest, mtime(marker))
+    return newest
+
+
+def collect_worktrees(roots, idle_hours, cwds, excludes, now):
+    """Return removable linked worktrees (oldest first) and skipped ones with reasons."""
+    candidates, skipped = [], []
+    for root in roots:
+        root = expand(root)
+        if not root.is_dir() or root.is_symlink():
+            continue
+        for path in sorted(find_worktrees(root)):
+            record = {"path": str(path), "kind": "git-worktree", "root": str(root)}
+            reason, idle, worktrees = worktree_check(path, idle_hours, cwds, excludes, now)
+            record["idleHours"] = idle
+            if reason:
+                skipped.append({**record, "reason": reason})
+            else:
+                record["repo"] = str(worktrees[0]["path"])
+                candidates.append(record)
+    candidates.sort(key=lambda item: -item["idleHours"])
+    return candidates, skipped
+
+
+def find_worktrees(root):
+    """Directories at <root>/<repo>/<name> whose .git is a file, i.e. linked worktrees."""
+    found = []
+    for repo in os.scandir(root):
+        if not repo.is_dir(follow_symlinks=False):
+            continue
+        try:
+            children = list(os.scandir(repo.path))
+        except OSError:
+            continue
+        for child in children:
+            dot_git = Path(child.path) / ".git"
+            if child.is_dir(follow_symlinks=False) and dot_git.is_file() and not dot_git.is_symlink():
+                found.append(Path(child.path))
+    return found
+
+
+def worktree_check(path, idle_hours, cwds, excludes, now):
+    """Return (skip reason or None, idle hours, registered worktrees) for one worktree."""
+    path = path.resolve()
+    for cwd in cwds:
+        if is_within(cwd, path):
+            return f"process cwd {cwd}", 0.0, None
+    for excluded in excludes:
+        if is_within(path, excluded) or is_within(excluded, path):
+            return f"excluded {excluded}", 0.0, None
+    idle = (now - worktree_activity(path, [{"path": path}])) / HOUR
+    if idle < idle_hours:
+        return f"active {idle:.1f}h ago (< {idle_hours}h)", round(idle, 1), None
+    worktrees = list_worktrees(path)
+    if not worktrees:
+        return "git worktree list failed", round(idle, 1), None
+    resolved = path.resolve()
+    nested = [w for w in worktrees if is_within(w["path"].resolve(), resolved)]
+    idle = (now - worktree_activity(path, nested)) / HOUR
+    if idle < idle_hours:
+        return f"active {idle:.1f}h ago (< {idle_hours}h)", round(idle, 1), None
+    blocker = worktree_blocker(resolved, worktrees)
+    if blocker:
+        return blocker, round(idle, 1), None
+    return None, round(idle, 1), worktrees
+
+
+def remove_worktree(path, repo):
+    """Remove a linked worktree with plain `git worktree remove`, which refuses unclean ones."""
+    result = subprocess.run(
+        ["git", "-C", repo, "worktree", "remove", "--", str(path)],
+        capture_output=True, text=True, check=False,
+    )
+    # Worktrees nested in the removed one are now dangling registrations.
+    subprocess.run(["git", "-C", repo, "worktree", "prune"], capture_output=True, check=False)
+    return result.returncode == 0 and not path.exists(), result.stderr.strip()[-500:]
+
+
 def du_bytes(path):
     result = subprocess.run(["du", "-sk", path], capture_output=True, text=True, check=False)
     try:
@@ -252,8 +406,9 @@ def process_running(names):
 
 
 class Cleaner:
-    def __init__(self, target, volume, dry_run, excludes):
+    def __init__(self, target, volume, dry_run, excludes, docker_image_hours=DOCKER_IMAGE_IDLE_HOURS):
         self.target, self.volume, self.dry_run, self.excludes = target, volume, dry_run, excludes
+        self.docker_image_hours = docker_image_hours
         self.initial = free_bytes(volume)
         self.simulated = 0
         self.actions, self.skipped, self.errors = [], [], []
@@ -303,6 +458,35 @@ class Cleaner:
             if not ok:
                 self.errors.append({"target": item["path"], "error": error or "rm failed"})
 
+    def worktrees(self, tier, roots, idle_hours, cwds, now):
+        candidates, skipped = collect_worktrees(roots, idle_hours, cwds.get(), self.excludes, now)
+        self.skipped.extend({**item, "tier": tier} for item in skipped)
+        if self.dry_run:
+            measure(candidates)
+        for item in candidates:
+            if self.met():
+                break
+            path = Path(item["path"])
+            if self.dry_run:
+                self.simulated += item["bytes"]
+                self.record(tier, item["path"], 0, "would-remove", {
+                    "kind": item["kind"], "idleHours": item["idleHours"], "bytes": item["bytes"]})
+                continue
+            before = self.free()
+            # Work can start or change between the scan and the removal, so check everything again.
+            if path.is_symlink() or not path.is_dir() or not (path / ".git").is_file():
+                self.skipped.append({**item, "tier": tier, "reason": "failed safety re-check"})
+                continue
+            reason, _, _ = worktree_check(path, idle_hours, cwds.get(), self.excludes, time.time())
+            if reason:
+                self.skipped.append({**item, "tier": tier, "reason": f"became unsafe: {reason}"})
+                continue
+            ok, error = remove_worktree(path, item["repo"])
+            self.record(tier, item["path"], before, "removed" if ok else "failed",
+                        {"kind": item["kind"], "idleHours": item["idleHours"]})
+            if not ok:
+                self.errors.append({"target": item["path"], "error": error or "git worktree remove failed"})
+
     def tool_caches(self):
         tier = "tool-caches"
         for name, executable, command, processes in TOOL_CACHES:
@@ -318,6 +502,7 @@ class Cleaner:
             if running:
                 self.skipped.append({"tier": tier, "path": name, "reason": f"{running} is running"})
                 continue
+            command = [part.replace("{docker_image_age}", f"{self.docker_image_hours:g}h") for part in command]
             if self.dry_run:
                 self.record(tier, name, 0, "would-run", {"command": command})
                 continue
@@ -415,6 +600,8 @@ def main(argv=None):
     parser.add_argument("--exclude", action="append", default=[], help="never touch this path")
     parser.add_argument("--agent-idle-hours", type=float, default=AGENT_IDLE_HOURS)
     parser.add_argument("--project-idle-hours", type=float, default=PROJECT_IDLE_HOURS)
+    parser.add_argument("--worktree-idle-hours", type=float, default=WORKTREE_IDLE_HOURS)
+    parser.add_argument("--docker-image-idle-hours", type=float, default=DOCKER_IMAGE_IDLE_HOURS)
     parser.add_argument("--skipped-limit", type=int, default=50)
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
@@ -428,7 +615,7 @@ def main(argv=None):
         return 0
 
     excludes = [expand(path).resolve() for path in args.exclude] + [Path.cwd().resolve()]
-    cleaner = Cleaner(target, args.volume, args.dry_run, excludes)
+    cleaner = Cleaner(target, args.volume, args.dry_run, excludes, args.docker_image_idle_hours)
     if not cleaner.met():
         now, cwds = time.time(), FreshCwds()
         cleaner.artifacts("agent-artifacts", AGENT_ROOTS, args.agent_idle_hours, cwds, now)
@@ -436,6 +623,9 @@ def main(argv=None):
             cleaner.tool_caches()
         if not cleaner.met():
             cleaner.artifacts("project-artifacts", PROJECT_ROOTS, args.project_idle_hours, cwds, now)
+        # Removing a whole worktree is the last resort, after every regenerable artifact is gone.
+        if not cleaner.met():
+            cleaner.worktrees("old-worktrees", WORKTREE_ROOTS, args.worktree_idle_hours, cwds, now)
     report = cleaner.report(args.skipped_limit)
     print(json.dumps(report, indent=2) if args.json else summary(report))
     return 0 if report["met"] else 2

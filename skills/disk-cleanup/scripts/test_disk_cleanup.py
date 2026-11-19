@@ -2,6 +2,8 @@
 
 import os
 from pathlib import Path
+import shutil
+import subprocess
 import tempfile
 import time
 import unittest
@@ -160,6 +162,157 @@ class CleanerTest(Fixture):
         report = self.run_cleaner(lambda _: 500, 400)
         self.assertEqual(report["actions"], [])
         self.assertTrue((project / "target").exists())
+
+
+def git(cwd, *args):
+    subprocess.run(
+        ["git", "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", *args],
+        cwd=cwd, check=True, capture_output=True,
+    )
+
+
+class WorktreeFixture(Fixture):
+    """A main repository at <root>/main and linked worktrees at <root>/worktrees/repo/<name>."""
+
+    def setUp(self):
+        super().setUp()
+        self.main = self.root / "main"
+        self.main.mkdir()
+        git(self.main, "init", "-q", "-b", "main")
+        (self.main / "a.txt").write_text("a")
+        git(self.main, "add", ".")
+        git(self.main, "commit", "-q", "-m", "init")
+        self.base = self.root / "worktrees"
+        (self.base / "repo").mkdir(parents=True)
+
+    def worktree(self, name, age=10 * DAY, detach=False):
+        path = self.base / "repo" / name
+        git(self.main, "worktree", "add", "-q", *(["--detach"] if detach else ["-b", name]), str(path))
+        self.age(path, age)
+        return path
+
+    def age(self, path, age):
+        touch_tree(path, age)
+        gitdir = self.main / ".git" / "worktrees" / path.name
+        stamp = time.time() - age
+        for marker in ("HEAD", "index"):
+            if (gitdir / marker).exists():
+                os.utime(gitdir / marker, (stamp, stamp))
+
+    def collect(self, idle=168, cwds=(), excludes=()):
+        return cleanup.collect_worktrees(
+            [str(self.base)], idle, list(cwds), list(excludes), time.time()
+        )
+
+
+class WorktreeTest(WorktreeFixture):
+    def test_old_clean_worktree_is_a_candidate_and_recent_one_is_not(self):
+        old = self.worktree("old", age=10 * DAY)
+        self.worktree("recent", age=2 * DAY)
+        candidates, skipped = self.collect()
+        self.assertEqual([c["path"] for c in candidates], [str(old)])
+        self.assertTrue(skipped[0]["reason"].startswith("active"))
+
+    def test_unsafe_worktrees_are_skipped(self):
+        dirty = self.worktree("dirty")
+        (dirty / "new.txt").write_text("work in progress")
+        self.age(dirty, 10 * DAY)
+        lost = self.worktree("lost", detach=True)
+        (lost / "b.txt").write_text("b")
+        git(lost, "add", ".")
+        git(lost, "commit", "-q", "-m", "only here")
+        self.age(lost, 10 * DAY)
+        busy = self.worktree("busy")
+        candidates, skipped = self.collect(cwds=[busy / "src"])
+        self.assertEqual(candidates, [])
+        reasons = {Path(s["path"]).name: s["reason"] for s in skipped}
+        self.assertTrue(reasons["dirty"].startswith("uncommitted changes"))
+        self.assertIn("on no branch", reasons["lost"])
+        self.assertTrue(reasons["busy"].startswith("process cwd"))
+
+    def test_detached_worktree_on_a_branch_commit_is_a_candidate(self):
+        path = self.worktree("pinned", detach=True)
+        candidates, _ = self.collect()
+        self.assertEqual([c["path"] for c in candidates], [str(path)])
+
+    def test_unclean_nested_worktree_blocks_removal(self):
+        outer = self.worktree("outer")
+        nested = outer / ".t3-tmp" / "scratch"
+        git(self.main, "worktree", "add", "-q", "--detach", str(nested))
+        (nested / "wip.txt").write_text("x")
+        self.age(outer, 10 * DAY)
+        self.age(nested, 10 * DAY)
+        candidates, skipped = self.collect()
+        self.assertEqual(candidates, [])
+        self.assertIn("uncommitted changes", skipped[0]["reason"])
+
+    def test_cleaner_removes_worktree_keeps_branch_and_prunes_nested(self):
+        path = self.worktree("old")
+        nested = path / ".t3-tmp" / "scratch"
+        git(self.main, "worktree", "add", "-q", "--detach", str(nested))
+        self.age(path, 10 * DAY)
+        self.age(nested, 10 * DAY)
+        keep = self.worktree("recent", age=DAY)
+        removed = []
+        real_remove = cleanup.remove_worktree
+
+        def remove(target, repo):
+            result = real_remove(target, repo)
+            removed.append(target)
+            return result
+
+        with patch.object(cleanup, "free_bytes", side_effect=lambda _: 100 + 10 * len(removed)), \
+                patch.object(cleanup, "process_cwds", return_value=[]), \
+                patch.object(cleanup, "remove_worktree", side_effect=remove):
+            cleaner = cleanup.Cleaner(10 ** 9, str(self.root), False, [])
+            cleaner.worktrees("old-worktrees", [str(self.base)], 168, cleanup.FreshCwds(), time.time())
+            report = cleaner.report(10)
+        self.assertEqual(report["actions"][0]["status"], "removed")
+        self.assertFalse(path.exists())
+        self.assertTrue(keep.exists())
+        branches = subprocess.run(["git", "branch"], cwd=self.main, capture_output=True, text=True).stdout
+        self.assertIn("old", branches)
+        listed = subprocess.run(
+            ["git", "worktree", "list"], cwd=self.main, capture_output=True, text=True
+        ).stdout
+        self.assertNotIn("scratch", listed)
+
+    def test_dry_run_keeps_worktree(self):
+        path = self.worktree("old")
+        with patch.object(cleanup, "free_bytes", return_value=100), \
+                patch.object(cleanup, "process_cwds", return_value=[]):
+            cleaner = cleanup.Cleaner(10 ** 12, str(self.root), True, [])
+            cleaner.worktrees("old-worktrees", [str(self.base)], 168, cleanup.FreshCwds(), time.time())
+        self.assertTrue(path.exists())
+        self.assertEqual(cleaner.actions[0]["status"], "would-remove")
+
+    def test_emptying_artifacts_first_does_not_make_worktree_look_active(self):
+        path = self.worktree("old")
+        (path / "node_modules").mkdir()
+        self.age(path, 10 * DAY)
+        shutil.rmtree(path / "node_modules")
+        candidates, _ = self.collect()
+        self.assertEqual([c["path"] for c in candidates], [str(path)])
+
+
+class DockerImageTest(unittest.TestCase):
+    def test_image_age_filter_is_filled_in_from_idle_hours(self):
+        commands = []
+
+        def run(command, **kwargs):
+            commands.append(command)
+            return subprocess.CompletedProcess(command, 0, "", "")
+
+        entry = [c for c in cleanup.TOOL_CACHES if c[0] == "docker unused images"]
+        self.assertEqual(len(entry), 1)
+        with patch.object(cleanup, "TOOL_CACHES", entry), \
+                patch.object(cleanup, "free_bytes", return_value=0), \
+                patch.object(cleanup, "process_running", return_value=None), \
+                patch.object(cleanup.shutil, "which", return_value="/usr/bin/docker"), \
+                patch.object(cleanup.subprocess, "run", side_effect=run), \
+                patch.object(cleanup, "DERIVED_DATA", "/nonexistent"):
+            cleanup.Cleaner(1, "/", False, [], docker_image_hours=168).tool_caches()
+        self.assertIn(["docker", "image", "prune", "-af", "--filter", "until=168h"], commands)
 
 
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
 ---
 name: disk-cleanup
-description: Free disk space on this machine until the volume has at least 400 GB free (or a requested target), by removing only regenerable build output from idle agent worktrees and batch runs, safe tool caches, and then idle build output in the user's own projects. Do nothing when enough space is already free. Run without questions and settle the T3 Code thread when the target is met. Start only on explicit `$disk-cleanup` invocation or a direct human request to run Disk Cleanup or free disk space.
+description: Free disk space on this machine until the volume has at least 400 GB free (or a requested target), by removing regenerable build output from idle agent worktrees and batch runs, safe tool caches and old unused Docker images, idle build output in the user's own projects, and finally clean old agent worktrees. Do nothing when enough space is already free. Run without questions and settle the T3 Code thread when the target is met. Start only on explicit `$disk-cleanup` invocation or a direct human request to run Disk Cleanup or free disk space.
 ---
 
 # Disk Cleanup
@@ -13,15 +13,21 @@ Run the whole workflow without questions. The defaults below are the human's sta
 
 ## Allowed scope
 
-Delete only output that a build or package manager can regenerate. The helper enforces this scope:
+Delete only output that a build or package manager can regenerate, old unused Docker images, and old clean agent worktrees. The helper enforces this scope:
 
 1. **Agent artifacts:** Cargo `target/`, `node_modules`, `.next`, `.nuxt`, `.turbo`, `.svelte-kit`, `.parcel-cache`, and SwiftPM `.build` directories under agent-owned roots (`~/.t3/worktrees`, `~/.t3` and `~/.codex` batch and artifact directories, `~/.claude/slop-fix-batch`, `~/.codex/slop-fix-batch`, and `/private/tmp`). Each directory must sit next to a matching manifest, or carry Cargo's `CACHEDIR.TAG`. The helper deletes candidates oldest-activity first.
-2. **Tool caches:** `npm`, `pnpm store prune`, `yarn`, `bun`, the Go build cache, `uv cache prune`, `pip`, Homebrew downloads, Docker build cache and dangling images, unavailable simulators, and Xcode DerivedData. The helper skips a cache while its tool is running.
+2. **Tool caches:** `npm`, `pnpm store prune`, `yarn`, `bun`, the Go build cache, `uv cache prune`, `pip`, Homebrew downloads, Docker build cache, dangling images, and unused images created more than 7 days ago, unavailable simulators, and Xcode DerivedData. The helper skips a cache while its tool is running. Docker itself keeps every image that a container, running or stopped, still uses.
 3. **Project artifacts:** the same artifact types under `~/projects`, with a longer idle threshold.
+4. **Old worktrees:** whole linked git worktrees at `~/.t3/worktrees/<repo>/<name>`, the last resort after tiers 1 to 3. The helper removes a worktree with `git worktree remove` (never `--force`) and then runs `git worktree prune`. It deletes the oldest first. It never deletes the branch. It removes a worktree only if all of these are true:
+   - Nothing in the worktree's top-level entries, or in its git index or HEAD, changed within 3 days. This includes worktrees nested in it, such as review checkouts in `.t3-tmp/`.
+   - No process has its working directory in it, and it is not in the current working directory or an `--exclude` path.
+   - `git status` shows no uncommitted or untracked changes, ignored files such as `target` aside, in it or in a worktree nested in it.
+   - It is not the main worktree and not locked.
+   - If its HEAD is detached, a local branch, remote branch, or tag contains that commit. A worktree on a branch keeps its commits on that branch.
 
 The helper skips an artifact if a process has its working directory anywhere in that checkout, if the checkout's git index or HEAD, the artifact's top levels, or its parent changed within the idle threshold (24 hours for agent roots, 7 days for `~/projects`), or if it is in the current working directory or an `--exclude` path. It never follows symlinks. Just before each deletion, it checks activity and safety again.
 
-Never delete source checkouts, git worktrees, batch run state, session histories, databases, Docker volumes or containers, toolchains, Time Machine snapshots, or files in `~/Downloads`, `~/Documents`, or `~/Desktop`. Do this even when the target is not met. Do not delete anything by hand outside the helper.
+Never delete source checkouts, any git worktree outside tier 4, batch run state, session histories, databases, Docker volumes or containers, toolchains, Time Machine snapshots, or files in `~/Downloads`, `~/Documents`, or `~/Desktop`. Do this even when the target is not met. Never delete anything under `~/projects` except the tier 3 artifacts. Do not delete anything by hand outside the helper.
 
 ## Run
 
@@ -41,7 +47,7 @@ Use Python 3.9+. Resolve the script path relative to this skill directory.
    python3 scripts/disk_cleanup.py run --target-gb 400 --json
    ```
 
-   The helper performs the tiers in order. It checks free space after each deletion or cache command and stops as soon as the target is met. Exit code `0` means the target is met. Exit code `2` means the allowed scope did not free enough space. A large run can take many minutes, so run it in the background and wait for it with `t3_background_wait` when that is available. Do not interrupt a run while it deletes files.
+   The helper performs the tiers in order. It checks free space after each deletion or cache command and stops as soon as the target is met. `--worktree-idle-hours` (default 72) and `--docker-image-idle-hours` (default 168) change the thresholds of tier 4 and of unused Docker images. Use them only if the human states a different threshold. Exit code `0` means the target is met. Exit code `2` means the allowed scope did not free enough space. A large run can take many minutes, so run it in the background and wait for it with `t3_background_wait` when that is available. Do not interrupt a run while it deletes files.
 
    Use `--dry-run` only when the human asks for a preview. It measures candidates with `du` and simulates the result without deleting anything.
 
@@ -49,7 +55,7 @@ Use Python 3.9+. Resolve the script path relative to this skill directory.
 
 ## Target not met
 
-If the report says `met: false`, find out where the remaining space is, but do not delete anything else. Measure only the largest directories, for example with `du -sh` on the top-level directories of `$HOME`, `~/.t3`, `~/.claude`, and `~/.codex`. List the largest remaining items, say which ones are regenerable but were skipped (and why, from `skippedByReason`), and say which ones need a human decision, such as old worktrees, batch run directories, Docker images, or toolchains. Do not ask the human to choose during this run. Leave the thread open, as **Completion** describes.
+If the report says `met: false`, find out where the remaining space is, but do not delete anything else. Measure only the largest directories, for example with `du -sh` on the top-level directories of `$HOME`, `~/.t3`, `~/.claude`, and `~/.codex`. List the largest remaining items, say which ones are regenerable but were skipped (and why, from `skippedByReason`), and say which ones need a human decision, such as worktrees the helper kept (uncommitted changes, a commit on no ref, recent activity, a running process), batch run directories, Docker images that containers use, session data, or toolchains. Do not ask the human to choose during this run. Leave the thread open, as **Completion** describes.
 
 ## Completion
 

@@ -20,7 +20,7 @@ A collection of standalone [T3 Chat skills](./skills) for GitHub, product planni
 | `manage-stacked-prs` | Modify existing stacked PRs, fix necessary lower-layer causes, and restack and verify only affected upper layers. |
 | `merge-pr` | Squash merge authorized GitHub PRs without overriding the commit subject, then verify the result. |
 | `post-text` | When a human asks to post a text, draft a Markdown text with a GitHub info panel that names the harness and AI agents on top, and post it only after the human approves the exact text and destination. Post a pull request review as one review, with each finding that refers to diff lines as an inline comment, and with the event the human asks for: `COMMENT` (default), `REQUEST_CHANGES`, or `APPROVE`. |
-| `disk-cleanup` | On explicit invocation, free disk space to 400 GB without questions by removing only regenerable build output and caches, then settle the thread. |
+| `disk-cleanup` | On explicit invocation, free disk space to 400 GB without questions by removing regenerable build output, caches, old unused Docker images, and, as a last resort, old clean agent worktrees, then settle the thread. |
 | `design-ui` | Design and preview new or changed UI, including plans, specifications, and issues; obtain approval and implement in the same conversation when authorized, without a mode switch. |
 | `repair-pr` | Repair merge conflicts, actionable bot feedback, and failing CI on a pull request. |
 | `research-comment` | Investigate a question and post English GitHub findings after human approval, with AI-use disclosure, a reviewer mention, and the research harness and model. |

@@ -1,0 +1,7 @@
+interface:
+  display_name: "Auto Review PR"
+  short_description: "Review a PR with Review Once and post a fully automatic review with inline comments"
+  default_prompt: "Use $auto-review-pr <PR URL>. $review-once로 이슈를 최대한 찾고, 확인된 것만 남겨서 PR이 만든 회귀는 request changes, 아닌 것은 optional follow-up으로 분류한 다음, 전자동 AI 고지 배너와 함께 인라인 리뷰로 올려줘."
+
+policy:
+  allow_implicit_invocation: false

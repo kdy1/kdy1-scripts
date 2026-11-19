@@ -24,7 +24,7 @@ A collection of standalone [T3 Chat skills](./skills) for GitHub, product planni
 | `design-ui` | Design and preview new or changed UI, including plans, specifications, and issues; obtain approval and implement in the same conversation when authorized, without a mode switch. |
 | `repair-pr` | Repair merge conflicts, actionable bot feedback, and failing CI on a pull request. |
 | `research-comment` | Investigate a question and post English GitHub findings after human approval, with AI-use disclosure, a reviewer mention, and the research harness and model. |
-| `review-once` | Run one independent pass each with GPT-6.2 Astra, GPT-6.1 Sol, Claude Opus 5.5, and Claude Sonnet 5.5 to review the diff of a PR, or of local changes before a PR, and report the verified findings in chat. |
+| `review-once` | Run one independent pass each with GPT-6.2 Astra, GPT-6.2 Sol, Claude Opus 5.5, and Claude Sonnet 5.5 to review the diff of a PR, or of local changes before a PR, and report the verified findings in chat. |
 | `auto-post-text` | Post a text or a PR review that AI wrote and posts without human review, with a GitHub info panel that discloses AI use, says that the post was fully automatic, and names the workflow, harness, and AI agents. Starts only on an explicit `$auto-post-text` invocation or from a fully automatic skill such as `auto-review-pr`. |
 | `auto-review-pr` | On explicit invocation with a PR URL, find issues with `review-once`, keep only the findings that the coordinator confirms, classify each as request changes (the PR introduces it) or optional follow-up, and post one review with every inline-capable finding inline, through `auto-post-text`. |
 | `auto-settle-t3-thread` | Settle the current T3 Code thread when nothing remains for the human to check. It starts on an explicit human invocation, alone or with a task, or at the end of a calling skill's standalone run. |
@@ -208,7 +208,7 @@ The agent saves a snapshot of the PR, reads the diff, commits, linked issues, an
 To get four independent code reviews of a pull request, invoke:
 
 ```text
-$review-once <PR URL>을 독립적인 model:codex/gpt-6.2-astra model:codex/gpt-6.1-sol model:claudeAgent/claude-opus-5-5 model:claudeAgent/claude-sonnet-5-5 서브에이전트들로 각각 PR의 diff를 리뷰해줘
+$review-once <PR URL>을 독립적인 model:codex/gpt-6.2-astra model:codex/gpt-6.2-sol model:claudeAgent/claude-opus-5-5 model:claudeAgent/claude-sonnet-5-5 서브에이전트들로 각각 PR의 diff를 리뷰해줘
 ```
 
 Omit the PR URL to review local changes before a PR exists: the current branch's commits since the default base branch, plus uncommitted and untracked files. Name another base branch, or describe what the change is for, to give the reviewers more context.

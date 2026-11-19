@@ -1,6 +1,6 @@
 ---
 name: review-once
-description: "Review a change once with four independent subagents (codex/gpt-6.2-astra, codex/gpt-6.1-sol, claudeAgent/claude-opus-5-5, claudeAgent/claude-sonnet-5-5) that each review the diff for defects, then report each verdict and the verified findings in chat. The change is a GitHub PR, or local branch and working-tree changes before a PR exists. Use when the user invokes $review-once or asks to review a PR or local changes with these four independent model subagents. Never posts to GitHub."
+description: "Review a change once with four independent subagents (codex/gpt-6.2-astra, codex/gpt-6.2-sol, claudeAgent/claude-opus-5-5, claudeAgent/claude-sonnet-5-5) that each review the diff for defects, then report each verdict and the verified findings in chat. The change is a GitHub PR, or local branch and working-tree changes before a PR exists. Use when the user invokes $review-once or asks to review a PR or local changes with these four independent model subagents. Never posts to GitHub."
 ---
 
 # Review Once

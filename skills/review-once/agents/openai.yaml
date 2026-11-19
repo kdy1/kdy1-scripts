@@ -1,4 +1,4 @@
 interface:
   display_name: "Review Once"
   short_description: "Four independent model code reviews of a PR or local diff"
-  default_prompt: "Use $review-once. <PR URL, 생략하면 현재 로컬 변경>을 독립적인 model:codex/gpt-6.2-astra model:codex/gpt-6.1-sol model:claudeAgent/claude-opus-5-5 model:claudeAgent/claude-sonnet-5-5 서브에이전트들로 각각 diff를 리뷰해줘"
+  default_prompt: "Use $review-once. <PR URL, 생략하면 현재 로컬 변경>을 독립적인 model:codex/gpt-6.2-astra model:codex/gpt-6.2-sol model:claudeAgent/claude-opus-5-5 model:claudeAgent/claude-sonnet-5-5 서브에이전트들로 각각 diff를 리뷰해줘"

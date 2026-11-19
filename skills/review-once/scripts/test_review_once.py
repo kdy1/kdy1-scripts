@@ -17,7 +17,7 @@ def catalog(drop=None, values_shape=True):
                         "options": [{"id": "low"}, {"id": "high"}, {"id": "xhigh"}]}]
         return {"id": model_id, "options": options}
 
-    codex = [model("gpt-6.2-astra", "reasoningEffort"), model("gpt-6.1-sol", "reasoningEffort")]
+    codex = [model("gpt-6.2-astra", "reasoningEffort"), model("gpt-6.2-sol", "reasoningEffort")]
     claude = [model("claude-opus-5-5", "effort"), model("claude-sonnet-5-5", "effort")]
     providers = [
         {"providerInstanceId": "codex", "canRunChildTask": True,
@@ -35,7 +35,7 @@ class TargetTests(unittest.TestCase):
     def test_selects_four_reviewers_in_stable_order(self):
         targets = select_targets(catalog())
         self.assertEqual([t["slug"] for t in targets], ["astra", "sol", "opus", "sonnet"])
-        self.assertEqual(targets[1]["target"], {"providerInstanceId": "codex", "model": "gpt-6.1-sol",
+        self.assertEqual(targets[1]["target"], {"providerInstanceId": "codex", "model": "gpt-6.2-sol",
                                                 "options": {"reasoningEffort": "high"}})
         self.assertEqual(targets[2]["target"]["options"], {"effort": "high"})
 

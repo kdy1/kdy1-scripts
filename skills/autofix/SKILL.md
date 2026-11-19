@@ -87,11 +87,11 @@ python3 <skill>/scripts/autofix.py attribution --harness "<harness>" --model "<m
 The command prints one GitHub small-text line in the Static Analysis footer format, for example:
 
 ```html
-<sub>Autofix — Harness: Claude Code; Model: claude-opus-5-5; Reasoning effort: high; Review: Iterate with Review, 2 rounds; Reviewers: codex/gpt-6.2-astra, codex/gpt-6.1-sol, claudeAgent/claude-opus-5-5, claudeAgent/claude-sonnet-5-5</sub>
+<sub>Autofix — Harness: Claude Code; Model: claude-opus-5-5; Reasoning effort: high; Review: Iterate with Review, 2 rounds; Reviewers: codex/gpt-6.2-astra, codex/gpt-6.2-sol, claudeAgent/claude-opus-5-5, claudeAgent/claude-sonnet-5-5</sub>
 ```
 
 - Take the harness, model, and reasoning effort of the agent that wrote the fix from trusted runtime or session metadata. Pass `unknown` for an unknown harness or model, and omit `--effort` when the effort is not known. Do not infer them from skill defaults or configuration.
-- When subagents wrote part of the fix, pass role-labelled values, for example `--model "coordinator: claude-opus-5-5, implementer: gpt-6.1-sol"`.
+- When subagents wrote part of the fix, pass role-labelled values, for example `--model "coordinator: claude-opus-5-5, implementer: gpt-6.2-sol"`.
 - The reviewer models come from the ledger. The helper escapes HTML.
 
 ## 7. Create the PR

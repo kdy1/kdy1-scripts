@@ -26,6 +26,7 @@ import subprocess
 import sys
 
 PANEL_HEADER = "> [!NOTE]"
+HUMAN_APPROVED = "This text was drafted with AI and posted after human approval."
 REVIEW_KIND = "github-pull-request-review"
 # Each review event the helper submits, with the state GitHub reports for the posted review.
 REVIEW_STATES = {"COMMENT": "COMMENTED", "REQUEST_CHANGES": "CHANGES_REQUESTED", "APPROVE": "APPROVED"}
@@ -50,26 +51,29 @@ def single_line(label, value):
     return value
 
 
-def info_panel(harnesses, agents):
+def info_panel(harnesses, agents, statement=HUMAN_APPROVED, workflow=None):
+    """Return the info panel. Other skills pass their own statement, and optionally the workflow that ran."""
     if not harnesses:
         raise ValueError("Provide at least one harness.")
     if not agents:
         raise ValueError("Provide at least one AI agent.")
     harnesses = [single_line("harness", value) for value in harnesses]
     agents = [single_line("AI agent", value) for value in agents]
-    lines = [PANEL_HEADER, "> This text was drafted with AI and posted after human approval.", ">"]
+    lines = [PANEL_HEADER, f"> {single_line('statement', statement)}", ">"]
+    if workflow is not None:
+        lines.append(f"> - Workflow: {single_line('workflow', workflow)}")
     lines.append(f"> - {'Harness' if len(harnesses) == 1 else 'Harnesses'}: {', '.join(harnesses)}")
     lines.append(f"> - {'AI agent' if len(agents) == 1 else 'AI agents'}: {', '.join(agents)}")
     return "\n".join(lines) + "\n"
 
 
-def with_panel(text, harnesses, agents):
+def with_panel(text, harnesses, agents, statement=HUMAN_APPROVED, workflow=None):
     text = text.replace("\r\n", "\n").strip()
     if not text:
         raise ValueError("The Markdown text must not be empty.")
     if text.startswith(PANEL_HEADER):
         raise ValueError("The text already starts with an info panel. Pass only the text body.")
-    return info_panel(harnesses, agents) + "\n" + text + "\n"
+    return info_panel(harnesses, agents, statement, workflow) + "\n" + text + "\n"
 
 
 def prepare(text, harnesses, agents):
@@ -236,15 +240,24 @@ def review_event(event):
     return event
 
 
-def prepare_review(text, comments, url, harnesses, agents, event="COMMENT"):
+def prepare_review(
+    text, comments, url, harnesses, agents, event="COMMENT",
+    statement=HUMAN_APPROVED, workflow=None, expected_head=None,
+):
+    """Write a review file. With expected_head, stop when the pull request head is another commit."""
     target = parse_pull_target(url)
     event = review_event(event)
     if not isinstance(comments, list):
         raise ValueError("The comments file must contain a JSON array.")
     comments = [normalize_comment(index, comment) for index, comment in enumerate(comments)]
-    body = with_panel(text, harnesses, agents)
+    body = with_panel(text, harnesses, agents, statement, workflow)
     pull = pull_request(target)
     head = pull["head"]["sha"]
+    if expected_head is not None and head != expected_head:
+        raise RuntimeError(
+            f"The pull request head is {head}, not the reviewed commit {expected_head}. "
+            "The review does not apply to the current head."
+        )
     if event != "COMMENT":
         login = gh_api(target["host"], "user")["login"]
         if pull["user"]["login"] == login:

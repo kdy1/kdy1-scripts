@@ -1,0 +1,7 @@
+interface:
+  display_name: "Auto Post Text"
+  short_description: "Post AI-written text without human review, with an automatic-post AI disclosure panel"
+  default_prompt: "Use $auto-post-text. <내용>을 <URL>에 사람 승인 없이 바로 올려줘. 맨 위에 AI가 전자동으로 작성하고 올렸다는 안내와 harness, AI agent 정보를 넣어줘."
+
+policy:
+  allow_implicit_invocation: false

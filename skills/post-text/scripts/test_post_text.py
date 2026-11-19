@@ -38,6 +38,16 @@ class PrepareTests(unittest.TestCase):
     def test_normalizes_crlf(self):
         self.assertNotIn(b"\r", prepare("a\r\nb", ["H"], ["A"]))
 
+    def test_other_statements_and_workflow_line(self):
+        panel = post_text.info_panel(["H"], ["A"], "Posted automatically.", "Auto Review PR")
+        self.assertEqual(
+            panel,
+            "> [!NOTE]\n> Posted automatically.\n>\n> - Workflow: Auto Review PR\n> - Harness: H\n> - AI agent: A\n",
+        )
+        for statement, workflow in (("", None), ("Two\nlines", None), ("S", " ")):
+            with self.subTest(statement=statement, workflow=workflow), self.assertRaises(ValueError):
+                post_text.info_panel(["H"], ["A"], statement, workflow)
+
 
 class CheckTests(unittest.TestCase):
     def test_changed_text_requires_new_approval(self):
@@ -146,6 +156,17 @@ class ReviewTests(unittest.TestCase):
         with mock.patch.object(post_text, "gh_api", side_effect=[pull("abc"), FILES, pull("abc")]):
             with self.assertRaisesRegex(ValueError, "review body"):
                 post_text.prepare_review("S", bad, PULL, ["H"], ["A"])
+
+    def test_prepare_review_checks_the_expected_head(self):
+        with mock.patch.object(post_text, "gh_api", side_effect=[pull("new")]) as api:
+            with self.assertRaisesRegex(RuntimeError, "reviewed commit abc"):
+                post_text.prepare_review("S", [], PULL, ["H"], ["A"], expected_head="abc")
+        self.assertEqual(api.call_count, 1)
+        with mock.patch.object(post_text, "gh_api", side_effect=[pull("abc"), FILES, pull("abc")]):
+            data = post_text.prepare_review(
+                "S", [], PULL, ["H"], ["A"], statement="Automatic.", workflow="W", expected_head="abc",
+            )
+        self.assertTrue(json.loads(data)["body"].startswith("> [!NOTE]\n> Automatic.\n>\n> - Workflow: W\n"))
 
     def test_prepare_review_records_the_requested_event(self):
         for event in ("REQUEST_CHANGES", "APPROVE"):

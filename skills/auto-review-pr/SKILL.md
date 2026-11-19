@@ -1,6 +1,6 @@
 ---
 name: auto-review-pr
-description: "Review a GitHub pull request fully automatically from its URL: find as many issues as possible with Review Once, keep only the findings that the coordinator confirms, classify each as request changes (the PR introduces it) or optional follow-up (the PR does not introduce it), and post one GitHub pull request review with every inline-capable finding as an inline comment, through Auto Post Text with its fully automatic AI disclosure panel. Use only when a human explicitly invokes $auto-review-pr with a PR URL; never select it automatically."
+description: "Review a GitHub pull request fully automatically from its URL: find as many issues as possible with Review Once, keep only the findings that the coordinator confirms, classify each as request changes (the PR introduces it) or optional follow-up (the PR does not introduce it), and post one GitHub pull request review with every inline-capable finding as an inline comment, through Auto Post Text with its fully automatic AI disclosure panel, then settle the T3 Code thread. Use only when a human explicitly invokes $auto-review-pr with a PR URL; never select it automatically."
 disable-model-invocation: true
 ---
 
@@ -12,6 +12,7 @@ Review a pull request from start to finish without a human approval step, and po
 2. Confirm each finding yourself, and keep only the confirmed findings.
 3. Classify each finding as **request changes** or **optional follow-up**.
 4. Post one review with inline comments through Auto Post Text.
+5. Settle the thread when nothing remains for the human to check.
 
 Helper: `scripts/auto_review_pr.py` (Python 3.9+ and `gh`). It imports the `post-text` helper from the sibling skill directory. Run it with its absolute path.
 
@@ -28,6 +29,7 @@ Read these before you start, and resolve each `SKILL.md` to an absolute path. If
 - [$review-once](../review-once/SKILL.md)
 - [$auto-post-text](../auto-post-text/SKILL.md), which needs [$post-text](../post-text/SKILL.md)
 - [$write-ste](../write-ste/SKILL.md) for the review text, when it is installed
+- [$auto-settle-t3-thread](../auto-settle-t3-thread/SKILL.md) for step 7
 
 ## 1. Find issues with Review Once
 
@@ -135,7 +137,21 @@ Report in chat, in the human's language:
 - The findings that were not posted: rejected or unverified, with the reason for each.
 - Limits: reviewer retries or missing reviewers, checks that could not run, and Review Once notes (for example a moved head).
 
-Then stop. Do not wait for replies, resolve threads, or change the pull request.
+Do not wait for replies, resolve threads, or change the pull request.
+
+## 7. Settle the thread
+
+Apply [$auto-settle-t3-thread](../auto-settle-t3-thread/SKILL.md) after the report and the Review Once cleanup. It owns the settlement procedure, ownership rules, and result reporting. This section gives the Auto Review PR conditions. Settling the thread is not a change to the pull request, so it does not break the scope in [Start](#start).
+
+- Standalone task: the thread's first substantive human task explicitly invoked `$auto-review-pr` (or `/auto-review-pr` in Claude Code) for one pull request, and that review remains its only task. Asking for a missing PR URL belongs to that task. A handoff from another skill, a later invocation during another task, or a request to edit or test this skill does not qualify.
+- Completion conditions: settle only when all of these are verified:
+  - `post-review` posted the review, and its read-back of the body, the state, and the inline comments matched;
+  - all four Review Once reviewers completed, and no delegated task or background command is still running;
+  - the Review Once cleanup deleted the run directory.
+
+  Findings that were rejected or stayed unverified, and an event that became `COMMENT` because of the account or the repository rules, do not block settlement; the report lists them. Leave the thread open when nothing was posted (for example the head moved, the pull request is closed or merged, or a required model is not available), when the outcome of the post is uncertain, when a reviewer is missing or incomplete, or when the cleanup kept the run directory.
+- No repeat: if settlement is not confirmed, keep the verified results. Do not run the review or the post again.
+- Report: the step 6 report with the settlement result.
 
 ## Test the helper
 

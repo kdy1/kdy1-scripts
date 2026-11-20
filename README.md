@@ -43,13 +43,7 @@ T3 Chat exposes the skills discovered by the selected provider. Install each ski
 
 After installing or updating a skill, check that it appears in T3 Chat for the selected provider. Restart the session if it does not appear.
 
-### User-wide installation on my devices
-
-[`kdy1/dotfiles`](https://github.com/kdy1/dotfiles) installs these skills on my devices. It keeps its own clone of this repository, links `~/.agents/skills` and `~/.claude/skills` to the `skills/` directory of that clone, and installs the external skills [`gh-stack`](https://github.com/github/gh-stack/tree/main/skills/gh-stack) and [`codspeed-optimize`](https://github.com/CodSpeedHQ/codspeed/tree/main/skills/codspeed-optimize) into the same directory. This repository has no install script. To install the skills somewhere else, use one of the options below.
-
-The machine-wide instructions for Codex and Claude Code (`~/.codex/AGENTS.md` and `~/.claude/CLAUDE.md`) are also in `kdy1/dotfiles`. This repository's own [`AGENTS.md`](./AGENTS.md) applies only to work in this repository.
-
-### Alternative: `npx skills`
+### Install with `npx skills`
 
 The [`skills` CLI](https://www.skills.sh/docs/cli) recognizes the skills in this repository. Run it from the repository where you want project-scoped skills installed:
 

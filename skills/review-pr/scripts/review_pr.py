@@ -20,7 +20,7 @@ PR_FIELDS = ("number,url,title,body,author,state,isDraft,baseRefName,baseRefOid,
              "headRefOid,labels,reviewDecision,mergeStateStatus,closingIssuesReferences,"
              "statusCheckRollup,latestReviews")
 RUN_PREFIX = "review-pr-"
-# Temporary files of a T3 Code worktree go in .t3-tmp/ at its root (see the machine-wide agent instructions in kdy1/dotfiles):
+# Temporary files of a T3 Code worktree go in .t3-tmp/ at its root:
 # settling the thread deletes the worktree and them with it.
 T3_WORKTREES = Path.home() / ".t3" / "worktrees"
 T3_TMP = ".t3-tmp"

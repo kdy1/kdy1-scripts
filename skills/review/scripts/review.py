@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Deterministic helpers for Co-Review: pin a PR, collect its review context, and clean up.
+"""Deterministic helpers for the Review skill: pin a PR, collect its review context, and clean up.
 
 The coordinator (the agent) does the judgment. This helper only fetches, pins, classifies,
 and summarizes facts about a GitHub pull request, so that the agent and the human review
@@ -19,7 +19,7 @@ PR_URL = re.compile(r"^https://([^/]+)/([^/]+)/([^/]+)/pull/(\d+)(?:[/?#].*)?$")
 PR_FIELDS = ("number,url,title,body,author,state,isDraft,baseRefName,baseRefOid,headRefName,"
              "headRefOid,labels,reviewDecision,mergeStateStatus,closingIssuesReferences,"
              "statusCheckRollup,latestReviews")
-RUN_PREFIX = "co-review-"
+RUN_PREFIX = "review-run-"
 # Temporary files of a T3 Code worktree go in .t3-tmp/ at its root (see global/AGENTS.md):
 # settling the thread deletes the worktree and them with it.
 T3_WORKTREES = Path.home() / ".t3" / "worktrees"
@@ -360,7 +360,7 @@ def t3_worktree_root(cwd=None, worktrees=T3_WORKTREES):
     if proc.returncode or not proc.stdout.strip():
         return None
     top = Path(proc.stdout.strip()).resolve()
-    # A checkout inside .t3-tmp/ (for example a Co-Review head checkout) belongs to the
+    # A checkout inside .t3-tmp/ (for example a Review head checkout) belongs to the
     # worktree that holds that .t3-tmp/.
     if T3_TMP in top.parts:
         top = Path(*top.parts[:top.parts.index(T3_TMP)])
@@ -442,7 +442,7 @@ def refresh(manifest):
 def cleanup(manifest):
     root = Path(manifest["runDir"])
     if not (root / "manifest.json").is_file() or not root.name.startswith(RUN_PREFIX):
-        raise ValueError(f"Refusing to delete {root}: not a Co-Review run directory")
+        raise ValueError(f"Refusing to delete {root}: not a Review run directory")
     shutil.rmtree(root)
 
 
@@ -483,7 +483,7 @@ def main():
             cleanup(load_manifest(args.manifest))
             print("removed")
     except (OSError, ValueError, RuntimeError, KeyError) as error:
-        parser.exit(1, f"co-review: {error}\n")
+        parser.exit(1, f"review: {error}\n")
 
 
 if __name__ == "__main__":

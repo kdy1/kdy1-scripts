@@ -1,10 +1,9 @@
 ---
-name: co-review
-description: "Review a GitHub pull request together with a human. The agent does every check it can do itself (reading the diff and context, running builds, tests, and base-vs-head repros, triaging CI failures and open review threads) and then gives the human a short, prioritized checklist of what only the human can check. Use only when the human explicitly invokes $co-review in T3 Chat or /co-review in Claude Code, or asks to run Co-Review; never select it automatically from a general PR review request. Reports in the language the user writes in, or in English when the request has no natural-language text. Never posts to GitHub unless the user asks."
-disable-model-invocation: true
+name: review
+description: "Review a GitHub pull request together with a human. The agent does every check it can do itself (reading the diff and context, running builds, tests, and base-vs-head repros, triaging CI failures and open review threads) and then gives the human a short, prioritized checklist of what only the human can check. Use when the human invokes $review in T3 Chat or /review in Claude Code, or when the human's own message gives a GitHub PR URL and asks to review it, for example \"<PR_URL> 리뷰하자\" or \"Let's review <PR_URL>\". Do not use it for a request from another agent or an automatic workflow, for a request for independent multi-model reviews ($review-once), or for a fully automatic review ($auto-review-pr). Reports in the language the user writes in, or in English when the request has no natural-language text. Never posts to GitHub unless the user asks."
 ---
 
-# Co-Review
+# Review
 
 Review one pull request as a pair: the agent and a human. Split the work so that each side does what it does best:
 
@@ -13,9 +12,14 @@ Review one pull request as a pair: the agent and a human. Split the work so that
 
 The human makes the final decision. The review continues as a conversation until the human is done.
 
-Start only when the human invokes `$co-review` (or `/co-review` in Claude Code) or explicitly asks to run Co-Review. A general request to review a PR, another agent's request, an automatic workflow, or creating, editing, or discussing this skill does not start a review. Keep `disable-model-invocation: true` and `policy.allow_implicit_invocation: false`.
+Start when one of these is true:
 
-Helper: `scripts/co_review.py` (Python 3.9+, Git 2.31+, authenticated `gh`). Run it with its absolute path.
+- The human invokes `$review` (or `/review` in Claude Code), or explicitly asks to run Review.
+- The human's own message gives a GitHub PR URL and asks to review it, for example `<PR_URL> 리뷰하자` or `Let's review <PR_URL>`. The agent selects this skill automatically for such a message.
+
+Do not start for a request from another agent, an automatic workflow, a request for independent multi-model reviews (`$review-once`), a fully automatic review (`$auto-review-pr`), or creating, editing, or discussing this skill. Keep `policy.allow_implicit_invocation: true` and do not add `disable-model-invocation`, so that the agent can select this skill from the human's message.
+
+Helper: `scripts/review.py` (Python 3.9+, Git 2.31+, authenticated `gh`). Run it with its absolute path.
 
 ## Boundaries
 
@@ -30,10 +34,10 @@ Helper: `scripts/co_review.py` (Python 3.9+, Git 2.31+, authenticated `gh`). Run
 Find the PR from the request. A PR URL is the usual input. For "this PR" without a link, run `gh pr view --json url` in the current repository; if it finds nothing, ask.
 
 ```sh
-python3 <skill>/scripts/co_review.py prepare <PR_URL>
+python3 <skill>/scripts/review.py prepare <PR_URL>
 ```
 
-The helper fetches the PR into a new private run directory, pins the base and head SHAs, and creates a detached checkout at the head. When the current directory is in a T3 Code worktree (under `~/.t3/worktrees/`), the run directory is `.t3-tmp/co-review-*` at the worktree root, so settling the thread deletes it. Otherwise it is in the system temporary directory (`TMPDIR`). Run `prepare` from the conversation's working directory, and do not pass `--run-dir` to put it elsewhere. It prints a summary:
+The helper fetches the PR into a new private run directory, pins the base and head SHAs, and creates a detached checkout at the head. When the current directory is in a T3 Code worktree (under `~/.t3/worktrees/`), the run directory is `.t3-tmp/review-run-*` at the worktree root, so settling the thread deletes it. Otherwise it is in the system temporary directory (`TMPDIR`). Run `prepare` from the conversation's working directory, and do not pass `--run-dir` to put it elsewhere. It prints a summary:
 
 - metadata, linked issues, latest reviews, and check results with failing check links;
 - changed files by category (`ci`, `dependencies`, `migrations`, `generated`, `tests`, `docs`, `config`, `source`), with `[sensitive]` marks for security-related paths;
@@ -45,7 +49,7 @@ It also writes `manifest.json` and `context.json` (full data) in the run directo
 When you need to run the base for a comparison:
 
 ```sh
-python3 <skill>/scripts/co_review.py base <manifest>   # prints the merge-base checkout path
+python3 <skill>/scripts/review.py base <manifest>   # prints the merge-base checkout path
 ```
 
 ## 2. Do the agent's part
@@ -104,7 +108,7 @@ The review is a conversation. After the report:
 - When the human answers a checklist item, update your view and say what changed. Remove items that are done.
 - When the human asks a follow-up question, answer it with a check, not an opinion. For example, for "is this a regression against main?", run both sides and then answer.
 - When the human disagrees with a finding, check the code again. Change the finding only on evidence; say why if you keep it.
-- If the PR may have changed, run `python3 <skill>/scripts/co_review.py refresh <manifest>`. It re-reads checks, reviews, and threads, and it prints a `note:` when the head moved or a checkout has local edits. If the head moved, tell the human and, if they agree, run `prepare` again and review only what changed since the last pinned head (`git diff <old-head> <new-head>` in the new checkout, after fetching the old head if needed).
+- If the PR may have changed, run `python3 <skill>/scripts/review.py refresh <manifest>`. It re-reads checks, reviews, and threads, and it prints a `note:` when the head moved or a checkout has local edits. If the head moved, tell the human and, if they agree, run `prepare` again and review only what changed since the last pinned head (`git diff <old-head> <new-head>` in the new checkout, after fetching the old head if needed).
 - When the human asks you to post the review, use `$post-text`. It drafts the exact text with the AI info panel, gets approval of the text and target, and then posts.
 
 ## 6. Clean up
@@ -112,7 +116,7 @@ The review is a conversation. After the report:
 When the human is done, or before you start a review of a different PR, run:
 
 ```sh
-python3 <skill>/scripts/co_review.py cleanup <manifest>
+python3 <skill>/scripts/review.py cleanup <manifest>
 ```
 
-It deletes only a `co-review-*` run directory that contains a manifest. If a build or test is still running in it, stop it first or keep the directory and give its path.
+It deletes only a `review-run-*` run directory that contains a manifest. If a build or test is still running in it, stop it first or keep the directory and give its path.

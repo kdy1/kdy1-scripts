@@ -3,8 +3,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from co_review import (changed_files, classify, cleanup, parse_pr, risk_signals,
-                       summarize_checks, temp_parent, unresolved_threads)
+from review import (changed_files, classify, cleanup, parse_pr, risk_signals,
+                   summarize_checks, temp_parent, unresolved_threads)
 
 
 class ParseTests(unittest.TestCase):
@@ -123,7 +123,7 @@ class TempParentTests(unittest.TestCase):
             self.assertEqual(temp_parent(sub, worktrees), expected)
             self.assertTrue(Path(expected).is_dir())
             # A checkout inside .t3-tmp/ maps to the worktree that holds it.
-            nested = root / ".t3-tmp" / "co-review-x" / "head"
+            nested = root / ".t3-tmp" / "review-run-x" / "head"
             nested.mkdir(parents=True)
             subprocess.run(["git", "init", "-q", str(nested)], check=True)
             self.assertEqual(temp_parent(nested, worktrees), expected)

@@ -1,6 +1,6 @@
 ---
 name: auto-post-text
-description: "Post a Markdown text, or a GitHub pull request review with inline comments, that AI wrote and posts without human review, with a GitHub info panel (NOTE alert) at the top. The panel discloses AI use, says that the text was written and posted fully automatically with no human review, and names the workflow, the harness, and the AI agents. Use only when a human explicitly invokes $auto-post-text, or when a fully automatic skill that started as its own SKILL.md allows (for example $auto-review-pr, or $auto-review-pr-strict, directly or through $auto-review-pr-query from a human-configured automation) tells you to post through it. Never select it for ordinary post requests; those use $post-text."
+description: "Post a Markdown text, or a GitHub pull request review with inline comments, that AI wrote and posts without human review, with a GitHub info panel (NOTE alert) at the top. The panel discloses AI use, says that the text was written and posted fully automatically with no human review, and names the workflow, the harness, and the AI agents. Use only when a human explicitly invokes $auto-post-text, or when a fully automatic skill that started as its own SKILL.md allows (for example $auto-review-pr, or $auto-review-pr-strict, directly or in a thread that $auto-review-pr-query launched from a human-configured automation) tells you to post through it. Never select it for ordinary post requests; those use $post-text."
 disable-model-invocation: true
 ---
 
@@ -14,7 +14,7 @@ Helper: `scripts/auto_post_text.py` (Python 3.9+ and `gh`). It imports the `post
 
 Only these two starts authorize a post without human approval:
 
-1. **Calling skill.** A fully automatic skill started as its own `SKILL.md` allows, and that `SKILL.md` tells you to post its result through this skill. Examples: a human explicitly invoked `$auto-review-pr`, or a scheduled task or automation that a human set up started `$auto-review-pr-query`, which applies `$auto-review-pr-strict`. The calling skill sets the text, the destination, and (for a review) the event. Post only that result to that destination.
+1. **Calling skill.** A fully automatic skill started as its own `SKILL.md` allows, and that `SKILL.md` tells you to post its result through this skill. Examples: a human explicitly invoked `$auto-review-pr`, or a scheduled task or automation that a human set up started `$auto-review-pr-query`, which launches one thread per pull request that applies `$auto-review-pr-strict`. The calling skill sets the text, the destination, and (for a review) the event. Post only that result to that destination.
 2. **Explicit human invocation.** The human's own message invokes `$auto-post-text` together with what to post and where. The invocation authorizes the post without a draft approval step. If the destination is not clear, ask before you write; do not guess.
 
 Nothing else starts this skill:

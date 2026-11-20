@@ -1,3 +1,6 @@
+from datetime import datetime, timedelta, timezone
+import os
+import tempfile
 import unittest
 from unittest import mock
 
@@ -59,7 +62,22 @@ class QueryTests(unittest.TestCase):
         self.assertEqual((len(items), more, api.call_count), (2, False, 1))
 
 
-class SelectTests(unittest.TestCase):
+class LedgerCase(unittest.TestCase):
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        patcher = mock.patch.dict(
+            os.environ, {"AUTO_REVIEW_PR_QUERY_DISPATCHES": os.path.join(directory.name, "d.jsonl")},
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+
+NOW = datetime(2026, 11, 20, 12, tzinfo=timezone.utc)
+HEAD = "a" * 40
+
+
+class SelectTests(LedgerCase):
     def run_select(self, results, max_reviews=2):
         decisions = iter(results)
 
@@ -84,10 +102,84 @@ class SelectTests(unittest.TestCase):
         self.assertEqual(check.call_count, 4)
         self.assertEqual(output["query"], "repo:o/r is:pr")
 
+    def test_skips_a_pull_request_with_an_active_dispatch(self):
+        query.dispatch("https://github.com/o/r/pull/1", HEAD, "repo:o/r", "codex", now=NOW - timedelta(hours=1))
+        with mock.patch.object(query, "search", return_value=([item(1), item(2)], False)), \
+                mock.patch.object(strict, "check", side_effect=lambda url, d: check_result(url)) as check:
+            output = query.select("repo:o/r", now=NOW)
+        self.assertEqual([entry["url"][-1] for entry in output["selected"]], ["2"])
+        self.assertIn("has not finished", output["skipped"][0]["reason"])
+        self.assertEqual(check.call_count, 1)
+
+    def test_selects_again_after_finish_or_expiry(self):
+        old = query.dispatch("https://github.com/o/r/pull/1", HEAD, "q", "codex", now=NOW - timedelta(hours=25))
+        query.dispatch("https://github.com/o/r/pull/2", HEAD, "q", "codex", now=NOW - timedelta(hours=1))
+        done = query.dispatch("https://github.com/o/r/pull/3", HEAD, "q", "codex", now=NOW - timedelta(hours=1))
+        query.finish(done["dispatchId"], "posted")
+        with mock.patch.object(query, "search", return_value=([item(n) for n in (1, 2, 3)], False)), \
+                mock.patch.object(strict, "check", side_effect=lambda url, d: check_result(url)):
+            output = query.select("repo:o/r", max_reviews=5, now=NOW)
+        self.assertEqual([entry["url"][-1] for entry in output["selected"]], ["1", "3"])
+        self.assertTrue(old["dispatchId"])
+
     def test_rejects_bad_limits(self):
-        for kwargs in ({"max_reviews": 0}, {"scan_limit": 0}):
+        for kwargs in ({"max_reviews": 0}, {"scan_limit": 0}, {"redispatch_after_hours": 0}):
             with self.subTest(kwargs=kwargs), self.assertRaises(ValueError):
                 query.select("repo:o/r", **kwargs)
+
+
+class DispatchTests(LedgerCase):
+    def test_dispatch_writes_the_launch_prompt(self):
+        output = query.dispatch(
+            "https://github.com/o/r/pull/7", HEAD, "repo:o/r is:pr", "claude", settings="effort=high", now=NOW,
+        )
+        self.assertEqual(output["title"], "Auto review o/r#7")
+        self.assertEqual(output["clientRequestId"], f"auto-review-pr-query-{output['dispatchId']}")
+        prompt = output["prompt"]
+        self.assertTrue(prompt.startswith("/auto-review-pr-strict https://github.com/o/r/pull/7\n"))
+        self.assertIn(f"- Dispatch ID: {output['dispatchId']}", prompt)
+        self.assertIn("- Query: repo:o/r is:pr", prompt)
+        self.assertIn(f"- Head at selection: {HEAD}", prompt)
+        self.assertIn("- Include drafts: no", prompt)
+        self.assertIn("- Review Once settings: effort=high", prompt)
+        codex = query.dispatch("https://github.com/o/r/pull/8", HEAD, "q", "codex", include_draft=True)
+        self.assertTrue(codex["prompt"].startswith("$auto-review-pr-strict https://github.com/o/r/pull/8\n"))
+        self.assertIn("- Include drafts: yes", codex["prompt"])
+        self.assertIn("- Review Once settings: defaults", codex["prompt"])
+
+    def test_dispatch_refuses_a_second_active_dispatch_and_bad_input(self):
+        query.dispatch("https://github.com/o/r/pull/7", HEAD, "q", "codex", now=NOW)
+        with self.assertRaises(RuntimeError):
+            query.dispatch("https://github.com/o/r/pull/7", HEAD, "q", "codex", now=NOW + timedelta(hours=1))
+        for kwargs in ({"head": "abc"}, {"harness": "other"}, {"query": "a\nb"}, {"settings": "a\nb"}):
+            args = {"url": "https://github.com/o/r/pull/9", "head": HEAD, "query": "q", "harness": "codex", **kwargs}
+            with self.subTest(kwargs=kwargs), self.assertRaises(ValueError):
+                query.dispatch(**args)
+
+    def test_verify_accepts_only_the_latest_unfinished_dispatch(self):
+        url = "https://github.com/o/r/pull/7"
+        first = query.dispatch(url, HEAD, "q", "codex", now=NOW - timedelta(hours=30))
+        second = query.dispatch(url, HEAD, "q", "codex", now=NOW)
+        self.assertEqual(query.verify(second["dispatchId"], url)["head"], HEAD)
+        with self.assertRaisesRegex(RuntimeError, "later dispatch"):
+            query.verify(first["dispatchId"], url)
+        with self.assertRaisesRegex(RuntimeError, "not https://github.com/o/r/pull/8"):
+            query.verify(second["dispatchId"], "https://github.com/o/r/pull/8")
+        with self.assertRaisesRegex(RuntimeError, "no dispatch"):
+            query.verify("0" * 32, url)
+        with self.assertRaises(ValueError):
+            query.verify("nope", url)
+        query.finish(second["dispatchId"], "no-findings")
+        with self.assertRaisesRegex(RuntimeError, "already finished"):
+            query.verify(second["dispatchId"], url)
+
+    def test_finish_once(self):
+        output = query.dispatch("https://github.com/o/r/pull/7", HEAD, "q", "codex")
+        entry = query.finish(output["dispatchId"], "launch-failed", now=NOW)
+        self.assertEqual((entry["outcome"], entry["finishedAt"]), ("launch-failed", NOW.isoformat()))
+        with self.assertRaises(RuntimeError):
+            query.finish(output["dispatchId"], "posted")
+        self.assertIsNone(query.active_dispatch("https://github.com/o/r/pull/7"))
 
 
 if __name__ == "__main__":

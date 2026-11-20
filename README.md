@@ -7,7 +7,7 @@ A collection of standalone [T3 Chat skills](./skills) for GitHub, product planni
 | Skill | Purpose |
 | --- | --- |
 | `add-issue` | Investigate locally by default, inspect logs, repair confirmed regenerable state, and create evidence-backed GitHub or Linear issues for confirmed work. The Linear API key is stored once in the macOS Keychain, or on Linux in the Secret Service keyring (a mode-600 file when no keyring runs). |
-| `review` | Review a PR together with a human: the agent runs every check it can, reports results with evidence, and lists only what needs the human's judgment, access, or decision. |
+| `review-pr` | Review a PR together with a human: the agent runs every check it can, reports results with evidence, and lists only what needs the human's judgment, access, or decision. |
 | `collect-review` | Collect unresolved review-bot bug candidates from merged PRs, hand them to `add-issue`, resolve handled threads, and summarize verified issue links. |
 | `create-human-reviewed-pr` | Explicitly publish human-reviewed changes as a non-draft PR with AI-use disclosure, a reviewer mention, and known harness, model, and reasoning-effort details. |
 | `create-pr` | Publish changes through a shared PR workflow with verified Closes references for resolved issues and Refs for partial or related work. |
@@ -93,7 +93,7 @@ npx skills add kdy1/kdy1-scripts --list
 
 Select the agent used by your T3 Chat session when prompted. It also prompts for the installation method when necessary. Add `--copy` to use independent copies instead of symlinks.
 
-When installing selected skills, include their skill dependencies. `create-pr` requires `write-ste`. `post-text` uses `write-ste` for technical text when it is installed. `review` and `review-once` use `post-text` to post a result. `auto-post-text` requires `post-text` for its helper. `auto-review-pr` requires `review-once`, and `auto-post-text` with `post-text`; it uses `write-ste` when it is installed. `create-human-reviewed-pr`, `slop-fix-issue`, and `slop-fix-batch` require both `create-pr` and its `write-ste` dependency. `autofix` requires `iterate-with-review` with its `review-once` dependency, and `create-pr` with `write-ste`; it uses `add-issue`'s Linear helper for Linear issues. `slop-fix-batch` also uses `add-issue`'s Linear helper for Linear batches. `slop-fix-issue` uses the `slop-fix-batch` Linear helper, and through it `add-issue`'s, for Linear issues. `add-issue`, `static-analysis`, `maintain-device`, `update-pr-description`, and `auto-review-pr` require `auto-settle-t3-thread`. `update-pr-description` also requires `write-ste`. Installing every skill includes these dependencies. The same rule applies when copying individual skill directories manually.
+When installing selected skills, include their skill dependencies. `create-pr` requires `write-ste`. `post-text` uses `write-ste` for technical text when it is installed. `review-pr` and `review-once` use `post-text` to post a result. `auto-post-text` requires `post-text` for its helper. `auto-review-pr` requires `review-once`, and `auto-post-text` with `post-text`; it uses `write-ste` when it is installed. `create-human-reviewed-pr`, `slop-fix-issue`, and `slop-fix-batch` require both `create-pr` and its `write-ste` dependency. `autofix` requires `iterate-with-review` with its `review-once` dependency, and `create-pr` with `write-ste`; it uses `add-issue`'s Linear helper for Linear issues. `slop-fix-batch` also uses `add-issue`'s Linear helper for Linear batches. `slop-fix-issue` uses the `slop-fix-batch` Linear helper, and through it `add-issue`'s, for Linear issues. `add-issue`, `static-analysis`, `maintain-device`, `update-pr-description`, and `auto-review-pr` require `auto-settle-t3-thread`. `update-pr-description` also requires `write-ste`. Installing every skill includes these dependencies. The same rule applies when copying individual skill directories manually.
 
 `slop-fix-batch` directly manages its published PRs and requires `repair-pr`, `manage-stacked-prs`, and `merge-pr` for repairs, alignment, and conditional merging. `repair-pr` uses `manage-stacked-prs` for stacked repairs; stack-edit workflows use the shared coordination helper bundled with `repair-pr`. Include both skills when installing either for stack work.
 
@@ -192,10 +192,10 @@ When using `$add-issue` in Plan Mode, return a concrete `repair pending` plan fo
 To review a pull request together with the agent, invoke:
 
 ```text
-$review <PR URL>. Do what you can yourself, and tell me what I need to check.
+$review-pr <PR URL>. Do what you can yourself, and tell me what I need to check.
 ```
 
-A message with a PR URL that asks for a review, for example `<PR URL> 리뷰하자`, also starts this skill without `$review`.
+A message with a PR URL that asks for a review, for example `<PR URL> 리뷰하자`, also starts this skill without `$review-pr`.
 
 The agent pins the PR in a private temporary checkout (in `.t3-tmp/` when it runs in a T3 Code worktree) and does every check it can do itself: it reads the diff and context, builds and runs tests, runs the motivating case on the base and the head, triages failing CI and unresolved review threads, and tries short fixes. It then reports its findings with evidence and a short checklist of items that need human judgment, access, context, or a decision. The review continues as a conversation. Reports are in the language you write in, or in English when your request has only a PR URL; an explicit language request takes precedence. It never posts to GitHub unless you ask, and then it posts through `post-text`.
 

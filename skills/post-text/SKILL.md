@@ -10,7 +10,7 @@ Draft a Markdown text for the human, put an info panel with the harness and AI a
 ## Entry and scope
 
 - Start when a human directly asks, in their own message, to post or upload a text, to any destination. An explicit `$post-text` (or `/post-text`) invocation also starts it. The human does not need to name this skill.
-- The test is whether the human asked to post in their own message, not whether another skill is running. A request made during another skill's run, for example `$review` or `$review-once`, starts this workflow too.
+- The test is whether the human asked to post in their own message, not whether another skill is running. A request made during another skill's run, for example `$review-pr` or `$review-once`, starts this workflow too.
 - A posting step that another skill runs on its own, for example the issue creation in `$add-issue`, does not start it.
 - When the human invoked a skill whose job is to publish that text, for example `$research-comment`, post through that skill's steps instead.
 - When the human explicitly invoked `$auto-post-text`, or a fully automatic skill that posts its result without human approval (for example `$auto-review-pr`), post through [Auto Post Text](../auto-post-text/SKILL.md) instead. Its info panel says that the post was fully automatic.
@@ -33,7 +33,7 @@ Draft a Markdown text for the human, put an info panel with the harness and AI a
 
 ## Pull request reviews
 
-When the text is a review of a GitHub pull request (findings about its code, for example the result of `$review` or `$review-once`), post it as one pull request review, not as a PR comment:
+When the text is a review of a GitHub pull request (findings about its code, for example the result of `$review-pr` or `$review-once`), post it as one pull request review, not as a PR comment:
 
 - Put each finding that refers to specific lines of the diff in an inline comment on those lines. A finding can be inline when its file is changed in the pull request and its lines are in a diff hunk at the current head.
 - Put in the review body only the summary and the findings that cannot be inline: findings about the whole change, missing changes, files or lines outside the diff, and findings that GitHub shows no diff for. Give the file and line for each of these.

@@ -61,11 +61,7 @@ Run `./install.sh` again to update the checkout, refresh the links, and reinstal
 
 ### User-wide instructions
 
-[`global/AGENTS.md`](./global/AGENTS.md) holds instructions for every project on the machine, for example where an agent in a T3 Code worktree puts temporary files. The repository's own [`AGENTS.md`](./AGENTS.md) applies only to work in this repository.
-
-`install.sh` links both `~/.codex/AGENTS.md` (Codex) and `~/.claude/CLAUDE.md` (Claude Code) to `global/AGENTS.md`. An update to the checkout changes what both agents read, and an edit through either link changes the file in the checkout, so commit and push it to share it with other machines. The script replaces an existing link, and a file with the same content as `global/AGENTS.md`. It stops before it changes anything when either path is a file with different content; merge that content into `global/AGENTS.md`, then run `./install.sh` again.
-
-`install.sh` also adds `.t3-tmp/`, the directory where those instructions put temporary files, to the global git excludes file: the file `core.excludesFile` names, or `~/.config/git/ignore` when it is not set. It adds the line only once.
+The machine-wide instructions for Codex and Claude Code (`~/.codex/AGENTS.md` and `~/.claude/CLAUDE.md`) are in [`kdy1/dotfiles`](https://github.com/kdy1/dotfiles). This repository's own [`AGENTS.md`](./AGENTS.md) applies only to work in this repository.
 
 ### Alternative: `npx skills`
 

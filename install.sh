@@ -13,10 +13,6 @@ done
 git -C "$repo_dir" fetch origin main
 git -C "$repo_dir" merge --ff-only origin/main
 
-instructions="$repo_dir/global/AGENTS.md"
-# Codex reads ~/.codex/AGENTS.md and Claude Code reads ~/.claude/CLAUDE.md.
-instruction_links=("$HOME/.codex/AGENTS.md" "$HOME/.claude/CLAUDE.md")
-
 # Check every destination before changing any of them.
 for destination in "$HOME/.agents/skills" "$HOME/.claude/skills"; do
     if [[ -d "$destination" && ! -L "$destination" ]]; then
@@ -24,38 +20,11 @@ for destination in "$HOME/.agents/skills" "$HOME/.claude/skills"; do
         exit 1
     fi
 done
-for destination in "${instruction_links[@]}"; do
-    if [[ -e "$destination" && ! -L "$destination" ]] && ! cmp -s -- "$destination" "$instructions"; then
-        printf 'Cannot replace a file with different content: %s\nMerge it into %s, then run ./install.sh again.\n' "$destination" "$instructions" >&2
-        exit 1
-    fi
-done
 
-mkdir -p -- "$HOME/.agents" "$HOME/.claude" "$HOME/.codex"
+mkdir -p -- "$HOME/.agents" "$HOME/.claude"
 for destination in "$HOME/.agents/skills" "$HOME/.claude/skills"; do
     ln -sfn "$repo_dir/skills" "$destination"
 done
-for destination in "${instruction_links[@]}"; do
-    # A real file reaches this point only when it matches the repository copy.
-    if [[ ! -L "$destination" ]]; then
-        rm -f -- "$destination"
-    fi
-    ln -sfn "$instructions" "$destination"
-done
-
-# global/AGENTS.md puts temporary files of a T3 Code worktree in .t3-tmp/, so
-# ignore it in every repository through the global excludes file.
-ignore_file=$(git config --global --get core.excludesFile || true)
-ignore_file=${ignore_file:-${XDG_CONFIG_HOME:-$HOME/.config}/git/ignore}
-ignore_file=${ignore_file/#\~/$HOME}
-if ! grep -qxF '.t3-tmp/' "$ignore_file" 2>/dev/null; then
-    mkdir -p -- "$(dirname -- "$ignore_file")"
-    # Keep an unterminated last line from joining the new entry.
-    if [[ -s "$ignore_file" && -n "$(tail -c 1 -- "$ignore_file")" ]]; then
-        printf '\n' >>"$ignore_file"
-    fi
-    printf '.t3-tmp/\n' >>"$ignore_file"
-fi
 
 # Both agents share the directory, so install external skills only once.
 for source in \
@@ -65,5 +34,3 @@ for source in \
 done
 
 printf 'Skills installed in ~/.agents/skills and ~/.claude/skills.\n'
-printf 'User-wide instructions linked at ~/.codex/AGENTS.md and ~/.claude/CLAUDE.md.\n'
-printf '.t3-tmp/ ignored in %s.\n' "$ignore_file"

@@ -6,7 +6,7 @@ disable-model-invocation: true
 
 # Auto Review PR
 
-Review a pull request from start to finish without a human approval step, and post the result as one GitHub pull request review:
+Review a pull request from start to finish without a human approval step, and post the result as one GitHub pull request review. For an unattended automation, use [$auto-review-pr-strict](../auto-review-pr-strict/SKILL.md) instead: it posts only proven P0 and P1 regressions and nothing else.
 
 1. Find issues with Review Once.
 2. Confirm each finding yourself, and keep only the confirmed findings.

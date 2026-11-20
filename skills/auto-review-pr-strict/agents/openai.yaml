@@ -1,0 +1,7 @@
+interface:
+  display_name: "Auto Review PR Strict"
+  short_description: "Automation-safe PR review that posts only P0/P1 regressions proven on the base and the head"
+  default_prompt: "Use $auto-review-pr-strict <PR URL>. 이 PR이 들여온 P0/P1 문제 중 base와 head에서 같은 명령을 실행해 증명된 것만 request changes 리뷰로 올리고, 나머지는 PR에 아무것도 남기지 마."
+
+policy:
+  allow_implicit_invocation: false

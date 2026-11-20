@@ -1,6 +1,6 @@
 ---
 name: review-pr
-description: "Review a GitHub pull request together with a human. The agent does every check it can do itself (reading the diff and context, running builds, tests, and base-vs-head repros, triaging CI failures and open review threads) and then gives the human a short, prioritized checklist of what only the human can check. Use when the human invokes $review-pr in T3 Chat or /review-pr in Claude Code, or when the human's own message gives a GitHub PR URL and asks to review it, for example \"<PR_URL> 리뷰하자\" or \"Let's review <PR_URL>\". Do not use it for a request from another agent or an automatic workflow, for a request for independent multi-model reviews ($review-once), or for a fully automatic review ($auto-review-pr or $auto-review-pr-strict). Reports in the language the user writes in, or in English when the request has no natural-language text. Never posts to GitHub unless the user asks."
+description: "Review a GitHub pull request together with a human. The agent does every check it can do itself (reading the diff and context, running builds, tests, and base-vs-head repros, triaging CI failures and open review threads) and then gives the human a short, prioritized checklist of what only the human can check. Use when the human invokes $review-pr in T3 Chat or /review-pr in Claude Code, or when the human's own message gives a GitHub PR URL and asks to review it, for example \"<PR_URL> 리뷰하자\" or \"Let's review <PR_URL>\". Do not use it for a request from another agent or an automatic workflow, for a request for independent multi-model reviews ($review-once), or for a fully automatic review ($auto-review-pr, $auto-review-pr-strict, or $auto-review-pr-query). Reports in the language the user writes in, or in English when the request has no natural-language text. Never posts to GitHub unless the user asks."
 ---
 
 # Review PR
@@ -17,7 +17,7 @@ Start when one of these is true:
 - The human invokes `$review-pr` (or `/review-pr` in Claude Code), or explicitly asks to run Review PR.
 - The human's own message gives a GitHub PR URL and asks to review it, for example `<PR_URL> 리뷰하자` or `Let's review <PR_URL>`. The agent selects this skill automatically for such a message.
 
-Do not start for a request from another agent, an automatic workflow, a request for independent multi-model reviews (`$review-once`), a fully automatic review (`$auto-review-pr` or `$auto-review-pr-strict`), or creating, editing, or discussing this skill. Keep `policy.allow_implicit_invocation: true` and do not add `disable-model-invocation`, so that the agent can select this skill from the human's message.
+Do not start for a request from another agent, an automatic workflow, a request for independent multi-model reviews (`$review-once`), a fully automatic review (`$auto-review-pr`, `$auto-review-pr-strict`, or `$auto-review-pr-query`), or creating, editing, or discussing this skill. Keep `policy.allow_implicit_invocation: true` and do not add `disable-model-invocation`, so that the agent can select this skill from the human's message.
 
 Helper: `scripts/review_pr.py` (Python 3.9+, Git 2.31+, authenticated `gh`). Run it with its absolute path.
 

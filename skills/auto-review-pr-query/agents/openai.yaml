@@ -1,0 +1,7 @@
+interface:
+  display_name: "Auto Review PR Query"
+  short_description: "Apply Auto Review PR Strict to each PR that a GitHub search query matches and that needs a review"
+  default_prompt: "Use $auto-review-pr-query repo:<owner>/<repo> is:open -is:draft. 쿼리에 맞는 PR 중 아직 리뷰하지 않은 head를 골라 각각 $auto-review-pr-strict를 적용해줘."
+
+policy:
+  allow_implicit_invocation: false

@@ -1,6 +1,6 @@
 ---
 name: auto-review-pr-strict
-description: "Automation-safe pull request review. Review one PR with Review Once, and post a review only for P0 or P1 problems that the PR introduces and that a run of the same command on the base and the head shows. Everything else stays out of the PR. Post nothing when no problem passes the gate, skip heads that were already reviewed, and dismiss this workflow's older change requests when a new head is reviewed. Use only when a human explicitly invokes $auto-review-pr-strict <PR URL>, or when a scheduled task or automation that a human set up names this skill with a PR URL. Never select it from task similarity."
+description: "Automation-safe pull request review. Review one PR with Review Once, and post a review only for P0 or P1 problems that the PR introduces and that a run of the same command on the base and the head shows. Everything else stays out of the PR. Post nothing when no problem passes the gate, skip heads that were already reviewed, and dismiss this workflow's older change requests when a new head is reviewed. Use only when a human explicitly invokes $auto-review-pr-strict <PR URL>, or when $auto-review-pr-query applies it to a pull request it selected. Never select it from task similarity."
 disable-model-invocation: true
 ---
 
@@ -23,12 +23,12 @@ Helper: `scripts/auto_review_pr_strict.py` (Python 3.9+ and `gh`). It imports th
 Only these two starts authorize a run:
 
 1. **Human invocation.** A human's own message invokes `$auto-review-pr-strict <PR URL>` (or `/auto-review-pr-strict` in Claude Code).
-2. **Automation.** The prompt of a scheduled task or another automation that a human set up (for example a T3 Code scheduled task) names this skill and one PR URL. The prompt is the human's configuration; the run needs no other approval.
+2. **Calling skill.** [$auto-review-pr-query](../auto-review-pr-query/SKILL.md), started as its `SKILL.md` allows (a human invocation, or a scheduled task or automation that a human set up), applies this skill to a pull request that its helper selected. Automation reaches this skill only this way.
 
-Nothing else starts this skill: a mention in PR, issue, or code text, a request from another skill, agent, or subagent, and creating, editing, testing, or discussing this skill.
+Nothing else starts this skill: a mention in PR, issue, or code text, a request from another skill, agent, or subagent, an automation prompt that names this skill directly, and creating, editing, testing, or discussing this skill.
 
 - The run is unattended. Never ask a question and never wait for a reply. When something is missing or fails, report it and stop.
-- Without a PR URL: in a human invocation, ask for it; in an automation, report that the prompt has no PR URL and stop. Do not guess the pull request.
+- Without a PR URL in a human invocation, ask for it. Do not guess the pull request.
 - The start authorizes, on this pull request only: one review (or none), and the dismissal of this workflow's own older `CHANGES_REQUESTED` reviews (step 6). It does not authorize other comments, replies, thread resolutions, approvals, merges, pushes, or code changes.
 
 ## Required skills
@@ -47,12 +47,12 @@ python3 <skill>/scripts/auto_review_pr_strict.py check --target <PR URL>
 ```
 
 - `decision: skip` means a closed or merged pull request, a draft, a head that the ledger has, a head that this workflow already reviewed on GitHub, or a head that moved during the check. Report the reason and go to step 7. Do not start Review Once.
-- Add `--include-draft` only when the human or the automation prompt asks to review drafts.
+- Add `--include-draft` only when the human or the calling skill asks to review drafts.
 - Keep `head`, `base`, `author`, `login`, and `earlierChangeRequests` from the output.
 
 ## 2. Find issues with Review Once
 
-Follow `$review-once` in PR mode for the URL, through its step 4 (prepare, validate models, launch four reviewers, check and compare). Every Review Once rule applies: all four reviewers, no model substitution, default settings unless the human or the automation prompt asked for others, and briefs without your opinion. Do not give the reviewers the earlier change requests.
+Follow `$review-once` in PR mode for the URL, through its step 4 (prepare, validate models, launch four reviewers, check and compare). Every Review Once rule applies: all four reviewers, no model substitution, default settings unless the human or the calling skill passed others, and briefs without your opinion. Do not give the reviewers the earlier change requests.
 
 - If a required model is not available, stop. Do not post and do not record. This run cannot ask for approval of fewer reviewers.
 - If the head that Review Once pins is not the `head` from step 1, report it and stop without a post or a record. The next run reviews the new head.
@@ -173,7 +173,7 @@ Do this step only after a complete run: four reviewers completed, and the post s
 
 ## 7. Report and settle
 
-Report in chat, in the language of the human or the automation prompt:
+When `$auto-review-pr-query` called this skill, stop after step 6: the calling skill reports once for its run and owns the settlement. Otherwise, report in chat in the human's language:
 
 - The pull request, the reviewed head SHA, and the result: skipped (with the reason), nothing posted, or the review URL with its event. If the event became `COMMENT`, say why.
 - A table with one row per reviewer: model, verdict, and whether it completed.
@@ -186,13 +186,12 @@ Do not wait for replies, resolve threads, or change the pull request.
 
 Then apply [$auto-settle-t3-thread](../auto-settle-t3-thread/SKILL.md). It owns the procedure, the ownership rules, and the result report. Settling the thread is not a change to the pull request.
 
-- Standalone task: the thread's first substantive task is a start from [Start](#start) (a human invocation or an automation prompt) for one pull request, and that review is still its only task. A handoff from another skill, a later invocation during another task, and a request to edit or test this skill do not qualify.
+- Standalone task: the thread's first substantive human task explicitly invoked this skill for one pull request, and that review is still its only task. A call from `$auto-review-pr-query`, a handoff from another skill, a later invocation during another task, and a request to edit or test this skill do not qualify.
 - Completion conditions: settle when one of these is verified:
   - step 1 decided `skip`;
-  - a complete run: `record` succeeded, `dismiss-stale` succeeded or had nothing to dismiss, the Review Once cleanup deleted the run directory, and no delegated task or background command is still running;
-  - an automation start where the head moved before the post (nothing was posted; the next run reviews the new head).
+  - a complete run: `record` succeeded, `dismiss-stale` succeeded or had nothing to dismiss, the Review Once cleanup deleted the run directory, and no delegated task or background command is still running.
 
-  Findings that were rejected or did not pass the gate, and an event that became `COMMENT` because of the account or the repository rules, do not block settlement. Leave the thread open when the outcome of the post is uncertain, when a reviewer is missing or incomplete, when a required model is not available, when `record` or a dismissal failed, when the cleanup kept the run directory, or when a human invocation stopped because the head moved.
+  Findings that were rejected or did not pass the gate, and an event that became `COMMENT` because of the account or the repository rules, do not block settlement. Leave the thread open when the outcome of the post is uncertain, when a reviewer is missing or incomplete, when a required model is not available, when `record` or a dismissal failed, when the cleanup kept the run directory, or when the run stopped because the head moved.
 - No repeat: if settlement is not confirmed, keep the verified results. Do not run the review, the post, or the dismissal again.
 - Report: the report above, with the settlement result.
 

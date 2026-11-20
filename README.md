@@ -43,25 +43,11 @@ T3 Chat exposes the skills discovered by the selected provider. Install each ski
 
 After installing or updating a skill, check that it appears in T3 Chat for the selected provider. Restart the session if it does not appear.
 
-### Install and update with `install.sh`
+### User-wide installation on my devices
 
-Clone this repository outside the skill directories, then run:
+[`kdy1/dotfiles`](https://github.com/kdy1/dotfiles) installs these skills on my devices. It keeps its own clone of this repository, links `~/.agents/skills` and `~/.claude/skills` to the `skills/` directory of that clone, and installs the external skills [`gh-stack`](https://github.com/github/gh-stack/tree/main/skills/gh-stack) and [`codspeed-optimize`](https://github.com/CodSpeedHQ/codspeed/tree/main/skills/codspeed-optimize) into the same directory. This repository has no install script. To install the skills somewhere else, use one of the options below.
 
-```sh
-git clone https://github.com/kdy1/kdy1-scripts.git "$HOME/src/kdy1-scripts"
-cd "$HOME/src/kdy1-scripts"
-./install.sh
-```
-
-The script requires Bash, Git, and Node.js with `npx` on macOS or Linux. It fetches `origin/main` and updates the checkout with `--ff-only`. Both `~/.agents/skills` and `~/.claude/skills` are symlinks to this checkout's `skills/` directory. Running `./install.sh` again updates the skills through those directory links. Git stops if it cannot fast-forward or local changes would be overwritten. The script stops if either link path is an existing real directory; it does not delete or back up that directory.
-
-It also installs [`gh-stack`](https://github.com/github/gh-stack/tree/main/skills/gh-stack) and [`codspeed-optimize`](https://github.com/CodSpeedHQ/codspeed/tree/main/skills/codspeed-optimize) with `npx skills`. The CLI installs into `~/.agents/skills`, which writes the external skills into this checkout's shared `skills/` directory and makes them available to both agents. This installs the gh-stack skill; install the `gh stack` CLI extension separately when needed.
-
-Run `./install.sh` again to update the checkout, refresh the links, and reinstall the external skills. Keep the checkout at the same path so its symlinks remain valid.
-
-### User-wide instructions
-
-The machine-wide instructions for Codex and Claude Code (`~/.codex/AGENTS.md` and `~/.claude/CLAUDE.md`) are in [`kdy1/dotfiles`](https://github.com/kdy1/dotfiles). This repository's own [`AGENTS.md`](./AGENTS.md) applies only to work in this repository.
+The machine-wide instructions for Codex and Claude Code (`~/.codex/AGENTS.md` and `~/.claude/CLAUDE.md`) are also in `kdy1/dotfiles`. This repository's own [`AGENTS.md`](./AGENTS.md) applies only to work in this repository.
 
 ### Alternative: `npx skills`
 

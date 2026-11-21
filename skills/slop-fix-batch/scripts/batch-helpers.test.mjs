@@ -210,6 +210,17 @@ test('handoff distinguishes Plan Mode, preparation and recorded START; rejects p
   assert.throws(() => renderHandoff({ ...i, mode: 'execution', phase: 'start' }), /persisted assignment/);
   assert.throws(() => renderHandoff({ ...i, assignment: { ...assignment(), inspectedSha: 'main' } }), /SHA/);
 });
+test('handoff asks each worker to register its gh-bot-auth thread only in a bot batch', () => {
+  const i = { version: 1, mode: 'plan', role: 'investigation', phase: 'prepare', ledger: init(), assignment: assignment() };
+  assert.doesNotMatch(renderHandoff(i), /gh-bot-auth/);
+  const withContext = context => ({ ...i, ledger: { ...i.ledger, context: { ...i.ledger.context, ...context } } });
+  const text = renderHandoff(withContext({ githubAccount: 'gh-bot-auth', humanLogin: 'human' }));
+  assert.match(text, /## GitHub account\n\nThis batch uses the gh-bot-auth bot\. Run `gh-bot-auth activate --repo [\w.-]+\/[\w.-]+` as your first command/);
+  assert.match(text, /use the human login `human` instead of `@me`/);
+  assert.doesNotMatch(renderHandoff(withContext({ githubAccount: 'normal' })), /gh-bot-auth/);
+  assert.throws(() => renderHandoff(withContext({ githubAccount: 'other' })), /Unknown GitHub account mode/);
+  assert.throws(() => renderHandoff(withContext({ githubAccount: 'gh-bot-auth', humanLogin: 'a b' })), /Invalid human login/);
+});
 test('report distinguishes publication from closure and original worker SHA from publication head', () => {
   let l = ready(); let report = renderReport(l);
   assert.match(report, /closure unverified/); assert.ok(report.includes(sha)); assert.ok(report.includes(head));

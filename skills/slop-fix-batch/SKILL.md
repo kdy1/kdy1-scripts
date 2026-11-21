@@ -30,6 +30,15 @@ In Plan Mode, use [planning investigation and handoff](references/planning.md) b
 
 Large issues or groups should be split into reviewable, coherent PR units when each unit can be checked separately. Use construction’s [reviewable splits](references/construction.md#reviewable-splits) before assignment. Keep one group per PR, record complete issue coverage, and use `Refs` on intermediate parts and `Closes` only on the completion group. Do not impose a line/file threshold.
 
+## GitHub account
+
+Run the batch's GitHub work as a GitHub App bot when [`gh-bot-auth`](https://github.com/kdy1/kdy1-scripts/tree/main/tools/gh-bot-auth) is installed:
+
+- Before the first GitHub read of each invocation or resume, if `gh-bot-auth` is on `PATH`, run `gh-bot-auth activate --repo <owner/repo>` in the coordinator.
+- If it reports `active: true`, record `context.githubAccount: "gh-bot-auth"` and `context.humanLogin` in a new ledger, as the [runtime context contract](references/helpers.md#runtime-and-worker-settings) describes. Every rendered handoff then tells the worker to register its own thread. Do not use T3 Code `pull_request_*`, `create_issue`, `comment_on_issue`, or `set_issue_state` tools for GitHub writes, because they do not use the bot. `link_pull_request` only links a PR to the chat and stays as it is.
+- If the command is not on `PATH` or reports the reason `not configured`, continue with the normal `gh` account. Do not change the account of an existing ledger: a resumed `gh-bot-auth` ledger that cannot activate stops, and for a resumed ledger without `githubAccount: "gh-bot-auth"`, run `gh-bot-auth deactivate` and keep the normal account.
+- If it reports `active: false` for another reason, or fails, stop before any GitHub read and report the reason as a blocker.
+
 ## Shared execution constraints
 
 Record `context.runtime` as `codex` or `claude-code`; an absent field in an old ledger means `codex`. Resume that runtime without switching workers. Keep this skill in the coordinator conversation without `context: fork`. Resolve installed dependency/reference paths when needed; attachment requirements follow runtime policy and GitHub verification always applies.

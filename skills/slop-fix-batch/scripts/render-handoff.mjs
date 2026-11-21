@@ -74,6 +74,16 @@ function compactAssignment(assignment, referenced) {
   }
   return lines.join('\n');
 }
+// gh-bot-auth registers one agent thread. Codex subagents have their own
+// threads, so every handoff tells the worker to register its own thread.
+function githubAccountPolicy(ledger) {
+  const account = ledger.context?.githubAccount, human = ledger.context?.humanLogin;
+  check(account === undefined || ['normal', 'gh-bot-auth'].includes(account), 'Unknown GitHub account mode');
+  if (account !== 'gh-bot-auth') return '';
+  check(human === undefined || /^[A-Za-z0-9-]+$/.test(human), 'Invalid human login');
+  const repo = ledger.repository.split('/').slice(1).join('/');
+  return `\n\n## GitHub account\n\nThis batch uses the gh-bot-auth bot. Run \`gh-bot-auth activate --repo ${repo}\` as your first command in this phase, before any GitHub read or write. If it reports \`active: false\` or fails, stop and report the reason to the coordinator. Use \`gh\` and \`git\` for GitHub writes, not the T3 Code \`pull_request_*\` tools, which use the human account.${human ? ` In GitHub searches, use the human login \`${human}\` instead of \`@me\`.` : ''}`;
+}
 export function renderHandoff(input) {
   version(input); check(roles.includes(input.role), 'Unknown handoff role');
   check(['plan', 'execution'].includes(input.mode), 'Explicit mode required');
@@ -172,7 +182,7 @@ export function renderHandoff(input) {
     ...(a.groupId && ledger.groups[a.groupId] ? { publicationReferences: groupReferences(ledger, a.groupId) } : {}) }, null, 2)}\n\nComplete only the assigned group scope. Intermediate split layers use Refs; only the completion group uses Closes. Report each split issue across all its groups before claiming full implementation or merge.` : '';
   const linearIssues = ledger.fixedIssues.filter(i => issueKeys.has(i.key) && isLinear(i));
   const linearContext = linearIssues.length ? `\n\n## Linear issues\n\n${linearIssues.map(i => `- ${i.identifier}: ${i.url}`).join('\n')}\n\nRead these issues, their comments, relations and linked PRs with \`node ${linearHelper} read\` (input: version 1, workspace, identifiers) or the Linear tools. Do not write to Linear; the coordinator owns issue closure. In a PR body, reference a Linear issue by identifier: \`Closes ENG-123\` or \`Ref ENG-123\` (not \`Refs\`). Linear links a PR whose title or head branch contains an identifier and completes that issue on merge, so a PR title or branch must never contain an identifier that the PR only references.` : '';
-  return `# Slop Fix Batch: ${input.role} (${input.phase})\n\nMode: ${input.mode}\nRuntime: ${runtime}\nBatch: ${ledger.batchId}\nRepository: ${ledger.repository}\nOriginal human authorization: ${ledger.authorization}\nExact query: ${ledger.query}\n\n## Agent creation settings\n\nPass these fields to ${spawnTool} when creating this role. Keep the same agent for prepare and START.\n\n\x60\x60\x60json\n${JSON.stringify(spawnSettings, null, 2)}\n\x60\x60\x60\n\n${phase}\n\n${policy}\n\n${roleInstructions}\n\n${attachmentPolicy}\n\n## Recorded assignment\n\n${compactAssignment(a, referenced)}${splitContext}${linearContext}\n\nRead each referenced JSON field before acting; do not treat its summary as acceptance evidence. Report new facts, changes and blockers; keep complete results in batch-state files.\n`;
+  return `# Slop Fix Batch: ${input.role} (${input.phase})\n\nMode: ${input.mode}\nRuntime: ${runtime}\nBatch: ${ledger.batchId}\nRepository: ${ledger.repository}\nOriginal human authorization: ${ledger.authorization}\nExact query: ${ledger.query}\n\n## Agent creation settings\n\nPass these fields to ${spawnTool} when creating this role. Keep the same agent for prepare and START.\n\n\x60\x60\x60json\n${JSON.stringify(spawnSettings, null, 2)}\n\x60\x60\x60\n\n${phase}\n\n${policy}${githubAccountPolicy(ledger)}\n\n${roleInstructions}\n\n${attachmentPolicy}\n\n## Recorded assignment\n\n${compactAssignment(a, referenced)}${splitContext}${linearContext}\n\nRead each referenced JSON field before acting; do not treat its summary as acceptance evidence. Report new facts, changes and blockers; keep complete results in batch-state files.\n`;
 }
 // Package repeated long evidence without asking the coordinator to rebuild JSON/hash commands.
 export function packHandoff(input) {

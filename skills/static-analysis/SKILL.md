@@ -30,6 +30,15 @@ Statically analyze all code in `<Scope>`, find every bug, and register each one 
 - Preserve narrower user restrictions, including draft-only reporting. Creating, editing, planning, or testing this skill does not start analysis or issue recording.
 - Do not fix code, commit changes in the target repository, or mutate production. Use read-only analysis tools without autofix. Leave any required candidate verification to `$add-issue` under its own rules.
 
+## GitHub account
+
+Run GitHub reads and writes of the run as a GitHub App bot when [`gh-bot-auth`](https://github.com/kdy1/kdy1-scripts/tree/main/tools/gh-bot-auth) is installed:
+
+- Before the first GitHub read of each invocation, if `gh-bot-auth` is on `PATH`, run `gh-bot-auth activate --repo <owner/repo>` for the issue tracker repository in the coordinator.
+- If it reports `active: true`, put the GitHub account line of the [worker prompt](references/orchestration.md#worker-prompt) in each worker prompt, and tell `$add-issue` that the run uses `gh-bot-auth`. Do not use T3 Code `pull_request_*`, `create_issue`, or `comment_on_issue` tools for GitHub writes, because they do not use the bot.
+- If the command is not on `PATH` or reports the reason `not configured`, continue with the normal `gh` account.
+- If it reports `active: false` for another reason, or fails, stop before any GitHub read and report the reason as a blocker.
+
 ## Subagent orchestration
 
 Run the analysis with parallel read-only subagents. Delegation is the default execution model; a single-agent pass is a reported fallback, not the plan. Read [the orchestration contract](references/orchestration.md) before dispatch.

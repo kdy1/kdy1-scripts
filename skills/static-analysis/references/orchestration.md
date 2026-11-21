@@ -77,8 +77,10 @@ Repository: <absolute path>; revision: <commit SHA and branch>
 Issue tracker: <owner/repo>; duplicate search: python3 <skill-dir>/scripts/find-duplicates.py
 Scope: <unit paths and any cross-cutting contracts>
 Model target: <provider, model, and options evidence>
+GitHub account: <`gh-bot-auth activate --repo <owner/repo>` or `normal`>
 
 Rules:
+- If the GitHub account line names `gh-bot-auth activate`, run that command first, before any GitHub read. If it reports `active: false` or fails, stop and report the reason.
 - Read only. Do not edit, create, or delete files. Do not run autofix, formatters, or code generators.
 - Do not create, comment on, or update GitHub issues. Do not spawn subagents. Do not settle or archive any thread.
 - Analyze every assigned path. Follow data and control flow into callers, tests, and configuration as needed.

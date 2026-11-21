@@ -4,7 +4,7 @@ Read its activation/event sections for grants, then only the assigned execution 
 
 ## Activate, allocate and START
 
-The coordinator initializes the normal version-1 ledger, then applies `delegation-enable` with actual positive `capacity` and `evidence: {operationsClear: true, ownersReconciled: true, summary}` at an idle boundary. No active/reserved/uncertain assignment, active inventory pass, unreconciled publication/operation, pending alignment or maintenance ownership may remain. An existing building token can stay protected after its Git/catalog operations are verified idle. Keep capacity equal to the scheduler and the human/runtime limit. Activation does not authorize a different batch.
+The coordinator initializes the normal version-1 ledger, then applies `delegation-enable` with actual positive `capacity` and `evidence: {operationsClear: true, ownersReconciled: true, summary}` at an idle boundary. No active/reserved/uncertain assignment, active inventory pass, unreconciled publication/operation, pending alignment or maintenance ownership may remain. An existing building token can stay protected after its Git/catalog operations are verified idle. Keep capacity equal to the scheduler and within the human/runtime limit and the device resources measured under scheduling's [device resource capacity](scheduling.md#device-resource-capacity). Activation does not authorize a different batch.
 
 For each job:
 

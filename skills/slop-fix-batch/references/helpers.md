@@ -8,6 +8,7 @@ Each input document uses `version: 1`. JSON commands print one result; redirect 
 
 ```sh
 node /installed/slop-fix-batch/scripts/worker-settings.mjs investigation
+node /installed/slop-fix-batch/scripts/device-resources.mjs
 node /installed/slop-fix-batch/scripts/collect-issues.mjs /batch/selection-input.json
 node /installed/slop-fix-batch/scripts/batch-ledger.mjs init /batch/ledger.json /batch/init.json
 node /installed/slop-fix-batch/scripts/batch-ledger.mjs apply /batch/ledger.json /batch/event.json coordinator-id
@@ -27,6 +28,8 @@ node /installed/slop-fix-batch/scripts/batch-ledger.mjs resume /batch/ledger.jso
 ```
 
 `worker-settings.mjs <role>` takes a role name rather than a versioned input document and returns the three spawn settings as JSON. Unknown roles, incomplete options and duplicate options exit 1. Use these fields as actual spawn arguments under the [worker settings procedure](worker-prompts.md#worker-settings-and-context); the helper does not create an agent.
+
+`device-resources.mjs` takes no arguments and prints `version`, `platform`, `cpuCount`, the 1/5/15-minute `loadAverage`, `idleCpuEstimate` (CPU count minus the 1-minute load, minimum zero) and `memory` with total and available bytes and GiB. On Linux, available memory is `MemAvailable` from `/proc/meminfo`; elsewhere it is `os.freemem()`, which underestimates reclaimable cache. It only measures; the coordinator selects capacity under scheduling's [device resource capacity](scheduling.md#device-resource-capacity).
 
 Before the initial investigation and before pinning each new independent stack, the coordinator runs `batch-stack.mjs sync-base` with `{"version":1,"checkout":"/absolute/source/checkout","remote":"origin","targetBranch":"main"}`. Use the recorded target branch in `targetBranch`. Verify the remote identity before calling it. The helper fetches only `refs/heads/<target>` into `refs/remotes/<remote>/<target>`. It does not switch, merge, reset, or edit the source checkout, and it does not move any local branch. The state of the source checkout does not affect the result. Its `baseSha` is the SHA to pin and revalidate, and `remoteRef` names the updated remote-tracking ref. Create worktrees from `baseSha`, not from the local branch. Do not call it to change a base already pinned for an active stack.
 

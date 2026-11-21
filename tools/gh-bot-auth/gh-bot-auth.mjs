@@ -48,7 +48,7 @@ export function paths(env = process.env) {
 export function threadKey(env = process.env) {
   for (const [prefix, name] of [["codex", "CODEX_THREAD_ID"], ["t3", "T3CODE_THREAD_ID"]]) {
     const id = env[name];
-    if (id && /^[A-Za-z0-9._-]+$/.test(id)) return `${prefix}-${id}`;
+    if (id && /^[A-Za-z0-9._:-]+$/.test(id)) return `${prefix}-${id}`;
   }
   return null;
 }

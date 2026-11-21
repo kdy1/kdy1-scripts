@@ -41,7 +41,7 @@ case ${GH_BOT_AUTH:-} in
         key=t3-$T3CODE_THREAD_ID
     fi
     case $key in
-    '' | *[!A-Za-z0-9._-]*) ;;
+    '' | *[!A-Za-z0-9._:-]*) ;;
     *) [ -f "${XDG_STATE_HOME:-$HOME/.local/state}/gh-bot-auth/threads/$key" ] && active=1 ;;
     esac
     ;;

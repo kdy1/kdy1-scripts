@@ -45,6 +45,7 @@ function fakeGitHub({ installations = [{ id: 1, account: { login: "home" } }, { 
 test("threadKey prefers the Codex thread and rejects unsafe ids", () => {
   assert.equal(threadKey({ CODEX_THREAD_ID: "abc", T3CODE_THREAD_ID: "t" }), "codex-abc");
   assert.equal(threadKey({ T3CODE_THREAD_ID: "5730-ab" }), "t3-5730-ab");
+  assert.equal(threadKey({ T3CODE_THREAD_ID: "thread:project:a-1:b-2" }), "t3-thread:project:a-1:b-2");
   assert.equal(threadKey({ T3CODE_THREAD_ID: "../x" }), null);
   assert.equal(threadKey({}), null);
 });

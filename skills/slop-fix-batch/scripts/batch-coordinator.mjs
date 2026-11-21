@@ -9,11 +9,13 @@ import { plan } from './batch-scheduler.mjs';
 import { packHandoff, renderHandoff } from './render-handoff.mjs';
 import { workerSettings } from './worker-settings.mjs';
 import { ledgerRuntime } from './runtime.mjs';
+import { roleLanes } from './batch-delegation.mjs';
+import { mergerStatus } from './batch-merger.mjs';
 
 const hash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const pick = (value, keys) => Object.fromEntries(keys.filter(k => value?.[k] !== undefined).map(k => [k, value[k]]));
 const pointer = (path, field) => ({ path, field });
-const laneFor = role => role === 'stack-execution' ? 'publication' : role;
+const laneFor = role => roleLanes[role] ?? role;
 // Observation timestamps and evidence locations may refresh without a state change.
 function semantic(value) {
   if (Array.isArray(value)) return value.map(semantic);
@@ -50,9 +52,12 @@ export function coordinatorView(ledger, { ledgerPath, requestState, at }) {
   const remoteAllowed = api.known && api.retryAt === null;
   const stopped = ledger.maintenance?.state === 'stopped';
   let scheduling = { allocations: [], mergeCandidates: [], accounting: null }, schedulerError = null, snapshot = null;
+  const merger = mergerStatus(ledger, at);
   try {
     check(ledger.scheduler, 'Missing coordinator scheduling observations');
     snapshot = schedulingSnapshot(ledger);
+    // The merger outranks every other allocation; it takes the next free slot.
+    if (merger.needed && !snapshot.tasks.some(t => t.id === merger.taskId)) snapshot.tasks.push({ id: merger.taskId, stack: 'batch:merger', lane: 'maintenance', status: 'pending', eligible: true, requires: [], estimate: 'short' });
     if (!remoteAllowed || stopped) snapshot.tasks = snapshot.tasks.map(t => ({ ...t, eligible: t.eligible && !stopped && !remoteLanes.has(t.lane) }));
     scheduling = plan(snapshot);
   } catch (error) { schedulerError = error.message; }
@@ -78,7 +83,7 @@ export function coordinatorView(ledger, { ledgerPath, requestState, at }) {
   }]));
   const tasks = Object.fromEntries((ledger.scheduler?.tasks ?? []).map(t => [t.id, pick(t, ['id', 'stack', 'lane', 'status', 'eligible', 'requires', 'mergeablePrCount', 'blocker', 'reason'])]));
   const control = {
-    implementationEnded: ledger.implementationEnded, management: pick(ledger.maintenance, ['state', 'management']),
+    implementationEnded: ledger.implementationEnded, management: pick(ledger.maintenance, ['state', 'management']), merger,
     schedulerError, planEvidence: pointer(join(dirname(ledgerPath), 'coordinator-plan.json'), 'plan'), allocations: scheduling.allocations, mergeCandidates: scheduling.mergeCandidates,
     accounting: scheduling.accounting, api,
     checkpoints: { fullDue: cp.fullDue, dueStacks: cp.dueStacks, pending: ledger.checkpoints.pending.map(e => e.id),
@@ -171,6 +176,7 @@ export function dispatch(phase, input) {
       check(r?.id === a.assignmentId && r.role === input.role && r.lane === laneFor(input.role), 'Reservation identity/role mismatch');
       check(r.status === 'reserved' && !r.worker && !a.worker, 'Preparation requires an unstarted reservation');
       check(r.worktree === a.checkout && r.startSha === a.startSha && r.stackId === a.stackId && r.groupId === a.groupId, 'Reservation scope/checkout/SHA mismatch');
+      check(r.mergeOwner === a.mergeOwner, 'Reservation merge owner mismatch');
       check((r.complexity ?? 'standard') === (a.complexity ?? 'standard') && r.complexityReason === a.complexityReason, 'Reservation settings mismatch');
       event('assignment', r);
     } else {
@@ -183,7 +189,7 @@ export function dispatch(phase, input) {
       const prior = readJson(prep.coordinatorDispatch.handoffPath);
       check(hash(prior) === prep.coordinatorDispatch.handoffHash, 'Prepared handoff changed');
       check(ledgerRuntime(prior.ledger) === ledgerRuntime(ledger), 'Prepared runtime changed');
-      for (const field of ['scope', 'acceptance', 'issueKeys', 'branch', 'commits', 'coordinationId', 'stackOwner', 'complexity', 'complexityReason']) {
+      for (const field of ['scope', 'acceptance', 'issueKeys', 'branch', 'commits', 'coordinationId', 'stackOwner', 'mergeOwner', 'complexity', 'complexityReason']) {
         check(isDeepStrictEqual(prior.assignment[field], a[field]), `START changed prepared ${field}`);
       }
       event('assignment', { ...old, worker: a.worker, status: 'active' });

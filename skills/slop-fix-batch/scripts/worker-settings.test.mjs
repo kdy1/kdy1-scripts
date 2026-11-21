@@ -12,6 +12,7 @@ const expected = {
   implementation: ['gpt-6-sol', 'high'],
   'stack-execution': ['gpt-6-sol', 'medium'],
   maintenance: ['gpt-6-sol', 'medium'],
+  merger: ['gpt-6-sol', 'medium'],
   inventory: ['gpt-5.6-luna', 'low'],
   repair: ['gpt-5.6-luna', 'high'],
 };

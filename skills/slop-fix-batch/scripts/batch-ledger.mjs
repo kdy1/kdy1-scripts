@@ -7,7 +7,7 @@ import { LINEAR_ID, isLinear, issueReference } from './issue-refs.mjs';
 import { ledgerRuntime, matchRuntime, runtimeName } from './runtime.mjs';
 import { workerSettings } from './worker-settings.mjs';
 import { rankTasks } from './batch-scheduler.mjs';
-import { delegationSafeBoundary, validateDelegation, grantDelegation, authorizeSubmission, authorizeEvent, closeGrants, unresolvedOperations } from './batch-delegation.mjs';
+import { delegationSafeBoundary, validateDelegation, grantDelegation, authorizeSubmission, authorizeEvent, closeGrants, unresolvedOperations, retainsMergeEffects } from './batch-delegation.mjs';
 const safeId = value => { nonempty(value, 'id'); check(!['__proto__', 'constructor', 'prototype'].includes(value), 'Unsafe id'); return value; };
 // Legacy ledgers recorded skipped validation as 'not-performed'; it stays readable but cannot enter or publish a layer.
 function validateRealWorld(layer, legacyAllowed) {
@@ -159,7 +159,8 @@ export function applyEvent(ledger, event, owner) {
       const g = next.delegation?.grants[event.grantId]; check(g && g.status === 'active', 'No active grant');
       check(event.ownerStopped === true && event.operationsClear === true && event.remoteReconciled === true, 'Revoke requires stopped-owner and reconciliation proof');
       nonempty(event.evidence, 'revocation evidence');
-      check(!g.stackIds.some(id => unresolvedOperations(next.stacks[id]) || next.stacks[id].outstandingEffects || next.stacks[id].alignmentPending || next.stacks[id].ownershipActive), 'Reconcile operation attempts and stack effects before revocation');
+      // A replaced merger leaves verified auto-merge waits to the same stable merge owner.
+      check(!g.stackIds.some(id => g.role === 'merger' ? retainsMergeEffects(next.stacks[id], g.role) : unresolvedOperations(next.stacks[id]) || next.stacks[id].outstandingEffects || next.stacks[id].alignmentPending || next.stacks[id].ownershipActive), 'Reconcile operation attempts and stack effects before revocation');
       check(!g.childAssignmentIds.some(id => next.assignments[id].status !== 'finished'), 'Reconcile allocated children before revocation');
       const a = next.assignments[g.assignmentId]; a.status = 'finished'; a.slots = 0; a.outcome = 'cancelled'; a.evidence = event.evidence;
       if (next.checkpoints.active?.ownerGrant === g.id) check(false, 'Finish/reconcile inventory pass before revocation');
@@ -393,7 +394,8 @@ export function submitEvents(ledger, input) {
   let next = structuredClone(ledger);
   const at = new Date(Math.max(Date.parse(input.at), Date.parse(ledger.events.at(-1)?.at ?? input.at))).toISOString();
   input.events.forEach((payload, index) => {
-    authorizeEvent(next, grant, payload);
+    // The merger grant can gain stacks, so authorize against the current copy.
+    authorizeEvent(next, next.delegation.grants[grant.id], payload);
     check(next.delegation.grants[grant.id].status === 'active', 'Terminal assignment must be last in submission');
     const e = { ...payload, id: `delegate:${grant.id}:${grant.generation}:${input.sequence}:${index}`, expectedRevision: next.revision, at,
       delegated: { grantId: grant.id, assignmentId: grant.assignmentId, worker: input.worker, generation: input.generation, sequence: input.sequence } };

@@ -4,11 +4,16 @@ import { check, nonempty, sha } from './helper-common.mjs';
 export const roleEvents = {
   'stack-execution': ['layer', 'publication-attempt', 'publication', 'coordination', 'ready', 'hold', 'operation', 'assignment', 'checkpoint'],
   maintenance: ['stack-observation', 'coordination', 'operation', 'assignment', 'checkpoint'],
+  merger: ['stack-observation', 'coordination', 'operation', 'assignment', 'checkpoint'],
   inventory: ['checkpoint', 'assignment'],
 };
+export const roleLanes = { 'stack-execution': 'publication', maintenance: 'maintenance', merger: 'maintenance', inventory: 'inventory' };
+// The merger and inventory roles are not bound to one stack when granted.
+const unboundRoles = new Set(['inventory', 'merger']);
+const mergeRoles = new Set(['maintenance', 'merger']);
 export const occupied = a => a.status !== 'finished';
 export const unresolvedOperations = s => Object.values(s.operations ?? {}).some(o => o.status === 'uncertain');
-function verifiedAutoMergeWait(s) {
+export function verifiedAutoMergeWait(s) {
   const op = Object.values(s.operations ?? {}).at(-1), observation = s.maintenance;
   const observedHead = observation?.headSha ?? observation?.prs?.find(p => p.url === s.layers?.[0]?.url)?.headSha;
   // A confirmed external wait retains the stack token, not a running actor.
@@ -28,6 +33,11 @@ function resumesAutoMergeWait(s, assignment) {
     && resume.token === s.coordination.token
     && resume.operationId === Object.values(s.operations).at(-1).id;
 }
+// A merge actor may return its slot while a verified auto-merge wait keeps the stack token.
+export function retainsMergeEffects(s, role) {
+  return unresolvedOperations(s) || s.alignmentPending || (s.publicationAttempt && !s.publicationAttempt.reconciled)
+    || ((s.outstandingEffects || s.ownershipActive) && !(mergeRoles.has(role) && verifiedAutoMergeWait(s)));
+}
 export function delegationSafeBoundary(ledger, evidence) {
   check(!Object.values(ledger.assignments).some(occupied) && !ledger.checkpoints.active, 'Delegation activation requires idle assignments and inventory');
   check(Object.values(ledger.stacks).every(s => !s.outstandingEffects && !s.alignmentPending && !s.ownershipActive && !unresolvedOperations(s) && (!s.publicationAttempt || s.publicationAttempt.reconciled)), 'Reconcile effects and ownership before delegation activation');
@@ -38,19 +48,20 @@ export function validateDelegation(ledger) {
   const d = ledger.delegation;
   if (!d) return;
   check(d.version === 1 && Number.isSafeInteger(d.capacity) && d.capacity > 0 && d.grants && d.receipts, 'Invalid delegation state');
-  const busyStacks = new Set(); let inventory = false;
+  const busyStacks = new Set(); let inventory = false, merger = false, maintenance = false;
   for (const g of Object.values(d.grants)) {
     nonempty(g.id, 'grant id'); check(!['__proto__', 'constructor', 'prototype'].includes(g.id), 'Unsafe grant id'); nonempty(g.worker, 'grant worker');
     check(roleEvents[g.role] && Number.isSafeInteger(g.generation) && g.generation > 0, 'Invalid grant role/generation');
     check(['active', 'finished', 'revoked'].includes(g.status), 'Invalid grant status');
     check(Number.isSafeInteger(g.sequence) && g.sequence >= 0, 'Invalid grant sequence');
-    check(Array.isArray(g.stackIds) && g.stackIds.length && new Set(g.stackIds).size === g.stackIds.length && g.stackIds.every(id => ledger.stacks[id]), 'Invalid grant stacks');
-    check(g.role === 'inventory' || g.stackIds.length === 1, 'Execution grant must cover exactly one stack');
+    check(Array.isArray(g.stackIds) && (g.stackIds.length || g.role === 'merger') && new Set(g.stackIds).size === g.stackIds.length && g.stackIds.every(id => ledger.stacks[id]), 'Invalid grant stacks');
+    check(unboundRoles.has(g.role) || g.stackIds.length === 1, 'Execution grant must cover exactly one stack');
     check(Array.isArray(g.allowedEvents) && g.allowedEvents.length && g.allowedEvents.every(t => roleEvents[g.role].includes(t)), 'Invalid grant event permissions');
     const a = ledger.assignments[g.assignmentId];
     check(a && a.worker === g.worker && a.role === g.role, 'Grant assignment identity mismatch');
-    check(a.lane === ({ 'stack-execution': 'publication', maintenance: 'maintenance', inventory: 'inventory' })[g.role], 'Grant lane mismatch');
-    check(g.stackIds.includes(a.stackId) || g.role === 'inventory', 'Grant assignment stack mismatch');
+    check(a.lane === roleLanes[g.role], 'Grant lane mismatch');
+    check(unboundRoles.has(g.role) || g.stackIds.includes(a.stackId), 'Grant assignment stack mismatch');
+    if (g.role === 'merger') { check(a.stackId === undefined, 'Merger assignment is not bound to one stack'); nonempty(a.mergeOwner, 'stable merge owner'); }
     if (g.role === 'stack-execution') check(ledger.stacks[a.stackId].groups.includes(a.groupId), 'Missing assigned execution group');
     check(Array.isArray(g.childAssignmentIds) && (g.role === 'maintenance' || g.childAssignmentIds.length === 0), 'Invalid child allocation');
     for (const id of g.childAssignmentIds) {
@@ -60,6 +71,9 @@ export function validateDelegation(ledger) {
     if (g.status !== 'active') continue;
     check(a.status !== 'finished', 'Active grant has terminal assignment');
     if (g.role === 'inventory') { check(!inventory, 'Only one inventory owner permitted'); inventory = true; continue; }
+    if (g.role === 'merger') { check(!merger, 'Only one merger permitted'); merger = true; }
+    if (g.role === 'maintenance') maintenance = true;
+    check(!(merger && maintenance), 'Merger and per-stack maintenance grants cannot both be active');
     for (const id of g.stackIds) { check(!busyStacks.has(id), 'Stack has another execution owner'); busyStacks.add(id); }
   }
   const used = Object.values(ledger.assignments).filter(occupied).reduce((n, a) => n + a.slots, 0) + (ledger.scheduler?.otherOccupiedSlots ?? 0);
@@ -70,7 +84,15 @@ export function grantDelegation(ledger, value) {
   check(value && !ledger.delegation.grants[value.id], 'Grant id already used');
   const a = ledger.assignments[value.assignmentId];
   check(a && ['reserved', 'active'].includes(a.status) && a.worker === value.worker && a.role === value.role, 'Persist actual assignment identity before grant');
-  check((value.role === 'inventory' || value.stackIds?.includes(a.stackId)), 'Grant scope differs from assignment');
+  check(unboundRoles.has(value.role) || value.stackIds?.includes(a.stackId), 'Grant scope differs from assignment');
+  if (value.role === 'merger') {
+    // Stacks join a merger grant only through its own scoped events.
+    check(Array.isArray(value.stackIds) && value.stackIds.length === 0 && !value.childAssignmentIds?.length, 'Merger grant starts without stacks or children');
+    // The merger stays active for the whole batch, so construction needs another slot.
+    check(ledger.delegation.capacity >= 2, 'Merger needs capacity of at least two');
+    const previous = Object.values(ledger.assignments).filter(x => x.role === 'merger' && x.id !== a.id);
+    check(previous.every(x => x.mergeOwner === a.mergeOwner), 'Merger replacement must keep the stable merge owner');
+  }
   check(value.stackIds?.every(id => {
     const s = ledger.stacks[id];
     if (!s) return false;
@@ -81,7 +103,7 @@ export function grantDelegation(ledger, value) {
   }), 'Reconcile prior stack effects before assigning a new actor');
   if (value.role === 'stack-execution') check(ledger.stacks[a.stackId]?.phase === 'building', 'Execution requires building stack');
   if (value.role === 'maintenance') check(ledger.stacks[a.stackId]?.phase === 'ready', 'Maintenance requires ready stack');
-  check(Object.values(ledger.delegation.grants).filter(g => g.role === value.role && g.stackIds.some(id => value.stackIds.includes(id))).every(g => value.generation > g.generation), 'Grant generation must advance on replacement');
+  check(Object.values(ledger.delegation.grants).filter(g => g.role === value.role && (g.role === 'merger' || g.stackIds.some(id => value.stackIds.includes(id)))).every(g => value.generation > g.generation), 'Grant generation must advance on replacement');
   ledger.delegation.grants[value.id] = { ...value, status: 'active', sequence: 0, childAssignmentIds: value.childAssignmentIds ?? [] };
   validateDelegation(ledger);
 }
@@ -111,12 +133,7 @@ export function authorizeEvent(ledger, g, e) {
     }
     check(isDeepStrictEqual(candidate, original), 'Assignment scope/identity/slots cannot change');
     if (a.id === g.assignmentId && e.value.status === 'finished') {
-      if (g.role !== 'inventory') check(!g.stackIds.some(id => {
-        const s = ledger.stacks[id];
-        return unresolvedOperations(s) || s.alignmentPending
-          || (s.publicationAttempt && !s.publicationAttempt.reconciled)
-          || ((s.outstandingEffects || s.ownershipActive) && !(g.role === 'maintenance' && verifiedAutoMergeWait(s)));
-      }), 'Unreconciled effects retain actor slot');
+      if (g.role !== 'inventory') check(!g.stackIds.some(id => retainsMergeEffects(ledger.stacks[id], g.role)), 'Unreconciled effects retain actor slot');
       check(!g.childAssignmentIds.some(id => ledger.assignments[id].status !== 'finished'), 'Allocated repair children must be reconciled before parent completion');
       check(ledger.checkpoints.active?.ownerGrant !== g.id, 'Finish inventory pass before returning slot');
     }
@@ -131,19 +148,39 @@ export function authorizeEvent(ledger, g, e) {
       if (c.type === 'start') check(Array.isArray(c.prs) && c.prs.every(url => urls.includes(url)), 'Inventory includes unassigned PR');
       else check(ledger.checkpoints.active?.ownerGrant === g.id && c.passId === ledger.checkpoints.active.id, 'Cannot finish another inventory pass');
     } else {
+      if (g.role === 'merger') joinMergerStack(ledger, g, c?.stackId);
       check(['enqueue', 'invalidate', 'candidate'].includes(c?.type) && g.stackIds.includes(c.stackId), 'Checkpoint outside assigned stack');
       if (c.type === 'candidate') check(Array.isArray(c.prs) && c.prs.every(p => ledger.stacks[c.stackId].layers.some(l => l.url === (typeof p === 'string' ? p : p.url))), 'Candidate contains unassigned PR');
     }
     return;
   }
+  if (g.role === 'merger') joinMergerStack(ledger, g, e.stackId);
   check(g.stackIds.includes(e.stackId), 'Event outside assigned stack');
   const s = ledger.stacks[e.stackId];
   if (g.role === 'stack-execution') {
     check(s.phase === 'building', 'Construction grant cannot mutate ready/held stack');
     if (e.type === 'layer') check(e.value?.groupId === ledger.assignments[g.assignmentId].groupId, 'Layer differs from assigned group');
-  } else check(g.role === 'maintenance' && s.phase === 'ready', 'Maintenance grant cannot mutate building/held stack');
-  if (e.type === 'coordination') check(e.value?.phase === (g.role === 'maintenance' ? 'ready' : e.value?.phase) && ['building', 'ready'].includes(e.value?.phase), 'Invalid delegated coordination phase');
-  if (e.type === 'operation') { nonempty(e.value?.id, 'operation id'); sha(e.value?.headSha); }
+  } else check(mergeRoles.has(g.role) && s.phase === 'ready', 'Maintenance grant cannot mutate building/held stack');
+  if (e.type === 'coordination') check(e.value?.phase === (mergeRoles.has(g.role) ? 'ready' : e.value?.phase) && ['building', 'ready'].includes(e.value?.phase), 'Invalid delegated coordination phase');
+  if (e.type === 'operation') {
+    nonempty(e.value?.id, 'operation id'); sha(e.value?.headSha);
+    // A coordinator-reserved repair owns the stack; the merger only reconciles earlier attempts.
+    if (g.role === 'merger' && !s.operations?.[e.value.id]) check(!Object.values(ledger.assignments).some(x => x.lane === 'repair' && x.stackId === s.id && x.status !== 'finished'), 'Active repair blocks new merge operations');
+  }
+}
+// The single merger covers every ready stack. A stack joins its grant on the
+// first scoped event, so the coordinator never has to extend the grant itself.
+function joinMergerStack(ledger, g, stackId) {
+  if (typeof stackId !== 'string' || g.stackIds.includes(stackId)) return;
+  const s = ledger.stacks[stackId];
+  check(s?.phase === 'ready', 'Merger acts only on ready stacks');
+  check(!Object.values(ledger.delegation.grants).some(x => x.status === 'active' && x.id !== g.id && x.role !== 'inventory' && x.stackIds.includes(stackId)), 'Stack has another execution owner');
+  const owner = ledger.assignments[g.assignmentId].mergeOwner;
+  const clean = !unresolvedOperations(s) && !s.outstandingEffects && !s.alignmentPending && !s.ownershipActive;
+  // Effects retained by an earlier merger generation belong to the same stable owner.
+  const inherited = s.coordination?.owner === owner && Object.values(s.operations ?? {}).every(o => o.status !== 'uncertain' || o.owner === owner);
+  check(clean || inherited, 'Reconcile prior stack effects before assigning a new actor');
+  g.stackIds.push(stackId);
 }
 export function closeGrants(ledger) {
   if (!ledger.delegation) return;

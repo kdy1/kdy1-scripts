@@ -39,6 +39,12 @@ A collection of standalone [T3 Chat skills](./skills) for GitHub, product planni
 | `write-prd` | Capture product decisions and create an implementation-ready GitHub issue. |
 | `write-ste` | Automatically apply practical ASD-STE100 clarity principles to technical text while preserving its language and meaning. |
 
+## Tools
+
+| Tool | Purpose |
+| --- | --- |
+| [`gh-bot-auth`](./tools/gh-bot-auth) | Make `gh` and `git` act as a GitHub App bot in registered agent threads, with installation tokens for each repository owner. `static-analysis` and `slop-fix-batch` register their threads when it is installed. |
+
 ## Install for T3 Chat
 
 T3 Chat exposes the skills discovered by the selected provider. Install each skill as a directory containing `SKILL.md` in a location that provider scans. The examples below use `.agents/skills` for project skills and `~/.agents/skills` for user-wide skills; use `.claude/skills` or `~/.claude/skills` for Claude Code.

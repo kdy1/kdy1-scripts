@@ -1,6 +1,6 @@
 ---
 name: maintain-device
-description: Maintain this machine in two parts. Free disk space until the volume has at least 400 GB free (or a requested target), by removing regenerable build output from idle agent worktrees and batch runs, safe tool caches and old unused Docker images, idle build output in the user's own projects, and finally clean old agent worktrees. Archive T3 Code automation threads, which scheduled tasks started, after 48 hours without activity. Run without questions and settle the T3 Code thread when both parts are complete. Start only on explicit `$maintain-device` invocation or a direct human request to run Maintain Device, free disk space, or archive old automation threads.
+description: Maintain this machine in two parts. Free disk space until at least 50% of the volume's capacity is free (for example 1 TB on a 2 TB volume), or a requested target, by removing regenerable build output from idle agent worktrees and batch runs, safe tool caches and old unused Docker images, idle build output in the user's own projects, and finally clean old agent worktrees. Archive T3 Code automation threads, which scheduled tasks started, after 48 hours without activity. Run without questions and settle the T3 Code thread when both parts are complete. Start only on explicit `$maintain-device` invocation or a direct human request to run Maintain Device, free disk space, or archive old automation threads.
 ---
 
 # Maintain Device
@@ -40,15 +40,15 @@ Use Python 3.9+. Resolve the script path relative to this skill directory.
 1. Check the current state:
 
    ```sh
-   python3 scripts/disk_cleanup.py status --target-gb 400 --json
+   python3 scripts/disk_cleanup.py status --json
    ```
 
-   The helper uses decimal GB, as Finder and `diskutil` do, and reads free space from the volume that contains `$HOME`. If `met` is `true`, delete nothing. Note the free space and go to **Archive automation threads**.
+   The default target is 50% of the capacity of the volume that contains `$HOME`, so a 2 TB volume must have 1 TB free after the run. The helper reads the capacity (`totalBytes`) and free space from that volume and reports sizes in decimal GB, as Finder and `diskutil` do. If the human states a different target, pass it as `--target-percent <percent>` or `--target-gb <GB>`, in both commands. If `met` is `true`, delete nothing. Note the free space and go to **Archive automation threads**.
 
 2. Clean until the target is met:
 
    ```sh
-   python3 scripts/disk_cleanup.py run --target-gb 400 --json
+   python3 scripts/disk_cleanup.py run --json
    ```
 
    The helper performs the tiers in order. It checks free space after each deletion or cache command and stops as soon as the target is met. `--worktree-idle-hours` (default 72) and `--docker-image-idle-hours` (default 168) change the thresholds of tier 4 and of unused Docker images. Use them only if the human states a different threshold. Exit code `0` means the target is met. Exit code `2` means the allowed scope did not free enough space. A large run can take many minutes, so run it in the background and wait for it with `t3_background_wait` when that is available. Do not interrupt a run while it deletes files.
@@ -94,7 +94,7 @@ Archive a thread in scope even if it is not settled. The 48-hour rule is the hum
 ## Completion
 
 - Report briefly:
-  - Disk cleanup: free space before and after, the target, whether it was met, the space freed per tier, the largest removed items, skip counts by reason, and any errors. For a run where the target was already met, report only the free space and the target.
+  - Disk cleanup: free space before and after, the target and the volume capacity, whether it was met, the space freed per tier, the largest removed items, skip counts by reason, and any errors. For a run where the target was already met, report only the free space and the target.
   - Automation threads: the number of archived threads per scheduled task, the titles of archived threads that were not settled, skip counts by reason, and any failed archives.
 - Then apply [$auto-settle-t3-thread](../auto-settle-t3-thread/SKILL.md). It owns the settlement procedure and result reporting. The Maintain Device conditions are:
   - Standalone task: this skill was the first substantive human task of the thread, and maintenance remains its only task.

@@ -1,7 +1,7 @@
 interface:
   display_name: "Maintain Device"
-  short_description: "Free disk space to 400 GB and archive automation threads idle for 48 hours"
-  default_prompt: "Use $maintain-device to free disk space until at least 400 GB is free, removing only regenerable build output, caches, old unused Docker images, and old clean agent worktrees, and to archive T3 Code automation threads idle for at least 48 hours, without asking questions, and settle the thread when both parts are complete."
+  short_description: "Free half of the disk and archive automation threads idle for 48 hours"
+  default_prompt: "Use $maintain-device to free disk space until at least 50% of the volume capacity is free, removing only regenerable build output, caches, old unused Docker images, and old clean agent worktrees, and to archive T3 Code automation threads idle for at least 48 hours, without asking questions, and settle the thread when both parts are complete."
 
 policy:
   allow_implicit_invocation: false

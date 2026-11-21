@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Free disk space by removing regenerable build output and tool caches until a target is met."""
+"""Free disk space by removing regenerable build output and tool caches until a target is met.
+
+The default target is half of the volume's capacity: a 2 TB volume must have 1 TB free.
+"""
 
 import argparse
 from concurrent.futures import ThreadPoolExecutor
@@ -28,6 +31,7 @@ AGENT_IDLE_HOURS = 24
 PROJECT_IDLE_HOURS = 24 * 7
 WORKTREE_IDLE_HOURS = 24 * 3
 DOCKER_IMAGE_IDLE_HOURS = 24 * 7
+DEFAULT_TARGET_PERCENT = 50
 NODE_ARTIFACTS = {".next", ".nuxt", ".parcel-cache", ".svelte-kit", ".turbo", "node_modules"}
 ARTIFACT_NAMES = NODE_ARTIFACTS | {"target", ".build"}
 SKIP_DESCEND = {".git", ".hg", ".svn"}
@@ -57,6 +61,18 @@ def expand(path):
 
 def free_bytes(path):
     return shutil.disk_usage(path).free
+
+
+def total_bytes(path):
+    return shutil.disk_usage(path).total
+
+
+def target_bytes(volume, target_gb=None, target_percent=None):
+    """An explicit GB target wins; otherwise the target is a percentage of the volume's capacity."""
+    if target_gb is not None:
+        return int(target_gb * GB)
+    percent = DEFAULT_TARGET_PERCENT if target_percent is None else target_percent
+    return int(total_bytes(volume) * percent / 100)
 
 
 def mtime(path):
@@ -550,6 +566,7 @@ class Cleaner:
         return {
             "dryRun": self.dry_run,
             "volume": str(self.volume),
+            "totalBytes": total_bytes(self.volume),
             "targetBytes": self.target,
             "initialFreeBytes": self.initial,
             "finalFreeBytes": final,
@@ -594,7 +611,11 @@ def summary(report, top=10):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=["status", "run"])
-    parser.add_argument("--target-gb", type=float, default=400, help="required free space in decimal GB")
+    target_group = parser.add_mutually_exclusive_group()
+    target_group.add_argument("--target-percent", type=float,
+                              help=f"required free space as a percentage of the volume's capacity "
+                                   f"(default {DEFAULT_TARGET_PERCENT})")
+    target_group.add_argument("--target-gb", type=float, help="required free space in decimal GB")
     parser.add_argument("--volume", default=os.path.expanduser("~"), help="path on the volume to measure")
     parser.add_argument("--dry-run", action="store_true", help="measure candidates without deleting")
     parser.add_argument("--exclude", action="append", default=[], help="never touch this path")
@@ -605,11 +626,16 @@ def main(argv=None):
     parser.add_argument("--skipped-limit", type=int, default=50)
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
+    if args.target_percent is not None and not 0 < args.target_percent <= 100:
+        parser.error("--target-percent must be greater than 0 and at most 100")
+    if args.target_gb is not None and args.target_gb <= 0:
+        parser.error("--target-gb must be greater than 0")
 
-    target = int(args.target_gb * GB)
+    target = target_bytes(args.volume, args.target_gb, args.target_percent)
     if args.command == "status":
         free = free_bytes(args.volume)
-        status = {"volume": args.volume, "targetBytes": target, "freeBytes": free, "met": free >= target}
+        status = {"volume": args.volume, "totalBytes": total_bytes(args.volume), "targetBytes": target,
+                  "freeBytes": free, "met": free >= target}
         print(json.dumps(status) if args.json else
               f"free {gb(free)} (target {gb(target)}, {'met' if status['met'] else 'NOT met'})")
         return 0

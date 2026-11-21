@@ -1,5 +1,6 @@
 """Offline checks on temporary directories only; no real caches or checkouts are touched."""
 
+import json
 import os
 from pathlib import Path
 import shutil
@@ -313,6 +314,34 @@ class DockerImageTest(unittest.TestCase):
                 patch.object(cleanup, "DERIVED_DATA", "/nonexistent"):
             cleanup.Cleaner(1, "/", False, [], docker_image_hours=168).tool_caches()
         self.assertIn(["docker", "image", "prune", "-af", "--filter", "until=168h"], commands)
+
+
+class TargetTest(unittest.TestCase):
+    def status(self, *args):
+        output = []
+        with patch.object(cleanup, "total_bytes", return_value=2000 * cleanup.GB), \
+                patch.object(cleanup, "free_bytes", return_value=900 * cleanup.GB), \
+                patch("builtins.print", side_effect=output.append):
+            code = cleanup.main(["status", "--json", *args])
+        return code, json.loads(output[0])
+
+    def test_default_target_is_half_of_capacity(self):
+        code, status = self.status()
+        self.assertEqual(code, 0)
+        self.assertEqual(status["totalBytes"], 2000 * cleanup.GB)
+        self.assertEqual(status["targetBytes"], 1000 * cleanup.GB)
+        self.assertFalse(status["met"])
+
+    def test_percent_and_gb_overrides(self):
+        self.assertEqual(self.status("--target-percent", "40")[1]["targetBytes"], 800 * cleanup.GB)
+        self.assertTrue(self.status("--target-percent", "40")[1]["met"])
+        self.assertEqual(self.status("--target-gb", "400")[1]["targetBytes"], 400 * cleanup.GB)
+
+    def test_invalid_targets_are_rejected(self):
+        for args in (["--target-percent", "0"], ["--target-percent", "101"], ["--target-gb", "0"],
+                     ["--target-percent", "50", "--target-gb", "400"]):
+            with self.assertRaises(SystemExit), patch("sys.stderr"):
+                cleanup.main(["status", *args])
 
 
 if __name__ == "__main__":

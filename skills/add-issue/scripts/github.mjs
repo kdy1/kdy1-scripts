@@ -35,7 +35,17 @@ export class GitHub {
     throw new Error('GitHub pagination bound reached');
   }
   get prefix() { return `repos/${this.target.repo}`; }
-  identity() { return this.api('user').login; }
+  // A gh-bot-auth installation token cannot read GET /user. In a thread that
+  // gh-bot-auth registered, the authenticated account is the bot login.
+  identity() {
+    try { return this.api('user').login; }
+    catch (e) {
+      const r = this.transport('gh-bot-auth', ['status', '--json'], { env: process.env });
+      let status = null; try { status = r.ok ? JSON.parse(r.stdout) : null; } catch { status = null; }
+      if (status?.active === true && typeof status.login === 'string' && status.login) return status.login;
+      throw e;
+    }
+  }
   repository() { return this.api(this.prefix); }
   capabilities() {
     const capabilities = {};

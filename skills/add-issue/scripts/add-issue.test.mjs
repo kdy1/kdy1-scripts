@@ -682,3 +682,11 @@ test('refresh keeps other candidates unchanged and preserves their completed led
   assert.equal(record(input(s), { client: gh.client() }).outcomes[0].status, 'verified');
   assert.equal(gh.writes().length, writes);
 });
+
+test('identity uses the gh-bot-auth bot login only when GET /user fails in a registered thread', () => {
+  const transport = (status) => (program, args) => program === 'gh-bot-auth' ? { ok: true, stdout: JSON.stringify(status) } : args.includes('user') ? { ok: false, stdout: '', httpStatus: 403 } : { ok: true, stdout: '{}' };
+  assert.equal(new GitHub(target, { transport: transport({ active: true, login: 'my-bot[bot]' }) }).identity(), 'my-bot[bot]');
+  assert.throws(() => new GitHub(target, { transport: transport({ active: false, login: 'my-bot[bot]' }) }).identity(), /unavailable: user/);
+  assert.throws(() => new GitHub(target, { transport: () => ({ ok: false, stdout: '' }) }).identity(), /unavailable: user/);
+  assert.equal(new GitHub(target, { transport: (program) => program === 'gh-bot-auth' ? assert.fail('not needed') : { ok: true, stdout: JSON.stringify({ login: 'human' }) } }).identity(), 'human');
+});

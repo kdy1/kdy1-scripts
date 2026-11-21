@@ -292,3 +292,7 @@ Shared stack ownership lives outside tracked source under the repository’s Git
 - Do not place the repository itself directly inside `~/.agents/skills`: Each immediate child must be a skill directory containing `SKILL.md`. Clone the repository elsewhere and link or copy its individual directories from `skills/`.
 - Avoid installing two different directories with the same skill `name`. Duplicate names may appear in the skill selector; do not rely on them being merged.
 - Review a skill's `SKILL.md` and any included scripts before installing it, especially when it can run commands or access external services.
+
+## License
+
+This repository is licensed under the [Apache License 2.0](./LICENSE).

@@ -42,11 +42,12 @@ function fakeGitHub({ installations = [{ id: 1, account: { login: "home" } }, { 
   return { fetch, calls };
 }
 
-test("threadKey prefers the Codex thread and rejects unsafe ids", () => {
+test("threadKey prefers the Codex thread and makes a safe file name", () => {
   assert.equal(threadKey({ CODEX_THREAD_ID: "abc", T3CODE_THREAD_ID: "t" }), "codex-abc");
   assert.equal(threadKey({ T3CODE_THREAD_ID: "5730-ab" }), "t3-5730-ab");
   assert.equal(threadKey({ T3CODE_THREAD_ID: "thread:project:a-1:b-2" }), "t3-thread:project:a-1:b-2");
-  assert.equal(threadKey({ T3CODE_THREAD_ID: "../x" }), null);
+  assert.equal(threadKey({ T3CODE_THREAD_ID: "thread:delegated-task:command%3Amcp%3Aa-1" }), "t3-thread:delegated-task:command_3Amcp_3Aa-1");
+  assert.equal(threadKey({ T3CODE_THREAD_ID: "../x" }), "t3-.._x");
   assert.equal(threadKey({}), null);
 });
 
@@ -170,4 +171,10 @@ test("the shims pass through outside a registered thread and use the bot inside 
   assert.equal(run("git", ["push"], { ...thread, GIT_CONFIG_COUNT: "1" }), "git author=99+my-bot[bot]@users.noreply.github.com count=8 args=push");
   assert.equal(run("gh", ["pr", "list", "-R", "Org/r"], { ...thread, GH_BOT_AUTH: "0" }), "gh token=none args=pr list -R Org/r");
   assert.equal(run("gh", ["pr", "list"], { CODEX_THREAD_ID: "other" }), "gh token=none args=pr list");
+
+  // A delegated T3 Code thread id has characters that the key replaces.
+  const delegated = { T3CODE_THREAD_ID: "thread:delegated-task:command%3Amcp%3Ab" };
+  assert.equal(run("gh", ["pr", "list", "-R", "Org/r"], delegated), "gh token=none args=pr list -R Org/r");
+  writeFileSync(join(state, "threads", threadKey(delegated)), JSON.stringify({ repo: "Org/r" }));
+  assert.equal(run("gh", ["pr", "list", "-R", "Org/r"], delegated), "gh token=cached-2 args=pr list -R Org/r");
 }));

@@ -40,10 +40,10 @@ case ${GH_BOT_AUTH:-} in
     elif [ -n "${T3CODE_THREAD_ID:-}" ]; then
         key=t3-$T3CODE_THREAD_ID
     fi
-    case $key in
-    '' | *[!A-Za-z0-9._:-]*) ;;
-    *) [ -f "${XDG_STATE_HOME:-$HOME/.local/state}/gh-bot-auth/threads/$key" ] && active=1 ;;
-    esac
+    key=${key//[!A-Za-z0-9._:-]/_}
+    if [ -n "$key" ] && [ -f "${XDG_STATE_HOME:-$HOME/.local/state}/gh-bot-auth/threads/$key" ]; then
+        active=1
+    fi
     ;;
 esac
 

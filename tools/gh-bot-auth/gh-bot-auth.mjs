@@ -44,11 +44,13 @@ export function paths(env = process.env) {
 
 // The thread key is the innermost agent thread: a Codex thread (also a Codex
 // subagent) has its own CODEX_THREAD_ID, and Claude Code subagents share the
-// T3CODE_THREAD_ID of their T3 Code thread.
+// T3CODE_THREAD_ID of their T3 Code thread. The key is a file name, so each
+// character that is not safe in a file name becomes "_". T3 Code ids contain
+// such characters, for example thread:delegated-task:command%3Amcp%3A<uuid>.
 export function threadKey(env = process.env) {
   for (const [prefix, name] of [["codex", "CODEX_THREAD_ID"], ["t3", "T3CODE_THREAD_ID"]]) {
     const id = env[name];
-    if (id && /^[A-Za-z0-9._:-]+$/.test(id)) return `${prefix}-${id}`;
+    if (id) return `${prefix}-${id.replace(/[^A-Za-z0-9._:-]/g, "_")}`;
   }
   return null;
 }

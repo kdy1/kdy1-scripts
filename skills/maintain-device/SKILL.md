@@ -1,6 +1,6 @@
 ---
 name: maintain-device
-description: Maintain this machine in two parts. Free disk space until at least 50% of the volume's capacity is free (for example 1 TB on a 2 TB volume), or a requested target, by removing regenerable build output from idle agent worktrees and batch runs, safe tool caches and old unused Docker images, idle build output in the user's own projects, and finally clean old agent worktrees. Archive T3 Code automation threads, which scheduled tasks started, after 48 hours without activity. Run without questions and settle the T3 Code thread when both parts are complete. Start only on explicit `$maintain-device` invocation or a direct human request to run Maintain Device, free disk space, or archive old automation threads.
+description: Maintain this machine in two parts. Free disk space until at least 50% of the volume's capacity is free (for example 1 TB on a 2 TB volume), or a requested target, by removing regenerable build output from idle agent worktrees and batch runs, safe tool caches and old unused Docker images, idle build output in the user's own projects, and finally old agent worktrees. Archive T3 Code automation threads, which scheduled tasks started, after 48 hours without activity. Run without questions and settle the T3 Code thread when both parts are complete. Start only on explicit `$maintain-device` invocation or a direct human request to run Maintain Device, free disk space, or archive old automation threads.
 ---
 
 # Maintain Device
@@ -17,7 +17,7 @@ Run the whole workflow without questions. The defaults below are the human's sta
 
 ### Allowed scope
 
-Delete only output that a build or package manager can regenerate, old unused Docker images, and old clean agent worktrees. The helper enforces this scope:
+Delete only output that a build or package manager can regenerate, old unused Docker images, and old agent worktrees. The helper enforces this scope:
 
 1. **Agent artifacts:** Cargo `target/`, `node_modules`, `.next`, `.nuxt`, `.turbo`, `.svelte-kit`, `.parcel-cache`, and SwiftPM `.build` directories under agent-owned roots (`~/.t3/worktrees`, `~/.t3` and `~/.codex` batch and artifact directories, `~/.claude/slop-fix-batch`, `~/.codex/slop-fix-batch`, and `/private/tmp`). Each directory must sit next to a matching manifest, or carry Cargo's `CACHEDIR.TAG`. The helper deletes candidates oldest-activity first.
 2. **Tool caches:** `npm`, `pnpm store prune`, `yarn`, `bun`, the Go build cache, `uv cache prune`, `pip`, Homebrew downloads, Docker build cache, dangling images, and unused images created more than 7 days ago, unavailable simulators, and Xcode DerivedData. The helper skips a cache while its tool is running. Docker itself keeps every image that a container, running or stopped, still uses.
@@ -25,7 +25,7 @@ Delete only output that a build or package manager can regenerate, old unused Do
 4. **Old worktrees:** whole linked git worktrees at `~/.t3/worktrees/<repo>/<name>`, the last resort after tiers 1 to 3. The helper removes a worktree with `git worktree remove` (never `--force`) and then runs `git worktree prune`. It deletes the oldest first. It never deletes the branch. It removes a worktree only if all of these are true:
    - Nothing in the worktree's top-level entries, or in its git index or HEAD, changed within 3 days. This includes worktrees nested in it, such as review checkouts in `.t3-tmp/`.
    - No process has its working directory in it, and it is not in the current working directory or an `--exclude` path.
-   - `git status` shows no uncommitted or untracked changes, ignored files such as `target` aside, in it or in a worktree nested in it.
+   - Git can stash any staged, unstaged, and untracked changes in it and in registered worktrees nested in it. The helper uses `git stash push --include-untracked` before removal. If a stash fails or changes remain, it keeps the worktree. Stashes stay in the repository and are listed by worktree path in the JSON report. Use `git stash list` to find them and `git stash apply --index` to restore one. Ignored files such as `target` are not stashed.
    - It is not the main worktree and not locked.
    - If its HEAD is detached, a local branch, remote branch, or tag contains that commit. A worktree on a branch keeps its commits on that branch.
 
@@ -59,7 +59,7 @@ Use Python 3.9+. Resolve the script path relative to this skill directory.
 
 ### Target not met
 
-If the report says `met: false`, find out where the remaining space is, but do not delete anything else. Measure only the largest directories, for example with `du -sh` on the top-level directories of `$HOME`, `~/.t3`, `~/.claude`, and `~/.codex`. List the largest remaining items, say which ones are regenerable but were skipped (and why, from `skippedByReason`), and say which ones need a human decision, such as worktrees the helper kept (uncommitted changes, a commit on no ref, recent activity, a running process), batch run directories, Docker images that containers use, session data, or toolchains. Do not ask the human to choose during this run. Continue with **Archive automation threads**, and leave the thread open, as **Completion** describes.
+If the report says `met: false`, find out where the remaining space is, but do not delete anything else. Measure only the largest directories, for example with `du -sh` on the top-level directories of `$HOME`, `~/.t3`, `~/.claude`, and `~/.codex`. List the largest remaining items, say which ones are regenerable but were skipped (and why, from `skippedByReason`), and say which ones need a human decision, such as worktrees the helper kept (stash failure, a commit on no ref, recent activity, a running process), batch run directories, Docker images that containers use, session data, or toolchains. Do not ask the human to choose during this run. Continue with **Archive automation threads**, and leave the thread open, as **Completion** describes.
 
 ## Archive automation threads
 
@@ -94,7 +94,7 @@ Archive a thread in scope even if it is not settled. The 48-hour rule is the hum
 ## Completion
 
 - Report briefly:
-  - Disk cleanup: free space before and after, the target and the volume capacity, whether it was met, the space freed per tier, the largest removed items, skip counts by reason, and any errors. For a run where the target was already met, report only the free space and the target.
+  - Disk cleanup: free space before and after, the target and the volume capacity, whether it was met, the space freed per tier, the largest removed items, any saved stashes, skip counts by reason, and any errors. For a run where the target was already met, report only the free space and the target.
   - Automation threads: the number of archived threads per scheduled task, the titles of archived threads that were not settled, skip counts by reason, and any failed archives.
 - Then apply [$auto-settle-t3-thread](../auto-settle-t3-thread/SKILL.md). It owns the settlement procedure and result reporting. The Maintain Device conditions are:
   - Standalone task: this skill was the first substantive human task of the thread, and maintenance remains its only task.

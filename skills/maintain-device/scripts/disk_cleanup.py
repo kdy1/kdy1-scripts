@@ -271,11 +271,9 @@ def worktree_blocker(path, worktrees):
             return f"locked worktree {where}"
         if not where.is_dir():
             continue
-        code, status = git_output(where, "status", "--porcelain")
+        code, _ = git_output(where, "status", "--porcelain")
         if code != 0:
             return f"git status failed in {where}"
-        if status.strip():
-            return f"uncommitted changes in {where}"
         if worktree["detached"]:
             # A branch survives removal of its worktree; a detached commit on no ref would not.
             code, refs = git_output(
@@ -368,14 +366,43 @@ def worktree_check(path, idle_hours, cwds, excludes, now):
 
 
 def remove_worktree(path, repo):
-    """Remove a linked worktree with plain `git worktree remove`, which refuses unclean ones."""
+    """Stash changes in nested worktrees first, then remove without force."""
+    worktrees = list_worktrees(path)
+    if not worktrees:
+        return False, "git worktree list failed", []
+    blocker = worktree_blocker(path, worktrees)
+    if blocker:
+        return False, blocker, []
+    nested = [w["path"] for w in worktrees[1:] if is_within(w["path"].resolve(), path)]
+    stashes = []
+    for where in sorted(nested, key=lambda p: -len(p.parts)):
+        if not where.is_dir():
+            continue
+        code, status = git_output(where, "status", "--porcelain")
+        if code:
+            return False, f"git status failed in {where}", stashes
+        if not status.strip():
+            continue
+        label = f"maintain-device: {where}"
+        result = subprocess.run(
+            ["git", "-C", str(where), "stash", "push", "--include-untracked", "-m", label],
+            capture_output=True, text=True, check=False,
+        )
+        if result.returncode:
+            return False, f"stash failed in {where}: {result.stderr.strip()[-500:]}", stashes
+        stashes.append(label)
+        code, status = git_output(where, "status", "--porcelain")
+        if code or status.strip():
+            return False, f"worktree still has changes after stash: {where}", stashes
+
     result = subprocess.run(
         ["git", "-C", repo, "worktree", "remove", "--", str(path)],
         capture_output=True, text=True, check=False,
     )
-    # Worktrees nested in the removed one are now dangling registrations.
-    subprocess.run(["git", "-C", repo, "worktree", "prune"], capture_output=True, check=False)
-    return result.returncode == 0 and not path.exists(), result.stderr.strip()[-500:]
+    if result.returncode == 0:
+        # Worktrees nested in the removed one are now dangling registrations.
+        subprocess.run(["git", "-C", repo, "worktree", "prune"], capture_output=True, check=False)
+    return result.returncode == 0 and not path.exists(), result.stderr.strip()[-500:], stashes
 
 
 def du_bytes(path):
@@ -497,9 +524,9 @@ class Cleaner:
             if reason:
                 self.skipped.append({**item, "tier": tier, "reason": f"became unsafe: {reason}"})
                 continue
-            ok, error = remove_worktree(path, item["repo"])
+            ok, error, stashes = remove_worktree(path, item["repo"])
             self.record(tier, item["path"], before, "removed" if ok else "failed",
-                        {"kind": item["kind"], "idleHours": item["idleHours"]})
+                        {"kind": item["kind"], "idleHours": item["idleHours"], "stashes": stashes})
             if not ok:
                 self.errors.append({"target": item["path"], "error": error or "git worktree remove failed"})
 

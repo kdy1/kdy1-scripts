@@ -215,9 +215,6 @@ class WorktreeTest(WorktreeFixture):
         self.assertTrue(skipped[0]["reason"].startswith("active"))
 
     def test_unsafe_worktrees_are_skipped(self):
-        dirty = self.worktree("dirty")
-        (dirty / "new.txt").write_text("work in progress")
-        self.age(dirty, 10 * DAY)
         lost = self.worktree("lost", detach=True)
         (lost / "b.txt").write_text("b")
         git(lost, "add", ".")
@@ -227,7 +224,6 @@ class WorktreeTest(WorktreeFixture):
         candidates, skipped = self.collect(cwds=[busy / "src"])
         self.assertEqual(candidates, [])
         reasons = {Path(s["path"]).name: s["reason"] for s in skipped}
-        self.assertTrue(reasons["dirty"].startswith("uncommitted changes"))
         self.assertIn("on no branch", reasons["lost"])
         self.assertTrue(reasons["busy"].startswith("process cwd"))
 
@@ -236,21 +232,35 @@ class WorktreeTest(WorktreeFixture):
         candidates, _ = self.collect()
         self.assertEqual([c["path"] for c in candidates], [str(path)])
 
-    def test_unclean_nested_worktree_blocks_removal(self):
-        outer = self.worktree("outer")
-        nested = outer / ".t3-tmp" / "scratch"
-        git(self.main, "worktree", "add", "-q", "--detach", str(nested))
-        (nested / "wip.txt").write_text("x")
-        self.age(outer, 10 * DAY)
-        self.age(nested, 10 * DAY)
-        candidates, skipped = self.collect()
-        self.assertEqual(candidates, [])
-        self.assertIn("uncommitted changes", skipped[0]["reason"])
+    def test_old_dirty_worktree_preserves_index_and_untracked_files(self):
+        path = self.worktree("dirty")
+        (path / "a.txt").write_text("staged")
+        git(path, "add", "a.txt")
+        (path / "a.txt").write_text("unstaged")
+        (path / "new.txt").write_text("untracked")
+        self.age(path, 10 * DAY)
+        candidates, _ = self.collect()
+        self.assertEqual([c["path"] for c in candidates], [str(path)])
+
+        with patch.object(cleanup, "free_bytes", return_value=100), \
+                patch.object(cleanup, "process_cwds", return_value=[]):
+            cleaner = cleanup.Cleaner(10 ** 9, str(self.root), False, [])
+            cleaner.worktrees("old-worktrees", [str(self.base)], 168, cleanup.FreshCwds(), time.time())
+        self.assertEqual(cleaner.actions[0]["status"], "removed")
+        self.assertEqual(cleaner.actions[0]["stashes"], [f"maintain-device: {path}"])
+        self.assertFalse(path.exists())
+
+        git(self.main, "stash", "apply", "--index")
+        staged = subprocess.check_output(["git", "show", ":a.txt"], cwd=self.main, text=True)
+        self.assertEqual(staged, "staged")
+        self.assertEqual((self.main / "a.txt").read_text(), "unstaged")
+        self.assertEqual((self.main / "new.txt").read_text(), "untracked")
 
     def test_cleaner_removes_worktree_keeps_branch_and_prunes_nested(self):
         path = self.worktree("old")
         nested = path / ".t3-tmp" / "scratch"
         git(self.main, "worktree", "add", "-q", "--detach", str(nested))
+        (nested / "wip.txt").write_text("nested change")
         self.age(path, 10 * DAY)
         self.age(nested, 10 * DAY)
         keep = self.worktree("recent", age=DAY)
@@ -277,6 +287,9 @@ class WorktreeTest(WorktreeFixture):
             ["git", "worktree", "list"], cwd=self.main, capture_output=True, text=True
         ).stdout
         self.assertNotIn("scratch", listed)
+        self.assertEqual(report["actions"][0]["stashes"], [f"maintain-device: {nested}"])
+        git(self.main, "stash", "apply", "--index")
+        self.assertEqual((self.main / "wip.txt").read_text(), "nested change")
 
     def test_dry_run_keeps_worktree(self):
         path = self.worktree("old")

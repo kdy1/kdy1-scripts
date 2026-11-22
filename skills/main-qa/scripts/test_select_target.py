@@ -10,23 +10,28 @@ select = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(select)
 
 
-def catalog(inherited="claudeAgent", model="claude-opus-5-5", options=None, **changes):
+def catalog(inherited="claudeAgent", **changes):
     record = {
         "inheritedProviderInstanceId": inherited,
-        "inheritedModel": model,
-        "inheritedOptions": options if options is not None else [{"id": "effort", "value": "high"}],
+        "inheritedModel": "claude-opus-5-5",
+        "inheritedOptions": [{"id": "effort", "value": "max"}],
         "features": {"appOwnedSubagents": True},
         "providers": [
-            {"providerInstanceId": "codex", "canRunChildTask": True,
+            {"providerInstanceId": "codex", "driverKind": "codex", "canRunChildTask": True,
              "canRunCrossProviderChildTask": True,
              "models": [{"id": "gpt-6-luna", "options": [
                  {"id": "reasoningEffort", "values": ["low", "high", "xhigh"]}]}]},
-            {"providerInstanceId": "claudeAgent", "canRunChildTask": True,
-             "canRunCrossProviderChildTask": True,
+            {"providerInstanceId": "claudeAgent", "driverKind": "claudeAgent",
+             "canRunChildTask": True, "canRunCrossProviderChildTask": True,
              "models": [{"id": "claude-opus-5-5", "options": [
+                 {"id": "effort", "values": ["low", "high", "xhigh", "max"]}]},
+                        {"id": "claude-sonnet-5-5", "options": [
                  {"id": "effort", "values": ["low", "high", "xhigh"]},
                  {"id": "fastMode", "values": [False, True]}]}]},
-            {"providerInstanceId": "cursor", "canRunChildTask": False, "models": []},
+            {"providerInstanceId": "grok", "driverKind": "grok", "canRunChildTask": True,
+             "models": [{"id": "grok-4.7"}]},
+            {"providerInstanceId": "cursor", "driverKind": "cursor",
+             "canRunChildTask": False, "models": []},
         ],
     }
     record.update(changes)
@@ -34,24 +39,17 @@ def catalog(inherited="claudeAgent", model="claude-opus-5-5", options=None, **ch
 
 
 class SelectTargetTest(unittest.TestCase):
-    def test_session_claude_model(self):
+    def test_claude_session_uses_sonnet_not_session_model(self):
         self.assertEqual(select.select_target(catalog()), {
-            "providerInstanceId": "claudeAgent", "model": "claude-opus-5-5",
-            "options": {"effort": "high"}})
+            "providerInstanceId": "claudeAgent", "model": "claude-sonnet-5-5"})
 
-    def test_session_codex_model(self):
-        response = {"structuredContent": catalog(
-            "codex", "gpt-6-luna", [{"id": "reasoningEffort", "value": "xhigh"}])}
+    def test_codex_session_uses_luna_xhigh(self):
+        response = {"structuredContent": catalog("codex")}
         self.assertEqual(select.select_target(response), {
             "providerInstanceId": "codex", "model": "gpt-6-luna",
             "options": {"reasoningEffort": "xhigh"}})
 
-    def test_unlisted_session_model_keeps_session_options(self):
-        target = select.select_target(catalog(model="claude-sonnet-5-5"))
-        self.assertEqual(target["model"], "claude-sonnet-5-5")
-        self.assertEqual(target["options"], {"effort": "high"})
-
-    def test_requested_option_overrides_session_option(self):
+    def test_requested_option_applies_to_default_model(self):
         target = select.select_target(catalog(), requested_options={"effort": "xhigh"})
         self.assertEqual(target["options"], {"effort": "xhigh"})
 
@@ -59,14 +57,29 @@ class SelectTargetTest(unittest.TestCase):
         target = select.select_target(catalog(), requested_options={"fastMode": "true"})
         self.assertIs(target["options"]["fastMode"], True)
 
+    def test_requested_session_model(self):
+        target = select.select_target(catalog(), "claude-opus-5-5")
+        self.assertEqual(target, {"providerInstanceId": "claudeAgent",
+                                  "model": "claude-opus-5-5"})
+
+    def test_rejects_session_without_default(self):
+        with self.assertRaisesRegex(ValueError, "No default"):
+            select.select_target(catalog("grok"))
+
+    def test_rejects_unlisted_default_model(self):
+        response = catalog()
+        response["providers"][1]["models"].pop()
+        with self.assertRaisesRegex(ValueError, "search="):
+            select.select_target(response)
+
     def test_requested_cross_provider_model(self):
         target = select.select_target(catalog(), "gpt-6-luna",
                                       requested_options={"reasoningEffort": "xhigh"})
         self.assertEqual(target, {"providerInstanceId": "codex", "model": "gpt-6-luna",
                                   "options": {"reasoningEffort": "xhigh"}})
 
-    def test_requested_model_does_not_inherit_session_options(self):
-        target = select.select_target(catalog(), "gpt-6-luna")
+    def test_requested_model_gets_no_default_options(self):
+        target = select.select_target(catalog("codex"), "gpt-6-luna")
         self.assertNotIn("options", target)
 
     def test_rejects_unknown_option_value(self):
@@ -83,15 +96,15 @@ class SelectTargetTest(unittest.TestCase):
 
     def test_rejects_provider_without_child_tasks(self):
         with self.assertRaisesRegex(ValueError, "cannot run"):
-            select.select_target(catalog(inherited="cursor", model="x"))
+            select.select_target(catalog("cursor"), "x", "cursor")
 
     def test_rejects_missing_app_owned_subagents(self):
         with self.assertRaisesRegex(ValueError, "app-owned"):
             select.select_target(catalog(features={}))
 
-    def test_rejects_missing_session_model(self):
-        with self.assertRaisesRegex(ValueError, "session provider or model"):
-            select.select_target(catalog(model=None))
+    def test_rejects_missing_session_provider(self):
+        with self.assertRaisesRegex(ValueError, "session provider"):
+            select.select_target(catalog(None))
 
     def test_parse_options_rejects_malformed_pair(self):
         with self.assertRaises(ValueError):

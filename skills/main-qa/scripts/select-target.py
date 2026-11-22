@@ -1,15 +1,23 @@
 #!/usr/bin/env python3
 """Select the MainQA subagent target from a saved T3 capabilities response.
 
-Without --model, the target is the coordinator's session model: the inherited
-provider instance, model, and options. With --model, the target is that
-human-specified model. --option overrides or adds a human-specified option.
+Without --model, the target is the low-cost default model for the coordinator's
+session provider: claude-sonnet-5-5 on Claude, gpt-6-luna with xhigh reasoning on
+Codex. The session model itself (for example Opus) is never inherited. With
+--model, the target is that human-specified model. --option overrides or adds a
+human-specified option.
 """
 
 import argparse
 import json
 import sys
 from pathlib import Path
+
+# Default subagent model and options per driver kind of the session provider.
+DEFAULTS = {
+    "claudeAgent": ("claude-sonnet-5-5", {}),
+    "codex": ("gpt-6-luna", {"reasoningEffort": "xhigh"}),
+}
 
 
 def find_model(provider, model_id):
@@ -72,12 +80,14 @@ def select_target(response, model_id=None, provider_id=None, requested_options=N
     if model_id is None:
         if provider_id and provider_id != inherited:
             raise ValueError("--provider differs from the session provider; also pass --model")
-        model_id = catalog.get("inheritedModel")
-        if not inherited or not model_id:
-            raise ValueError("The session provider or model is not in the capabilities response")
+        if not inherited or inherited not in providers:
+            raise ValueError("The session provider is not in the capabilities response")
+        kind = providers[inherited].get("driverKind")
+        if kind not in DEFAULTS:
+            raise ValueError(f"No default subagent model for {kind} sessions; "
+                             "pass the human-specified --model")
         provider_id = inherited
-        base_options = {option.get("id"): option.get("value")
-                        for option in catalog.get("inheritedOptions") or [] if option.get("id")}
+        model_id, base_options = DEFAULTS[kind]
     else:
         base_options = {}
         if provider_id is None:
@@ -100,18 +110,12 @@ def select_target(response, model_id=None, provider_id=None, requested_options=N
     if not eligible(provider, inherited):
         raise ValueError(f"Provider {provider_id} cannot run delegated child tasks")
     model = find_model(provider, model_id)
-    session_model = provider_id == inherited and model_id == catalog.get("inheritedModel")
-    if model is None and not session_model:
+    if model is None:
         raise ValueError(f"Provider {provider_id} does not list {model_id}; rerun "
                          f"orchestrator_capabilities with search={model_id!r}")
 
-    options = dict(base_options)
-    for option_id, raw in requested_options.items():
-        if model is None:
-            raise ValueError(f"Cannot validate {option_id} because the catalog does not "
-                             f"list {model_id}; rerun orchestrator_capabilities with "
-                             f"search={model_id!r}")
-        options[option_id] = resolve_option(model, option_id, raw)
+    options = {option_id: resolve_option(model, option_id, value)
+               for option_id, value in {**base_options, **requested_options}.items()}
     target = {"providerInstanceId": provider_id, "model": model_id}
     if options:
         target["options"] = options

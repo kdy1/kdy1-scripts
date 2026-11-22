@@ -13,7 +13,7 @@ A collection of standalone [T3 Chat skills](./skills) for GitHub, product planni
 | `create-pr` | Publish changes through a shared PR workflow with verified Closes references for resolved issues and Refs for partial or related work. |
 | `daily-update` | On explicit human invocation, ask for repositories and produce a copyable English update from the authenticated user's daily PR activity, plus reviews, merges, and closes on other authors' PRs, with optional extra text. |
 | `autofix` | On explicit invocation, fix one GitHub or Linear issue from its URL, run `iterate-with-review` on the local fix until a clean round, and only then publish a non-draft PR through `create-pr` with an AI attribution footer. |
-| `iterate-with-review` | Repeat `review-once` on a PR or local change, apply and commit valid findings, and stop only when a round finds no problem. |
+| `iterate-with-review` | Repeat `review-once` on a PR or local change, apply and commit valid findings that have a realistic trigger, reject defensive changes for states that cannot occur, and stop only when a round finds no problem. |
 | `improve-agent-instructions` | On explicit invocation, audit a repository's `AGENTS.md` files and skills against the repository, its CI, and the agents' loading rules, and fix stale, missing, or misleading guidance in separate verified commits. |
 | `improve-skill-efficiency` | Use local T3 Chat session history and current API prices to make evidence-backed skill improvements while preserving quality and model settings. |
 | `list-good-prs` | List clean or unstable pull requests that were approved by the review bot. |

@@ -13,6 +13,8 @@ Improve a change through repeated independent reviews:
 
 Stop only after a **clean round**. A clean round is a Review Once round in which all four reviewers completed, no finding was applied, and every finding was rejected with code evidence. There is no round limit.
 
+**Keep the code realistic.** The target is the code that a careful maintainer of the repository would write: correct for the inputs and states that can really occur, and not more defensive than the surrounding code. Reviewers look for edge cases broadly. If you apply every edge-case finding, the code collects guards, fallbacks, and error handling for states that cannot occur. Judge each finding against the real callers, data, configuration, and environment of the code.
+
 Helper: `scripts/iterate_with_review.py` (Python 3.9+, Git 2.31+, and `gh` for PRs). It imports the `review-once` helper from the sibling `review-once` skill directory. Read `../review-once/SKILL.md` before the first round, and follow it for every review. Run the helpers with their absolute paths.
 
 ## Boundaries
@@ -20,7 +22,7 @@ Helper: `scripts/iterate_with_review.py` (Python 3.9+, Git 2.31+, and `gh` for P
 - An Iterate with Review invocation authorizes edits and local commits on the target branch, in the target workspace. It does not authorize a push, a PR comment, a merge, or a force operation. For a PR, push at the end only if the user asked to update the PR; otherwise report the local commits and ask.
 - Do not edit the workspace while Review Once reviewers are running.
 - Stop early only when the user cancels, or for a blocker that you cannot resolve: a reviewer model is unavailable, authentication fails, or reviewers fail again after retries. Report a blocker as "paused, not finished", with the ledger path. Never describe a paused run as clean.
-- Never reject a valid finding to end the loop. "Minor", "nit", or "not worth it" is not a reason to reject. Small valid findings are applied.
+- Never reject a valid finding to end the loop. "Minor", "nit", or "not worth it" is not a reason to reject. Small valid findings are applied. A finding is valid only if its trigger can really occur (see step 3 of section 3).
 
 ## 1. Choose the target and workspace
 
@@ -59,10 +61,16 @@ Repeat until a round is clean:
 
    Then validate targets, launch the four reviewers, verify the checkouts, and check every finding against the code, as Review Once describes. Reviewers get only the Review Once brief. Do not tell them the round number, earlier findings, or your decisions. Run Review Once `cleanup` after the round's findings are judged.
 3. **Judge each finding.** Give each one a disposition:
-   - `applied`: the finding is a real defect, a missing case, test, or update, or a clearly better approach within the change's scope. Severity does not matter.
-   - `rejected`: the code shows that the claim is false; or it contradicts the stated intent, a repository rule, or an earlier user decision. Write the evidence, for example `src/x.rs:42 already checks for null`. A finding that was rejected before can come back; check it again against the current code, and reject it again only if the evidence still holds.
+   - First, find the trigger. A finding has a realistic trigger when an input, state, or sequence that the real callers, data, configuration, or environment can produce causes the problem. Read the callers and the existing validation before you decide. A rare trigger is still realistic.
+   - `applied`: the finding is a real defect with a realistic trigger, a missing case, test, or update, or a clearly better approach within the change's scope. Severity does not matter.
+   - `rejected`: the code shows that the claim is false; the trigger cannot occur; or the finding contradicts the stated intent, a repository rule, or an earlier user decision. Write the evidence, for example `src/x.rs:42 already checks for null`. A finding that was rejected before can come back; check it again against the current code, and reject it again only if the evidence still holds.
+   - Reject these as defensive code without a realistic trigger, with the evidence that rules the trigger out:
+     - A guard or check for a state that the code already prevents: an earlier validation, a type, an invariant, or the only callers. Evidence example: `cli.py:30 is the only caller and passes a parsed int`.
+     - A fallback, default value, broad catch, or retry that hides an error that the current code reports clearly. An uncaught error that stops a helper with a clear message is not a defect only because nothing catches it. A failure that causes wrong output, data loss, a misleading message, or a state that is hard to recover is a defect.
+     - Validation of data that a trusted part of the same program already validated, or support for an input or environment that the code does not claim to support.
+   - "Unlikely" or "nobody would do that" is not evidence. Name the code, contract, or documented scope that rules the trigger out. If you cannot, the trigger is realistic.
    - **Ask the user** when a finding needs a product or design decision, when a finding argues for a different approach, or when findings in different rounds pull in opposite directions. Then apply or reject according to the answer, and use `User decision: <answer>` as the evidence. Add the decision to the intent file, so that later reviewers know it was made deliberately.
-4. **Apply.** Fix the `applied` findings in the workspace. Keep each fix minimal and in scope. Run the tests, linters, and builds that cover the changed code. If a check fails, fix it before you continue. Commit each fix, or each group of findings with the same root cause, as a separate commit that follows the repository's commit rules.
+4. **Apply.** Fix the `applied` findings in the workspace. Keep each fix minimal and in scope. Fix the root cause in the style of the surrounding code. Do not add a guard, fallback, catch, retry, or validation that the finding does not need, and do not add checks at each use when one fix at the source is sufficient. Run the tests, linters, and builds that cover the changed code. If a check fails, fix it before you continue. Commit each fix, or each group of findings with the same root cause, as a separate commit that follows the repository's commit rules.
 5. **Record.** Write the round result as JSON and run `python3 <skill>/scripts/iterate_with_review.py round-record <ledger> <result.json>`:
 
    ```json

@@ -1,10 +1,10 @@
 # MainQA in T3 Chat / T3 Code
 
-Apply this contract to QA workers, issue coordinators, investigators, and recorders. Keep MainQA's authorization, scope, required Luna settings, and root-controlled ten-descendant budget across provider boundaries.
+Apply this contract to QA workers, issue coordinators, investigators, and recorders. Keep MainQA's authorization, scope, selected subagent target, and root-controlled ten-descendant budget across provider boundaries. The contract applies the same way whether the coordinator runs on Codex, Claude, or another T3 provider.
 
 ## Discover and validate capabilities
 
-Read `orchestrator_capabilities` for live provider instances, models, model options, active interaction mode, and app-owned subagent support. Do not infer support from the native `spawn_agent` model list. If tool discovery omits T3 tools, make one direct `mcp__t3_code__orchestrator_capabilities({})` attempt before declaring them absent.
+Read `orchestrator_capabilities` for live provider instances, models, model options, active interaction mode, and app-owned subagent support. Do not infer support from a native subagent tool's model list, such as Codex `spawn_agent` or Claude `Agent`. T3 tool names can have an MCP prefix such as `mcp__t3_code__` (Codex) or `mcp__t3-code__` (Claude). In Claude Code, T3 tools can be deferred: load them with `ToolSearch` before you call them. If tool discovery omits T3 tools, make one direct `orchestrator_capabilities` attempt with the harness's prefix before declaring them absent.
 
 When MCP tools are not callable but `T3_ACP_MCP_NODE` is present, use the supported transport:
 
@@ -14,19 +14,31 @@ ELECTRON_RUN_AS_NODE=1 "$T3_ACP_MCP_NODE" ${T3_ACP_MCP_ENTRYPOINT:+"$T3_ACP_MCP_
 
 The same transport accepts other tool names and one serialized JSON argument. Use a JSON serializer and proper shell quoting or a file read into a quoted argument. Never interpolate task prose into shell code. Do not access private app APIs or spawn ordinary conversations as a fallback.
 
+### Model rule
+
+Apply this rule to every MainQA subagent: QA workers, reassignments, continuations, issue-reporting coordinators, and `$add-issue` investigators and recorders.
+
+1. If the human specified a model, provider, or reasoning level for subagents, use exactly that. Verify the exact ID and option values from the catalog.
+2. Otherwise, use the coordinator's session target: `inheritedProviderInstanceId`, `inheritedModel`, and `inheritedOptions` from `orchestrator_capabilities`. The human selected this model when the session started. A Codex session gives a target such as `gpt-6-luna` with `reasoningEffort`; a Claude session gives a target such as `claude-opus-5-5` with `effort`.
+3. Do not select any other model. A connected provider, an available catalog entry, a model-pinned native agent type (for example a proxy-routed `ocx-*` agent), a configured default subagent model, a skill default, cost, speed, or diversity is not a reason to use a different model.
+4. If the selected target is unavailable or the session target cannot be established, report the affected work as blocked. Do not substitute another model or run QA as a single agent.
+
+### Validate the target
+
 Save the returned raw catalog or MCP response with `structuredContent` to a private absolute path outside the app checkout. Run:
 
 ```sh
-python3 <absolute-main-qa-path>/scripts/select-target.py <absolute-capabilities-json>
+python3 <absolute-main-qa-path>/scripts/select-target.py <absolute-capabilities-json> \
+  [--model <model-id>] [--provider <providerInstanceId>] [--option <id>=<value> ...]
 ```
 
-Use `--provider <providerInstanceId>` to require a particular instance. Otherwise the helper prefers the inherited instance when eligible, then another eligible catalog instance. It checks app-owned delegation support, provider eligibility, the exact `gpt-5.6-luna` ID, and the `reasoningEffort` option's `xhigh` value. The output is the complete `target` object; do not invent provider IDs or silently use defaults. Pass this target through reporting handoffs and verify it against the live catalog in each delegating environment. Missing support blocks affected phases, without substituting another model or local execution.
+Without `--model`, the helper returns the session target with the session's options. Pass `--model`, `--provider`, and `--option` only for values that the human specified; `--option` alone overrides one session option, for example `--option effort=xhigh`. The helper checks app-owned delegation support, that the provider can run child tasks (and cross-provider child tasks when it is not the session provider), the exact model ID, and each requested option value. If the catalog's short list omits a requested model, call `orchestrator_capabilities` again with `search: "<model-id>"`, save that response, and run the helper on it. The output is the complete `target` object; do not invent provider IDs or silently use defaults. Pass this target through reporting handoffs and verify it against the live catalog in each delegating environment. A nested coordinator runs the helper with `--model`, `--provider`, and each `--option` of the handed-off target, because its own session target can differ. Missing support blocks affected phases, without substituting another model or local execution.
 
 ## Delegate and retain task identity
 
-Use `delegate_task` with the helper's explicit `target`, a unique `title`, `mode: "async"`, and a run/role/item-specific `clientRequestId`. Default shared isolation is appropriate for browser QA and read-only investigation of the actual app checkout, including pre-existing edits. Use `isolation: "worktree"` only when a phase needs a separate checkout: it starts at the parent's committed revision, runs setup, and does not copy uncommitted edits. Never assume a worktree represents the running app's revision.
+Use `delegate_task` with the helper's explicit `target` for every MainQA descendant, also when the child runs on the coordinator's own model, because MainQA needs the returned task identity and asynchronous completion. Do not use native subagent tools (Codex `spawn_agent` or Claude `Agent`) for MainQA workers. Pass a unique `title`, `mode: "async"`, and a run/role/item-specific `clientRequestId`. Default shared isolation is appropriate for browser QA and read-only investigation of the actual app checkout, including pre-existing edits. Use `isolation: "worktree"` only when a phase needs a separate checkout: it starts at the parent's committed revision, runs setup, and does not copy uncommitted edits. Never assume a worktree represents the running app's revision.
 
-T3 children receive only the supplied task prompt. Include the original human MainQA invocation and restrictions, delegation chain, run and candidate/item IDs, target URL/repository/revision evidence, installed skill/reference paths, expected checks, browser/data ownership, root and immediate-parent thread IDs, model target, slot grants, and output requirements. Record `taskId`, `childThreadId`, `childRunId`, provider/model evidence, and slot ownership after acceptance. Do not claim the reasoning option was verified solely because the returned model ID matches.
+T3 children receive only the supplied task prompt. Include the original human MainQA invocation and restrictions, delegation chain, run and candidate/item IDs, target URL/repository/revision evidence, installed skill/reference paths, expected checks, browser/data ownership, root and immediate-parent thread IDs, model target, slot grants, and output requirements. Record `taskId`, `childThreadId`, `childRunId`, provider/model evidence, and slot ownership after acceptance. Do not claim the reasoning option was verified solely because the returned model ID matches. If a child reports a provider or model that differs from the selected target, cancel it, mark its work unfinished, and reassign it on the selected target.
 
 Recover a lost delegation response by retrying the identical request with the same `clientRequestId`, then inspect the recovered `taskId` with `task_status`. Hold the allocation while uncertain. A new ID creates new work and is not a recovery mechanism. Verify terminal state, `workState: "result_available"`, and `hasPendingChildRuns: false` before releasing capacity; a completed turn with nested work is still occupying the run budget. `waitTimedOut` is a parent wait timeout, not cancellation. Cancel through `task_cancel` and verify the resulting state before releasing a slot.
 

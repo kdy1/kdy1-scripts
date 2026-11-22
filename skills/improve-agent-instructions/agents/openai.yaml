@@ -1,0 +1,7 @@
+interface:
+  display_name: "Improve Agent Instructions"
+  short_description: "Fix stale or missing guidance in AGENTS.md files and repository skills"
+  default_prompt: "Use $improve-agent-instructions to audit this repository's agent instruction files and skills against the repository, CI and agent loading rules, and fix confirmed problems in separate verified commits."
+
+policy:
+  allow_implicit_invocation: false

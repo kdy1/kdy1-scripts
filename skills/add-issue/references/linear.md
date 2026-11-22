@@ -81,6 +81,10 @@ The recorder writes in this order:
 
    Linear also links a bare token that looks like a host or an address. A file name such as `notes.md:33` reads as a host with a port (`.md` is a country-code domain), and Linear stores it as `[notes.md:33](<http://notes.md:33>)`. An address becomes `[a@b.co](<mailto:a@b.co>)`. The check unwraps a link whose label is its own target, with or without the scheme and the angle brackets, so that rewrite is not a difference. A link whose label differs from its target still counts as a difference. Linear leaves text inside a code span as written, so put file names, paths and addresses in code spans when drafting.
 
+   A longer token is rewritten the same way when its code span is broken, for example by a backtick inside the span (a command such as ``rg -o '`(a|b)` `v[0-9.]+`'``). Linear then links the part that looks like a host, escapes the label (`\[0-9.\]`) and percent-encodes the target (`|` becomes `%7C`), and the target can hold parentheses: `[a.b/(c|d)](<http://a.b/(c%7Cd)>)`. The check finds such a link with a scanner that balances the parentheses of the target, and it compares the label with the target as written and percent-decoded, so that rewrite is not a difference either. When a command or regular expression holds backticks, wrap it in a code span with a longer delimiter (a span that opens with two backticks closes with two backticks) or describe it in prose, so that Linear keeps it as written.
+
+   A created issue is never rewritten or recreated when verification fails. Run `record` again with the same payload and ledger: it reads the issue by its stored client ID and verifies it again, without a second write. This is how a record that failed only because of a Markdown rewrite that the check did not know yet becomes verified after the check is fixed.
+
 The ledger, its lock, and refresh history follow the GitHub rules: it is bound to the payload hash, it is never reset or replaced, and only the reviewed candidate's duplicate observations can change after any of its operations started.
 
 ## Validation

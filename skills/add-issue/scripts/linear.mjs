@@ -178,13 +178,59 @@ export const definition = (kind, value) => value && Object.fromEntries(STABLE[ki
 // letters and digits would see different text. A link whose label is its own target, with or without the scheme, adds no
 // information: unwrap it to its label on both sides. A link whose label differs from its target stays as it is, because it
 // shows text that hides the target.
+//
+// The same autolink can carry a longer token than a file name. Linear also reads a shell command, a regular expression or
+// a path with punctuation as a host when the code span that should protect it is broken (for example by a backtick inside
+// a code span). It then escapes the label (`\[0-9.\]`) and percent-encodes the target (`|` becomes `%7C`), and the target
+// can contain parentheses: `[a/(b|c)](<http://a/(b%7Cc)>)`. A scanner finds those links, because a regular expression
+// that ends the target at the first `)` cannot. The target is compared as written and percent-decoded.
 const LINK_SCHEME = /^(?:https?:\/\/|mailto:)/i;
-const MARKDOWN_LINK = /\[([^\]\n]*)\]\(<?([^)\s>]+)>?\)/g;
+const LINK_LABEL = /\[((?:\\.|[^\]\\\n])*)\]\(/g;
+// Reads the link target that starts at `from`, right after `](`. Returns the target text and the index after the closing
+// parenthesis, or null when the text is not a link target. An angle-bracketed target may hold any character except `>`
+// and a line break. A bare target ends at the parenthesis that closes it, so parentheses inside it must balance.
+function linkTarget(value, from) {
+  if (value[from] === '<') {
+    for (let i = from + 1; i < value.length && value[i] !== '\n'; i++) {
+      if (value[i] === '>') return value[i + 1] === ')' ? { text: value.slice(from + 1, i), end: i + 2 } : null;
+    }
+    return null;
+  }
+  let depth = 1;
+  for (let i = from; i < value.length; i++) {
+    const ch = value[i];
+    if (/\s/.test(ch)) return null;
+    if (ch === '(') depth++;
+    else if (ch === ')' && --depth === 0) return i > from ? { text: value.slice(from, i), end: i + 1 } : null;
+  }
+  return null;
+}
+const unescapeMarkdown = text => text.replace(/\\(.)/g, '$1');
+function percentDecode(text) {
+  try { return decodeURIComponent(text); } catch { return text; }
+}
+// True when the link target only repeats its label: the label equals the target, or the target without its scheme, as
+// written or percent-decoded.
+function isSelfLink(label, target) {
+  const forms = new Set([target, percentDecode(target)]);
+  for (const form of [...forms]) forms.add(form.replace(LINK_SCHEME, ''));
+  return forms.has(label);
+}
+function unwrapSelfLinks(value) {
+  let out = '', last = 0, match;
+  LINK_LABEL.lastIndex = 0;
+  while ((match = LINK_LABEL.exec(value))) {
+    const target = linkTarget(value, LINK_LABEL.lastIndex);
+    if (!target) continue;
+    const label = unescapeMarkdown(match[1]).trim();
+    if (!isSelfLink(label, target.text)) continue;
+    out += value.slice(last, match.index) + label;
+    last = LINK_LABEL.lastIndex = target.end;
+  }
+  return out + value.slice(last);
+}
 export function normalizeText(value) {
-  return String(value ?? '').replace(MARKDOWN_LINK, (all, label, url) => {
-    const text = label.trim();
-    return text === url || text === url.replace(LINK_SCHEME, '') ? text : all;
-  }).replace(/[^\p{L}\p{N}]+/gu, '').toLowerCase();
+  return unwrapSelfLinks(String(value ?? '')).replace(/[^\p{L}\p{N}]+/gu, '').toLowerCase();
 }
 export const sameText = (a, b) => normalizeText(a) === normalizeText(b);
 export function withImages(value, c, ops, destination) {

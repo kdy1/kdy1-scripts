@@ -240,6 +240,45 @@ test('text verification tolerates the autolinks that Linear adds', () => {
   assert.notEqual(normalizeText('[x.y](<http://z.example>)'), normalizeText('x.y'));
 });
 
+// The exact line that failed verification of DELI-777. A backtick inside the code span ended it early, so Linear read the
+// rest as a host, linked it, escaped the label and percent-encoded the target, which also holds parentheses.
+const BROKEN_SPAN_AUDITED = 'Run `rg -o \'`(golang.org/x/(sys|text|sync)|github.com/pion/dtls/v3|github.com/prometheus/procfs)` `v[0-9.]+`\' docs/` and compare.';
+const BROKEN_SPAN_STORED = 'Run `rg -o \'`([golang.org/x/(sys|text|sync)|github.com/pion/dtls/v3|github.com/prometheus/procfs](<http://golang.org/x/(sys%7Ctext%7Csync)%7Cgithub.com/pion/dtls/v3%7Cgithub.com/prometheus/procfs>))` `v\\[0-9.\\]+`\' docs/` and compare.';
+
+test('text verification tolerates an autolink with a percent-encoded target that holds parentheses', () => {
+  assert.equal(normalizeText(BROKEN_SPAN_STORED), normalizeText(BROKEN_SPAN_AUDITED));
+  assert.equal(normalizeText('see [a.b/(c|d)](<http://a.b/(c%7Cd)>) now'), normalizeText('see a.b/(c|d) now'));
+  assert.equal(normalizeText('see [a.b/(c)](http://a.b/(c)) now'), normalizeText('see a.b/(c) now'));
+  assert.equal(normalizeText('see [a.b/\\[x\\]](<http://a.b/[x]>) now'), normalizeText('see a.b/[x] now'));
+  // Two links in one text, one that repeats its target and one that hides it.
+  assert.equal(normalizeText('[a.b](<http://a.b>) and [docs](<http://other.example>)'), normalizeText('a.b and [docs](<http://other.example>)'));
+  // A link whose label differs from the decoded target still shows text that hides the target.
+  assert.notEqual(normalizeText('[a.b/(c|d)](<http://evil.example/(c%7Cd)>)'), normalizeText('a.b/(c|d)'));
+  assert.notEqual(normalizeText('[a.b](<http://a.b.evil.example>)'), normalizeText('a.b'));
+  // Text that only looks like a link target is left alone: no closing parenthesis, or a space inside a bare target.
+  assert.equal(normalizeText('[a](b'), normalizeText('a b'));
+  assert.notEqual(normalizeText('[a](b c)'), normalizeText('a'));
+});
+
+test('records an issue whose broken code span Linear stored as a percent-encoded autolink', async t => {
+  const s = setup(t, { body: `## Summary\n${BROKEN_SPAN_AUDITED}\n\n* point` });
+  const fake = new FakeLinear(); fake.rewrite = d => d.replace(BROKEN_SPAN_AUDITED, BROKEN_SPAN_STORED);
+  const result = await record({ version: 1, payload: s.payload, statePath: s.statePath, context: s.context }, new Linear({ token: KEY, fetch: fake.fetch }));
+  assert.ok([...fake.issues.values()][0].description.includes(BROKEN_SPAN_STORED), 'the fake must rewrite the line');
+  assert.equal(result.status, 'verified', result.errors.join('\n')); assert.equal(fake.count('issueCreate'), 1);
+});
+
+test('a created issue that failed text verification is verified again without a second create', async t => {
+  const s = setup(t, { body: `## Summary\n${BROKEN_SPAN_AUDITED}\n\n* point` });
+  const fake = new FakeLinear(); fake.rewrite = d => d.replace('Summary', 'Sumary');
+  const first = await record({ version: 1, payload: s.payload, statePath: s.statePath, context: s.context }, new Linear({ token: KEY, fetch: fake.fetch }));
+  assert.equal(first.status, 'failed'); assert.equal(fake.count('issueCreate'), 1);
+  // The stored text now differs only by the Markdown re-rendering that verification accepts.
+  const issue = [...fake.issues.values()][0]; issue.description = s.c.body.replace(BROKEN_SPAN_AUDITED, BROKEN_SPAN_STORED);
+  const again = await record({ version: 1, payload: s.payload, statePath: s.statePath, context: s.context }, new Linear({ token: KEY, fetch: fake.fetch }));
+  assert.equal(again.status, 'verified', again.errors.join('\n')); assert.equal(fake.count('issueCreate'), 1, 'no second issue');
+});
+
 test('records an issue whose bare file-name tokens Linear stored as autolinks', async t => {
   const body = '## Summary\nSearch terms "exclusion probe" and "repository-workflow-contract.md:33" found nothing. See `docs/code.md:3`.';
   const s = setup(t, { body }); const fake = new FakeLinear();

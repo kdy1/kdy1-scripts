@@ -79,7 +79,7 @@ export class GitHub {
     return { head: pr.head.sha, merged: pr.merged === true, resolved: thread.isResolved, threadHead: thread.pullRequest.headRefOid, threadMerged: thread.pullRequest.merged };
   }
   project(projectId) {
-    const value = this.graphql(`query($id:ID!){ node(id:$id) { ... on ProjectV2 { id title viewerCanUpdate } } }`, { id: projectId }).node;
+    const value = this.graphql(`query($id:ID!){ node(id:$id) { ... on ProjectV2 { id title } } }`, { id: projectId }).node;
     check(value?.id === projectId, 'Project unavailable'); return value;
   }
   projectFields(projectId) {
@@ -105,7 +105,7 @@ export class GitHub {
     throw new Error('Project membership pagination bound reached');
   }
   metadata(m, issueUrl) {
-    let def, value = null, capable = true, itemExists = null;
+    let def, value = null, itemExists = null;
     const owner = this.target.repo.split('/')[0];
     if (m.kind === 'label') { def = this.api(`${this.prefix}/labels/${segment(m.value)}`); value = issueUrl ? this.issue(issueUrl).labels.includes(m.value) : false; }
     if (m.kind === 'type') { def = this.api(`${this.prefix}/issue-types`).find(x => x.name === m.value); value = issueUrl ? this.issue(issueUrl).type : null; }
@@ -116,7 +116,7 @@ export class GitHub {
       if (issueUrl) { const field = this.list(`${this.prefix}/issues/${issueNumber(issueUrl, this.target)}/issue-field-values`).find(x => x.issue_field_id === m.fieldId); value = field?.single_select_option?.name ?? field?.value ?? null; }
     }
     if (m.kind.startsWith('project-')) {
-      const project = this.project(m.projectId); capable = project.viewerCanUpdate === true;
+      const project = this.project(m.projectId);
       const item = issueUrl ? this.projectItem(m.projectId, issueUrl) : null; itemExists = item !== null;
       if (m.kind === 'project-membership') { def = { id: project.id, name: project.title }; value = item !== null; }
       else {
@@ -134,7 +134,7 @@ export class GitHub {
     if (m.kind === 'issue-field') { check(def.data_type === m.dataType, 'Native field type mismatch'); if (m.dataType === 'single_select') check(def.options?.some(x => x.name === m.value), 'Native field option unavailable'); }
     if (m.kind === 'project-field' && m.valueType === 'singleSelectOptionId') check(def.options?.some(x => x.id === m.value), 'Project option unavailable');
     if (m.kind === 'project-field' && m.valueType === 'iterationId') check([...def.configuration?.iterations ?? [], ...def.configuration?.completedIterations ?? []].some(x => x.id === m.value), 'Project iteration unavailable');
-    return { definition: definition(def), value, capable, itemExists };
+    return { definition: definition(def), value, itemExists };
   }
   preservedFields(c, url) {
     const fields = {};

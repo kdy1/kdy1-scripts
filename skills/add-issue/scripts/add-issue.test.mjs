@@ -18,7 +18,6 @@ import { main } from './add-issue.mjs';
 
 const target = { host: 'github.com', repo: 'owner/repo' };
 const rootUrl = 'https://github.com/owner/repo';
-const perm = { confirmed: true, evidence: 'Verified account capability', credentialEvidence: 'Verified credential scope without exposing token' };
 const nativeUrl = id => `https://github.com/user-attachments/assets/00000000-0000-0000-0000-${String(id).padStart(12,'0')}`;
 function git(repo, ...args) { const r = spawnSync('git', ['-C',repo,...args], { encoding:'utf8' }); assert.equal(r.status,0,r.stderr); return r.stdout; }
 function setup(t) {
@@ -33,9 +32,9 @@ function setup(t) {
     workspace:{original:base,baseline:base,cleanupVerified:true},logs:'Not applicable to repository-supported task',runtime:'Not applicable',
     action:'new issue', issueUrl:null, title:'area: maintain behavior', body:'Exact approved body\nwith literal `$(echo secret)`.', comment:'',
     allowedActions:['new issue'], duplicate:{query:'scope-term',limit:20,complete:true,issues:[],evidence:'No matching outcome'},
-    metadata:[],omissions:[],recordPermission:perm,images:[],noApprovedImages:true };
+    metadata:[],omissions:[],images:[],noApprovedImages:true };
   const payload = {version:1,runId:'run',target,account:'tester',candidates:[c]};
-  const context = {mode:'default',trustedAuthorization:true,recordingAuthorized:true,evidence:'Trusted current session',recordPermission:perm,permissions:{}};
+  const context = {mode:'default',trustedAuthorization:true,recordingAuthorized:true,evidence:'Trusted current session'};
   return {dir,repo,c,payload,context,statePath:join(dir,'private','ledger.json')};
 }
 class FakeGh {
@@ -101,8 +100,8 @@ function existing(s,gh,action='metadata update') {
   s.c.duplicate.issues=gh.client().duplicates(s.c.duplicate.query,20);s.c.duplicate.issue=gh.client().issue(issue.html_url);s.c.duplicate.comments=[]; return issue;
 }
 function label(s,required=true) {
-  const m={id:'label',kind:'label',name:'maintenance',destination:s.c.issueUrl??rootUrl,value:'maintenance',observed:false,definition:definition({id:10,name:'maintenance',description:'Maintenance'}),required,overwrite:false,rationale:'Maintenance classification',permission:perm,...!required?{omissionPolicy:'skip-on-loss-or-conflict'}:{}};
-  s.c.metadata.push(m);s.c.allowedActions.push('metadata:label');s.context.permissions.label=perm;return m;
+  const m={id:'label',kind:'label',name:'maintenance',destination:s.c.issueUrl??rootUrl,value:'maintenance',observed:false,definition:definition({id:10,name:'maintenance',description:'Maintenance'}),required,overwrite:false,rationale:'Maintenance classification',...!required?{omissionPolicy:'skip-on-loss-or-conflict'}:{}};
+  s.c.metadata.push(m);s.c.allowedActions.push('metadata:label');return m;
 }
 function approvedImage(s,id='image',destination='body') {
   const path=join(s.dir,`${id}.png`);writeFileSync(path,Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zl1AAAAAASUVORK5CYII=','base64'));
@@ -143,10 +142,19 @@ test('duplicate comment is singular and metadata-only/existing-issue add no comm
   const s2=setup(t),gh2=new FakeGh();existing(s2,gh2);label(s2);assert.equal(record(input(s2),{client:gh2.client()}).status,'verified');assert.equal(gh2.comments.length,0);
   const s3=setup(t),gh3=new FakeGh();existing(s3,gh3,'existing issue');assert.equal(record(input(s3),{client:gh3.client()}).status,'verified');assert.equal(gh3.writes().length,0);
 });
-test('permission loss/definition conflict block required metadata and omit optional metadata',t=>{
-  const s=setup(t),gh=new FakeGh();label(s);delete s.context.permissions.label;assert.equal(record(input(s),{client:gh.client()}).status,'blocked');assert.equal(gh.writes().length,0);
-  s.statePath=join(s.dir,'optional-ledger.json');s.c.metadata[0].required=false;s.c.metadata[0].omissionPolicy='skip-on-loss-or-conflict';const r=record(input(s),{client:gh.client()});assert.equal(r.status,'verified');assert.equal(r.outcomes[0].omissions.length,1);
-  const plan=metadataPlan(s.c,{label:{available:true,value:{definition:{different:true},value:false,capable:true}}},s.context);assert.equal(plan.omissions.length,1);
+test('changed metadata definitions block required entries and omit optional entries',t=>{
+  const s=setup(t),gh=new FakeGh();label(s);
+  gh.labels[0].description='Changed';
+  assert.equal(record(input(s),{client:gh.client()}).status,'blocked');assert.equal(gh.writes().length,0);
+  s.statePath=join(s.dir,'optional-ledger.json');s.c.metadata[0].required=false;s.c.metadata[0].omissionPolicy='skip-on-loss-or-conflict';
+  const r=record(input(s),{client:gh.client()});assert.equal(r.status,'verified');assert.deepEqual(r.outcomes[0].omissions,[{id:'label',reason:'Metadata definition changed'}]);
+});
+test('authorized recording needs no operation-level permission attestations',t=>{
+  const s=setup(t),gh=new FakeGh();label(s);
+  assert.equal(validatePayload(s.payload).status,'verified');
+  const r=record(input(s),{client:gh.client()});
+  assert.equal(r.status,'verified',JSON.stringify(r));assert.deepEqual(gh.issues.get(1).labels,[{name:'maintenance'}]);
+  assert.equal(record({...input(s),context:{...s.context,trustedAuthorization:false}},{client:gh.client()}).status,'blocked');
 });
 test('raw audited metadata definitions use the same stable comparison as live definitions',t=>{
   const s=setup(t),gh=new FakeGh();const m=label(s,false);
@@ -369,8 +377,8 @@ test('attachment fallback reserves one native browser operation and validates it
 test('native issue field writes are nonempty additive requests and preserve unrelated values',t=>{
   const s=setup(t),gh=new FakeGh();existing(s,gh);gh.values=[{issue_field_id:2,value:'keep'}];
   const def={id:1,name:'Priority',data_type:'single_select',options:[{id:1,name:'High'}]};
-  const m={id:'priority',kind:'issue-field',fieldId:1,dataType:'single_select',name:'Priority',destination:s.c.issueUrl,value:'High',observed:null,definition:def,required:true,overwrite:false,rationale:'Explicit repository priority rubric',permission:perm};
-  s.c.metadata=[m];s.c.allowedActions.push('metadata:priority');s.context.permissions.priority=perm;const r=record(input(s),{client:gh.client()});assert.equal(r.status,'verified',JSON.stringify(r));assert.equal(gh.values.find(x=>x.issue_field_id===2).value,'keep');
+  const m={id:'priority',kind:'issue-field',fieldId:1,dataType:'single_select',name:'Priority',destination:s.c.issueUrl,value:'High',observed:null,definition:def,required:true,overwrite:false,rationale:'Explicit repository priority rubric'};
+  s.c.metadata=[m];s.c.allowedActions.push('metadata:priority');const r=record(input(s),{client:gh.client()});assert.equal(r.status,'verified',JSON.stringify(r));assert.equal(gh.values.find(x=>x.issue_field_id===2).value,'keep');
   const request=gh.writes().find(x=>x.args.includes('repos/owner/repo/issues/1/issue-field-values'));assert.equal(request.args[request.args.indexOf('--method')+1],'POST');assert.deepEqual(JSON.parse(request.input),{issue_field_values:[{field_id:1,value:'High'}]});
   gh.values.find(x=>x.issue_field_id===2).value='lost';const state=JSON.parse(readFileSync(s.statePath)).candidates.candidate;assert.equal(verifyRecording(s.payload,s.c,gh.client(),state).status,'failed');
 });
@@ -392,7 +400,7 @@ test('CLI runs when invoked through a symlinked skill directory',t=>{
 
 class ProjectGh extends FakeGh {
   constructor() {
-    super();this.member=false;this.itemId='ITEM_1';this.projectWritable=true;this.fields=[{id:'F_1',name:'Priority',dataType:'SINGLE_SELECT',options:[{id:'OPT_1',name:'High'}],project:{id:'P_1'}},{id:'F_2',name:'Note',dataType:'TEXT',project:{id:'P_1'}}];this.projectValues={F_2:'keep'};this.mutations=[];
+    super();this.member=false;this.itemId='ITEM_1';this.fields=[{id:'F_1',name:'Priority',dataType:'SINGLE_SELECT',options:[{id:'OPT_1',name:'High'}],project:{id:'P_1'}},{id:'F_2',name:'Note',dataType:'TEXT',project:{id:'P_1'}}];this.projectValues={F_2:'keep'};this.mutations=[];
     const base=this.transport;
     this.transport=(program,args,options={})=>{
       if(args[0]!=='api'||args[args.indexOf('--method')+2]!=='graphql')return base(program,args,options);
@@ -400,7 +408,7 @@ class ProjectGh extends FakeGh {
       const ok=data=>({ok:true,stdout:JSON.stringify({data})});
       if(query.includes('addProjectV2ItemById')){this.mutations.push('membership');this.member=true;return ok({addProjectV2ItemById:{item:{id:this.itemId}}});}
       if(query.includes('updateProjectV2ItemFieldValue')){this.mutations.push('field');this.projectValues[v.input.fieldId]=Object.values(v.input.value)[0];return ok({updateProjectV2ItemFieldValue:{projectV2Item:{id:this.itemId}}});}
-      if(query.includes('viewerCanUpdate'))return ok({node:{id:'P_1',title:'Roadmap',viewerCanUpdate:this.projectWritable}});
+      if(query.includes('... on ProjectV2 { id title'))return ok({node:{id:'P_1',title:'Roadmap'}});
       if(query.includes('projectItems('))return ok({node:{projectItems:{nodes:this.member?[{id:this.itemId,project:{id:'P_1'}}]:[],pageInfo:{hasNextPage:false,endCursor:null}}}});
       if(query.includes('fieldValueByName')){const f=this.fields.find(x=>x.name===v.name),value=this.projectValues[f.id];return ok({node:{fieldValueByName:value===undefined?null:{field:f,[f.dataType==='TEXT'?'text':'optionId']:value}}});}
       if(query.includes('fieldValues('))return ok({node:{fieldValues:{nodes:Object.entries(this.projectValues).map(([id,value])=>({field:this.fields.find(x=>x.id===id),[id==='F_2'?'text':'optionId']:value})),pageInfo:{hasNextPage:false,endCursor:null}}}});
@@ -410,16 +418,16 @@ class ProjectGh extends FakeGh {
   }
 }
 function projectAudit(s,gh,{membership=false}={}) {
-  const f={id:'priority',kind:'project-field',projectId:'P_1',fieldId:'F_1',name:'Priority',destination:'P_1',valueType:'singleSelectOptionId',value:'OPT_1',observed:null,definition:definition(gh.fields[0]),required:true,overwrite:false,rationale:'Authorized project priority',permission:perm};s.c.metadata.push(f);s.c.allowedActions.push('metadata:priority');s.context.permissions.priority=perm;
-  if(membership){const m={id:'membership',kind:'project-membership',projectId:'P_1',name:'Roadmap',destination:'P_1',value:true,observed:false,definition:{id:'P_1',name:'Roadmap'},required:true,overwrite:false,rationale:'Human explicitly requested membership',permission:perm};s.c.metadata.push(m);s.c.allowedActions.push('metadata:membership');s.context.permissions.membership=perm;}
+  const f={id:'priority',kind:'project-field',projectId:'P_1',fieldId:'F_1',name:'Priority',destination:'P_1',valueType:'singleSelectOptionId',value:'OPT_1',observed:null,definition:definition(gh.fields[0]),required:true,overwrite:false,rationale:'Authorized project priority'};s.c.metadata.push(f);s.c.allowedActions.push('metadata:priority');
+  if(membership){const m={id:'membership',kind:'project-membership',projectId:'P_1',name:'Roadmap',destination:'P_1',value:true,observed:false,definition:{id:'P_1',name:'Roadmap'},required:true,overwrite:false,rationale:'Human explicitly requested membership'};s.c.metadata.push(m);s.c.allowedActions.push('metadata:membership');}
 }
 test('project membership precedes individual field writes and unrelated project values survive',t=>{
   const s=setup(t),gh=new ProjectGh();projectAudit(s,gh,{membership:true});const r=record(input(s),{client:gh.client()});assert.equal(r.status,'verified',JSON.stringify(r));assert.deepEqual(gh.mutations,['membership','field']);assert.equal(gh.projectValues.F_2,'keep');
   const s2=setup(t),gh2=new ProjectGh();existing(s2,gh2);gh2.member=true;projectAudit(s2,gh2);assert.equal(record(input(s2),{client:gh2.client()}).status,'verified');gh2.projectValues.F_2='lost';const state=JSON.parse(readFileSync(s2.statePath)).candidates.candidate;assert.equal(verifyRecording(s2.payload,s2.c,gh2.client(),state).status,'failed');
 });
-test('missing project item, wrong-project field and project permission loss block before creation',t=>{
+test('missing project item and wrong-project field block before creation',t=>{
   const s=setup(t),gh=new ProjectGh();projectAudit(s,gh);assert.equal(record(input(s),{client:gh.client()}).status,'blocked');assert.equal(gh.issues.size,0);
-  gh.fields[0].project.id='OTHER';assert.equal(record(input(s),{client:gh.client()}).status,'blocked');gh.fields[0].project.id='P_1';gh.projectWritable=false;assert.equal(record(input(s),{client:gh.client()}).status,'blocked');assert.equal(gh.issues.size,0);
+  gh.fields[0].project.id='OTHER';assert.equal(record(input(s),{client:gh.client()}).status,'blocked');assert.equal(gh.issues.size,0);
 });
 test('changed duplicate thread stops a second implementation-handoff comment',t=>{
   const s=setup(t),gh=new FakeGh();existing(s,gh,'duplicate comment');s.c.comment='Approved missing evidence';gh.comments.push({id:1,html_url:`${s.c.issueUrl}#issuecomment-1`,body:'New independently supplied evidence',user:{login:'other'}});

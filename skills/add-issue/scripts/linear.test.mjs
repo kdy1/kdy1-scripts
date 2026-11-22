@@ -15,7 +15,6 @@ const VIEWER = '22222222-2222-4222-8222-222222222222';
 const LABEL = '33333333-3333-4333-8333-333333333333';
 const OTHER = '99999999-9999-4999-8999-999999999999';
 const KEY = 'lin_api_' + 'x'.repeat(40);
-const perm = { confirmed: true, evidence: 'Verified Linear member capability', credentialEvidence: 'Personal API key with write scope verified without exposing it' };
 const uuid = n => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 
 class FakeLinear {
@@ -91,13 +90,13 @@ function setup(t, overrides = {}) {
     workspace: { original: base, baseline: base, cleanupVerified: true }, logs: 'Not applicable', runtime: 'Not applicable',
     action: 'new issue', issueUrl: null, title: 'cli: keep flags stable', body: '## Summary\n* first point\n* second point', comment: '',
     allowedActions: ['new issue'], duplicate: { terms: ['flags stable'], limit: 20, complete: true, issues: [], evidence: 'No open issue covers this' },
-    metadata: [], omissions: [], recordPermission: perm, images: [], noApprovedImages: true, ...overrides };
+    metadata: [], omissions: [], images: [], noApprovedImages: true, ...overrides };
   const payload = { version: 1, tracker: 'linear', runId: 'run', target: { workspace: 'acme', team: 'ENG', teamId: TEAM }, account: VIEWER, candidates: [c] };
-  const context = { mode: 'default', trustedAuthorization: true, recordingAuthorized: true, evidence: 'Trusted session', recordPermission: perm, permissions: { label: perm, priority: perm } };
+  const context = { mode: 'default', trustedAuthorization: true, recordingAuthorized: true, evidence: 'Trusted session' };
   return { dir, repo, c, payload, context, statePath: join(dir, 'private', 'ledger.json') };
 }
-const label = (overrides = {}) => ({ id: 'label', kind: 'label', name: 'bug', value: LABEL, observed: false, definition: { id: LABEL, name: 'bug', teamId: null }, required: false, overwrite: false, rationale: 'Confirmed defect', permission: perm, omissionPolicy: 'skip-on-loss-or-conflict', ...overrides });
-const priority = (overrides = {}) => ({ id: 'priority', kind: 'priority', name: 'Priority', value: 2, observed: null, definition: { name: 'Priority', values: [0, 1, 2, 3, 4].map(p => ({ priority: p, label: ['No priority', 'Urgent', 'High', 'Medium', 'Low'][p] })) }, required: false, overwrite: false, rationale: 'Blocks releases', permission: perm, omissionPolicy: 'skip-on-loss-or-conflict', ...overrides });
+const label = (overrides = {}) => ({ id: 'label', kind: 'label', name: 'bug', value: LABEL, observed: false, definition: { id: LABEL, name: 'bug', teamId: null }, required: false, overwrite: false, rationale: 'Confirmed defect', omissionPolicy: 'skip-on-loss-or-conflict', ...overrides });
+const priority = (overrides = {}) => ({ id: 'priority', kind: 'priority', name: 'Priority', value: 2, observed: null, definition: { name: 'Priority', values: [0, 1, 2, 3, 4].map(p => ({ priority: p, label: ['No priority', 'Urgent', 'High', 'Medium', 'Low'][p] })) }, required: false, overwrite: false, rationale: 'Blocks releases', omissionPolicy: 'skip-on-loss-or-conflict', ...overrides });
 
 test('validates the Linear payload contract', t => {
   const { payload, c } = setup(t);
@@ -110,6 +109,17 @@ test('validates the Linear payload contract', t => {
   assert.throws(() => validateLinearPayload(observed), /empty baseline/);
   const bareTerms = structuredClone(payload); bareTerms.candidates[0].duplicate.terms = [];
   assert.throws(() => validateLinearPayload(bareTerms), /duplicate terms/);
+});
+
+test('authorized Linear recording needs no operation-level permission attestations', async t => {
+  const s = setup(t); s.c.metadata = [label()]; s.c.allowedActions.push('metadata:label');
+  const fake = new FakeLinear(); const client = new Linear({ token: KEY, fetch: fake.fetch });
+  assert.match(validateLinearPayload(s.payload).payloadHash, /^[a-f\d]{64}$/);
+  const r = await record({ version: 1, payload: s.payload, statePath: s.statePath, context: s.context }, client);
+  assert.equal(r.status, 'verified', JSON.stringify(r));
+  assert.deepEqual([...fake.issues.values()][0].labelIds, [LABEL]);
+  const blocked = await record({ version: 1, payload: s.payload, statePath: s.statePath, context: { ...s.context, trustedAuthorization: false } }, client);
+  assert.equal(blocked.status, 'blocked');
 });
 
 test('creates one issue with metadata and an uploaded image, and never repeats it', async t => {

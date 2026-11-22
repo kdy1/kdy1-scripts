@@ -1,6 +1,6 @@
 import { same, result } from './common.mjs';
 import { definition } from './github.mjs';
-import { images, permission, apiCreationRequired } from './payload.mjs';
+import { images, apiCreationRequired } from './payload.mjs';
 import { exactText, reconcileImages } from './verify-recording.mjs';
 import { compare } from './workspace.mjs';
 
@@ -12,7 +12,6 @@ export function metadataPlan(c, observations, context, completed = {}) {
     const seen = observations[m.id]; let reason = null;
     if (!seen?.available) reason = seen?.reason ?? 'Metadata unavailable';
     else if (!same(definition(m.definition), definition(seen.value.definition))) reason = 'Metadata definition changed';
-    else if (!seen.value.capable || !permission(context?.permissions?.[m.id])) reason = 'Current action permission not verified';
     else if (same(seen.value.value, expectedValue(m))) continue;
     else if (completed[`metadata:${m.id}`]?.status === 'verified') reason = 'Completed metadata no longer matches';
     else if (!same(seen.value.value, m.observed)) reason = 'Metadata baseline changed';
@@ -41,7 +40,6 @@ export function preflight(p, c, client, context, state = {}) {
   if (account !== p.account) errors.push('Authenticated account changed or unavailable');
   const repo = attempt('repository', () => client.repository());
   if (!repo || repo.full_name !== p.target.repo || repo.html_url !== `https://${p.target.host}/${p.target.repo}` || repo.archived || repo.has_issues !== true) errors.push('Repository unavailable, changed, archived, or issues disabled');
-  if (!permission(context?.recordPermission)) errors.push('Current recording permission not verified');
   const url = state.issueUrl ?? c.issueUrl;
   if (c.action !== 'new issue' && url !== c.issueUrl) errors.push('Retained recording target changed');
   if (c.action === 'new issue' && url && (state.ops?.create?.status !== 'verified' || state.ops.create.receipt !== url)) errors.push('Retained creation receipt mismatch');

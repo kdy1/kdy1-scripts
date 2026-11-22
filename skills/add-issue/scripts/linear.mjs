@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { extname } from 'node:path';
 import { absolute, check, hash, lock, outside, readJson, result, same, save, text, version } from './common.mjs';
-import { executionGate, images as checkImages, permission, validateCandidateCore, validateImageFields } from './payload.mjs';
+import { executionGate, images as checkImages, validateCandidateCore, validateImageFields } from './payload.mjs';
 import { compare } from './workspace.mjs';
 
 export const API = 'https://api.linear.app/graphql';
@@ -226,14 +226,12 @@ export function validateLinearPayload(p) {
       check(m.definition.name === m.name, 'Metadata name differs from audited definition');
       if (m.definition.id !== undefined) check(m.definition.id === m.value, 'Metadata value differs from audited definition');
       if (c.action === 'new issue') check(m.observed === (m.kind === 'label' ? false : null), 'New issue metadata must have an empty baseline');
-      check(permission(m.permission), 'Missing metadata permission evidence');
       if (!m.required) check(m.omissionPolicy === 'skip-on-loss-or-conflict', 'Missing optional omission policy');
       if (m.overwrite) text(m.overwriteAuthority, 'overwrite authority');
       check(c.allowedActions.includes(`metadata:${m.id}`), 'Metadata action not audited');
     }
     if (c.action === 'metadata update') check(c.metadata.length > 0, 'Metadata update has no operations');
     if (c.action === 'existing issue') check(!c.metadata.length, 'Existing issue cannot write metadata');
-    check(permission(c.recordPermission), 'Missing action permission evidence');
     check(Array.isArray(c.images) && typeof c.noApprovedImages === 'boolean' && c.noApprovedImages === (c.images.length === 0), 'Missing explicit image manifest');
     check(c.imageComment === undefined, 'Linear uploads need no image-handoff comment');
     const iid = new Set(), captions = new Set();
@@ -292,7 +290,6 @@ export async function preflight(p, c, client, context, cs = { ops: {} }) {
   if (identity && identity.organization.urlKey !== p.target.workspace) errors.push('Linear workspace changed');
   const team = await attempt('team', () => client.team(p.target.team));
   if (team && (team.id !== p.target.teamId || team.archivedAt || team.retiredAt)) errors.push('Linear team changed, archived, or retired');
-  if (!permission(context?.recordPermission)) errors.push('Current recording permission not verified');
   const ref = c.action === 'new issue' ? cs.issueId : identifierOf(c.issueUrl, p.target);
   const issue = ref ? await attempt('issue', () => client.issue(ref)) : null;
   if (ref && issue === null) errors.push('Audited issue unavailable');
@@ -324,7 +321,6 @@ export async function preflight(p, c, client, context, cs = { ops: {} }) {
     const existing = c.action !== 'new issue';
     if (!reason && !same(definition(m.kind, m.definition), definition(m.kind, seen.definition))) reason = 'Metadata definition changed';
     else if (!reason && !seen.usable) reason = 'Metadata value is no longer usable for this team';
-    else if (!reason && !permission(context?.permissions?.[m.id])) reason = 'Current action permission not verified';
     else if (!reason && same(value, expectedValue(m))) continue;
     else if (!reason && done) reason = 'Completed metadata no longer matches';
     else if (!reason && existing && !same(value, m.observed)) reason = 'Metadata baseline changed';

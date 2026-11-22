@@ -17,7 +17,6 @@ export function issueNumber(url, t) {
   check(u.protocol === 'https:' && u.host === t.host && match && `${match[1]}/${match[2]}` === t.repo && !u.search && !u.hash, 'Issue target mismatch');
   return Number(match[3]);
 }
-export function permission(p) { return p?.confirmed === true && typeof p.evidence === 'string' && !!p.evidence.trim() && typeof p.credentialEvidence === 'string' && !!p.credentialEvidence.trim(); }
 export function images(manifest) {
   const errors = [], files = [];
   for (const image of manifest) {
@@ -97,7 +96,6 @@ export function validatePayload(p) {
       check(Object.hasOwn(m, 'value') && Object.hasOwn(m, 'observed') && m.definition !== undefined, 'Missing metadata value/definition/baseline');
       if (m.definition?.name) check(m.name === m.definition.name, 'Metadata name differs from audited definition');
       if (m.kind === 'type') check(m.value === c.classification, 'Issue type differs from classification');
-      check(permission(m.permission), 'Missing metadata permission evidence');
       if (!m.required) check(m.omissionPolicy === 'skip-on-loss-or-conflict', 'Missing optional omission policy');
       if (m.overwrite) text(m.overwriteAuthority, 'overwrite authority');
       check(c.allowedActions.includes(`metadata:${m.id}`), 'Metadata action not audited');
@@ -110,7 +108,6 @@ export function validatePayload(p) {
     }
     if (c.action === 'metadata update') check(c.metadata.length > 0, 'Metadata update has no operations');
     if (c.action === 'existing issue') check(!c.metadata.length, 'Existing issue cannot write metadata');
-    check(permission(c.recordPermission), 'Missing action permission evidence');
     check(Array.isArray(c.images) && typeof c.noApprovedImages === 'boolean' && c.noApprovedImages === (c.images.length === 0), 'Missing explicit image manifest');
     const iid = new Set(), captions = new Set();
     for (const image of c.images) {

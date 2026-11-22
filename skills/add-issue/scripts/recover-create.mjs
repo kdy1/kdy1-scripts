@@ -1,6 +1,6 @@
 import { check, hash, lock, outside, result, version } from './common.mjs';
 import { readLedger, saveLedger } from './ledger-storage.mjs';
-import { validatePayload, executionGate, permission, images } from './payload.mjs';
+import { validatePayload, executionGate, images } from './payload.mjs';
 import { compare } from './workspace.mjs';
 import { exactText } from './verify-recording.mjs';
 import { GitHub } from './github.mjs';
@@ -15,7 +15,6 @@ export function recoverCreate(input, { client = new GitHub(input.payload.target)
   const gate = executionGate({ ...p, candidates: [c] }, context); if (!gate.complete) return gate;
   const auth = context.creationRetry;
   check(auth?.confirmed === true && auth.originalRecorderFinished === true && typeof auth.evidence === 'string' && auth.evidence.trim(), 'Explicit human retry authorization and finished recorder evidence required');
-  check(permission(context.recordPermission), 'Current recording permission not verified');
   outside(input.statePath, c.workspace.baseline.repo);
   const release = lock(input.statePath);
   if (!release) return result('blocked', ['Recording ledger is locked']);

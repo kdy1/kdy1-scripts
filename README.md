@@ -33,7 +33,7 @@ A collection of standalone [T3 Chat skills](./skills) for GitHub, product planni
 | `auto-settle-t3-thread` | Settle the current T3 Code thread when nothing remains for the human to check. It starts on an explicit human invocation, alone or with a task, or at the end of a calling skill's standalone run. |
 | `slop-fix-batch` | Fix a fixed batch of GitHub or Linear issues, publish dependency-based PR stacks, and directly maintain and conditionally merge verified stacks. |
 | `slop-fix-issue` | Handle one GitHub or Linear issue: close it with evidence if already resolved; otherwise implement and verify it, publish a non-draft PR or a stack for a large issue, and stop. |
-| `static-analysis` | Analyze all code in the requested scope with parallel read-only subagents until every unit is covered, start another pass on each repeated invocation, and hand each confirmed bug to `add-issue` immediately. |
+| `static-analysis` | Analyze all code in the requested scope with parallel read-only subagents on the session model (or a requested model) with `high` reasoning effort until every unit is covered, start another pass on each repeated invocation, and hand each confirmed bug to `add-issue` immediately. |
 | `update-pr-description` | On explicit invocation, rewrite an existing PR's title and body to match its actual change, while keeping issue references, images, templates, and disclosures; applies directly only for the user's own open PR with a clean check. |
 | `write-blog-post` | Develop a blog-post draft from material supplied by the user. |
 | `write-marketing-copy` | Rephrase source material into LinkedIn, X, and Threads posts. |

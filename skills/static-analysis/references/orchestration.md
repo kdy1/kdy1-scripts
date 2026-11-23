@@ -10,17 +10,28 @@ Apply this contract to the coordinator and every analysis worker. The coordinato
 
 Apply this rule to every subagent of the run: analysis workers, reassignments, continuations, and `$add-issue` investigators and recorders.
 
-1. If the human specified a model, provider, or reasoning level for subagents, use exactly that target. Verify the exact ID and option values from the catalog.
-2. Otherwise, use the coordinator's session model: the provider and model that the human selected when the session started. Read it from trusted runtime or session metadata. Do not add model options that the human did not request.
-3. Do not select any other model. A connected provider, an available catalog entry, a model-pinned native agent type (for example a proxy-routed `ocx-*` agent), a configured default subagent model, a skill default, cost, speed, or diversity is not a reason to use a different model.
-4. If the selected target is unavailable or the session model cannot be established, report the affected work as blocked and analyze it locally. Do not substitute another model.
+1. If the human specified a model or provider for subagents, use exactly that model. Verify the exact ID from the catalog.
+2. Otherwise, use the coordinator's session model: the provider and model that the human selected when the session started (`inheritedProviderInstanceId` and `inheritedModel`).
+3. Run every subagent with high reasoning effort: `effort: high` on Claude and `reasoningEffort: high` on Codex. If the human specified a reasoning level for subagents, use that level instead. Do not inherit the coordinator's own reasoning level or other session options, and do not add other options that the human did not request.
+4. Do not select any other model. A connected provider, an available catalog entry, a model-pinned native agent type (for example a proxy-routed `ocx-*` agent), a configured default subagent model, a skill default, cost, speed, or diversity is not a reason to use a different model.
+5. If the selected target is unavailable, does not accept the reasoning level, or the session model cannot be established, report the affected work as blocked and analyze it locally. Do not substitute another model or drop the reasoning option.
+
+### Validate the target
+
+Save the raw `orchestrator_capabilities` response, or the MCP response with `structuredContent`, to a private absolute path outside the target repository. Run:
+
+```sh
+python3 <skill-dir>/scripts/select-target.py <capabilities.json> \
+  [--model <model-id>] [--provider <providerInstanceId>] [--option <id>=<value> ...]
+```
+
+Pass `--model`, `--provider`, and `--option` only for values that the human specified, for example `--option effort=xhigh`. Without them, the helper returns the session model with high reasoning effort. The helper checks app-owned delegation support, that the provider can run child tasks (and cross-provider child tasks when it is not the session provider), the exact model ID, and each option value, and adds the high reasoning effort option unless the human specified one. If the catalog's short list omits the model, call `orchestrator_capabilities` again with `search: "<model-id>"`, save that response, and run the helper on it. The output is the complete `target` object. Use it for every subagent, and pass it to `$add-issue` in each handoff so that its investigators and recorders use the same target.
 
 ### Select the tool
 
-- Launch analysis workers with `delegate_task` and an explicit `target` for the selected model, so that they run asynchronously and their candidate reports reach the coordinator during the run. A blocking subagent call returns all candidates of a unit at once, at the end, which batches the handoffs.
-- For other subagents, such as `$add-issue` investigators, use native subagent tools only when the child runs on the selected model with no extra settings. Use a general-purpose agent type and confirm that inheritance yields the selected model. If a native agent type pins another model, or a configured default subagent model differs from the selected model, do not use that path.
-- Otherwise use `delegate_task` with an explicit `target` for the selected provider instance and model, verified from the live catalog. Do not create top-level conversations with `create_threads` or `t3_thread_launch`.
-- Record the target evidence for each worker. A matching model ID alone does not prove that a reasoning option was applied. If a worker reports a model that differs from the selected model, cancel it, mark its unit `blocked`, and reassign it on the selected model.
+- Launch analysis workers with `delegate_task` and the helper's `target`, so that they run asynchronously and their candidate reports reach the coordinator during the run. A blocking subagent call returns all candidates of a unit at once, at the end, which batches the handoffs.
+- Launch other subagents, such as `$add-issue` investigators and recorders, with `delegate_task` and the same `target` too. The target always sets a reasoning option, and native subagent tools (Claude `Agent`, Codex `spawn_agent`) do not reliably apply it. Do not create top-level conversations with `create_threads` or `t3_thread_launch`.
+- Record the target evidence for each worker. A matching model ID alone does not prove that a reasoning option was applied. If a worker reports a model or reasoning level that differs from the target, cancel it, mark its unit `blocked`, and reassign it on the target.
 
 ## Plan units
 
@@ -76,7 +87,7 @@ Pass: <pass number>; focus: <pass focus>; already handled for this unit: <candid
 Repository: <absolute path>; revision: <commit SHA and branch>
 Issue tracker: <owner/repo>; duplicate search: python3 <skill-dir>/scripts/find-duplicates.py
 Scope: <unit paths and any cross-cutting contracts>
-Model target: <provider, model, and options evidence>
+Model target: <helper target: provider, model, and reasoning option>
 GitHub account: <`gh-bot-auth activate --repo <owner/repo>` or `normal`>
 
 Rules:

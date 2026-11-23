@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Collect the authenticated user's daily PR, review, merge, and close activity through read-only gh queries."""
+"""Collect the authenticated user's PR, review, merge, and close activity in a date range through read-only gh queries."""
 
 import argparse
 from datetime import date, datetime, time, timedelta, timezone
@@ -52,15 +52,28 @@ def gh_json(*args):
     return payload
 
 
-def day_bounds(day_text=None, zone_name=None):
+def period_bounds(since=None, until=None, zone_name=None):
+    """Resolve an inclusive range of local dates to UTC bounds; end is exclusive.
+
+    `until` defaults to today and `since` defaults to `until`, so no dates means today.
+    """
     zone = ZoneInfo(zone_name) if zone_name else None
-    day = date.fromisoformat(day_text) if day_text else datetime.now(zone).date()
+    today = datetime.now(zone).date()
+    last = date.fromisoformat(until) if until else today
+    first = date.fromisoformat(since) if since else last
+    if first > last:
+        raise ValueError(f"The period starts ({first}) after it ends ({last})")
     # Resolve both local midnights independently, including DST transitions.
-    start = datetime.combine(day, time.min, tzinfo=zone).astimezone(timezone.utc)
+    start = datetime.combine(first, time.min, tzinfo=zone).astimezone(timezone.utc)
     end = datetime.combine(
-        day + timedelta(days=1), time.min, tzinfo=zone
+        last + timedelta(days=1), time.min, tzinfo=zone
     ).astimezone(timezone.utc)
-    return day, start, end
+    return first, last, start, end
+
+
+def heading(first, last):
+    period = str(first) if first == last else f"{first} to {last}"
+    return f"Update for {period}:"
 
 
 def stamp(value):
@@ -87,15 +100,15 @@ def search_prs(repo, author, start, end, qualifier, date_field):
 
 
 def search_others(repo, author, start, end):
-    """Find other authors' PRs that the user reviewed, merged, or closed during the day."""
+    """Find other authors' PRs that the user reviewed, merged, or closed during the period."""
     records = {}
-    day = f"{stamp(start)}..{stamp(end - timedelta(seconds=1))}"
+    period = f"{stamp(start)}..{stamp(end - timedelta(seconds=1))}"
     # A submitted review or a close updates the PR, so its updatedAt is at or after the event. The
     # `closed:` filter can miss PRs that were just closed, so closes use `updated:`; classify_others()
     # checks `closedAt` and the close actor itself.
     for terms in (
         f"reviewed-by:{author} -author:{author} updated:>={stamp(start)}",
-        f"is:merged -author:{author} merged:{day}",
+        f"is:merged -author:{author} merged:{period}",
         f"is:closed is:unmerged -author:{author} updated:>={stamp(start)}",
     ):
         for pr in run_search(repo, author, terms):
@@ -160,7 +173,7 @@ def classify(records, author, start, end):
 
 
 def classify_others(records, author, start, end):
-    """Keep other authors' PRs with the user's latest review state, merge, and close that day."""
+    """Keep other authors' PRs with the user's latest review state, merge, and close in the period."""
     activity = []
     for pr in records:
         if login_of(pr.get("author")) == author.casefold():
@@ -183,7 +196,7 @@ def classify_others(records, author, start, end):
 
 
 def closed_by(pr, author, start, end):
-    """Whether the user's close event, during the day, left the PR closed without merging."""
+    """Whether the user's close event, during the period, left the PR closed without merging."""
     if pr["state"] != "CLOSED" or pr.get("mergedAt") or not within(pr.get("closedAt"), start, end):
         return False
     # A PR closed again after a reopen keeps one ClosedEvent per close; the query asks for the latest.
@@ -191,8 +204,8 @@ def closed_by(pr, author, start, end):
     return bool(events) and login_of(events[-1].get("actor")) == author.casefold()
 
 
-def render(sections, extra=None):
-    lines = ["Todays update:"]
+def render(sections, title, extra=None):
+    lines = [title]
     for section, prs in sections.items():
         lines.extend(["", f"{section}:"])
         for pr in prs:
@@ -213,7 +226,9 @@ def render(sections, extra=None):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo", action="append", required=True, help="OWNER/REPO; repeat as needed")
-    parser.add_argument("--date", help="YYYY-MM-DD (default: today)")
+    parser.add_argument("--date", help="YYYY-MM-DD; one day, the same as equal --since and --until")
+    parser.add_argument("--since", help="First local date YYYY-MM-DD, inclusive (default: the --until date)")
+    parser.add_argument("--until", help="Last local date YYYY-MM-DD, inclusive (default: today)")
     parser.add_argument("--timezone", help="IANA timezone (default: system local timezone)")
     parser.add_argument("--extra-update-file", type=Path, help="Prepared English UTF-8 Markdown")
     parser.add_argument("--json", action="store_true", help="Include source records and Markdown")
@@ -222,7 +237,11 @@ def main():
         repos = list(dict.fromkeys(repo.lower() for repo in args.repo))
         if any(not re.fullmatch(r"[A-Za-z0-9-]+/[A-Za-z0-9_.-]+", repo) for repo in repos):
             raise ValueError("Each --repo must be an OWNER/REPO name")
-        day, start, end = day_bounds(args.date, args.timezone)
+        if args.date and (args.since or args.until):
+            raise ValueError("Use --date alone, or --since and --until")
+        first, last, start, end = period_bounds(
+            args.since or args.date, args.until or args.date, args.timezone
+        )
         extra = args.extra_update_file.read_text(encoding="utf-8") if args.extra_update_file else None
         author = gh_json("api", "--hostname", "github.com", "user")["login"]
         records, others = {}, {}
@@ -240,10 +259,10 @@ def main():
                 others[pr["url"]] = pr
         sections = classify(records.values(), author, start, end)
         sections["Reviews and merges"] = classify_others(others.values(), author, start, end)
-        markdown = render(sections, extra)
+        markdown = render(sections, heading(first, last), extra)
         if args.json:
             print(json.dumps({
-                "author": author, "repositories": repos, "date": str(day),
+                "author": author, "repositories": repos, "since": str(first), "until": str(last),
                 "timezone": args.timezone or "system local",
                 "start": stamp(start), "endExclusive": stamp(end),
                 "sections": sections, "markdown": markdown,

@@ -42,15 +42,38 @@ def page(records, count=None, cursor=None):
 
 class ActivityUpdateTests(unittest.TestCase):
     def setUp(self):
-        self.day, self.start, self.end = helper.day_bounds("2026-11-05", "Asia/Seoul")
+        _, _, self.start, self.end = helper.period_bounds("2026-11-05", "2026-11-05", "Asia/Seoul")
 
     def test_timezone_boundaries_and_daylight_saving(self):
         self.assertEqual(helper.stamp(self.start), "2026-11-04T15:00:00Z")
         self.assertEqual(helper.stamp(self.end), "2026-11-05T15:00:00Z")
-        _, start, end = helper.day_bounds("2026-03-08", "America/New_York")
+        _, _, start, end = helper.period_bounds("2026-03-08", "2026-03-08", "America/New_York")
         self.assertEqual((end - start).total_seconds(), 23 * 3600)
-        _, start, end = helper.day_bounds("2026-11-01", "America/New_York")
+        _, _, start, end = helper.period_bounds("2026-11-01", "2026-11-01", "America/New_York")
         self.assertEqual((end - start).total_seconds(), 25 * 3600)
+
+    def test_period_spans_inclusive_local_dates(self):
+        first, last, start, end = helper.period_bounds("2026-11-01", "2026-11-07", "Asia/Seoul")
+        self.assertEqual((str(first), str(last)), ("2026-11-01", "2026-11-07"))
+        self.assertEqual(helper.stamp(start), "2026-10-31T15:00:00Z")
+        self.assertEqual(helper.stamp(end), "2026-11-07T15:00:00Z")
+        # Only an end date means that one day.
+        first, last, _, _ = helper.period_bounds(None, "2026-11-07", "Asia/Seoul")
+        self.assertEqual(first, last)
+        with self.assertRaisesRegex(ValueError, "starts"):
+            helper.period_bounds("2026-11-08", "2026-11-07", "Asia/Seoul")
+
+    def test_period_defaults_to_today(self):
+        today = helper.datetime.now(helper.ZoneInfo("Asia/Seoul")).date()
+        first, last, _, _ = helper.period_bounds(None, None, "Asia/Seoul")
+        self.assertEqual((first, last), (today, today))
+        first, last, _, _ = helper.period_bounds(str(today - helper.timedelta(days=6)), None, "Asia/Seoul")
+        self.assertEqual(((last - first).days, last), (6, today))
+
+    def test_heading_names_the_period(self):
+        one, seven = helper.date(2026, 11, 1), helper.date(2026, 11, 7)
+        self.assertEqual(helper.heading(one, one), "Update for 2026-11-01:")
+        self.assertEqual(helper.heading(one, seven), "Update for 2026-11-01 to 2026-11-07:")
 
     def test_classifies_by_event_and_excludes_other_authors_and_old_activity(self):
         records = [
@@ -142,7 +165,7 @@ class ActivityUpdateTests(unittest.TestCase):
             (8, ["review dismissed"]), (3, ["merged"]), (2, ["commented", "merged"]),
             (1, ["approved"]),
         ])
-        output = helper.render({"Reviews and merges": activity})
+        output = helper.render({"Reviews and merges": activity}, "Update:")
         self.assertIn(" - [example/demo#2](https://github.com/example/demo/pull/2) (commented, merged)\n",
                       output)
 
@@ -173,17 +196,18 @@ class ActivityUpdateTests(unittest.TestCase):
                          [(1, ["changes requested", "closed"])])
         self.assertIn(" - [example/demo#1](https://github.com/example/demo/pull/1) "
                       "(changes requested, closed)\n",
-                      helper.render({"Reviews and merges": activity}))
+                      helper.render({"Reviews and merges": activity}, "Update:"))
 
     def test_extra_update_and_inline_code_are_preserved(self):
         sections = helper.classify([pr(2, isDraft=True)], "sample-user", self.start, self.end)
         extra = "Team notes:\n\n - Keep `alpha` and **beta**.\n"
-        output = helper.render(sections, extra)
+        output = helper.render(sections, "Update for 2026-11-05:", extra)
+        self.assertTrue(output.startswith("Update for 2026-11-05:\n\nMerged:\n"))
         self.assertTrue(output.endswith("\n---\n\n" + extra))
         self.assertIn(" - [example/demo#2](https://github.com/example/demo/pull/2) (draft)\n", output)
         self.assertNotIn("fix: retain", output)
         self.assertIn("Merged:\n - None.", output)
-        self.assertNotIn("\n---\n", helper.render(sections))
+        self.assertNotIn("\n---\n", helper.render(sections, "Update:"))
 
     def test_cli_collects_all_categories_and_deduplicates_repositories(self):
         args = ["activity_update.py", "--repo", "example/demo", "--repo", "EXAMPLE/demo",
@@ -205,6 +229,40 @@ class ActivityUpdateTests(unittest.TestCase):
         self.assertIn("is:closed is:unmerged updated:>=2026-11-04T15:00:00Z", queries[2])
         self.assertEqual([p["number"] for p in result["sections"]["Reviews and merges"]], [3])
         self.assertIn("Reviews and merges:\n - [example/demo#3]", result["markdown"])
+
+    def test_cli_searches_the_whole_period(self):
+        args = ["activity_update.py", "--repo", "example/demo", "--since", "2026-11-01",
+                "--until", "2026-11-07", "--timezone", "Asia/Seoul", "--json"]
+        responses = [{"login": "sample-user"}, {"full_name": "example/demo"},
+                     page([pr(1, state="MERGED", mergedAt="2026-11-01T00:00:00Z")]),
+                     page([pr(2, updatedAt="2026-11-07T14:00:00Z")]), *[page([])] * 4]
+        stdout = io.StringIO()
+        with patch("sys.argv", args), patch.object(helper, "gh_json", side_effect=responses) as request:
+            with redirect_stdout(stdout):
+                self.assertEqual(helper.main(), 0)
+        result = json.loads(stdout.getvalue())
+        self.assertEqual((result["since"], result["until"]), ("2026-11-01", "2026-11-07"))
+        self.assertEqual((result["start"], result["endExclusive"]),
+                         ("2026-10-31T15:00:00Z", "2026-11-07T15:00:00Z"))
+        self.assertTrue(result["markdown"].startswith("Update for 2026-11-01 to 2026-11-07:\n"))
+        self.assertEqual([p["number"] for p in result["sections"]["Merged"]], [1])
+        self.assertEqual([p["number"] for p in result["sections"]["WIP"]], [2])
+        queries = [arg for call in request.call_args_list for arg in call.args if arg.startswith("search=")]
+        self.assertIn("merged:2026-10-31T15:00:00Z..2026-11-07T14:59:59Z", queries[0])
+        self.assertIn("updated:2026-10-31T15:00:00Z..2026-11-07T14:59:59Z", queries[1])
+
+    def test_cli_rejects_invalid_periods_before_querying(self):
+        for extra in (["--date", "2026-11-05", "--since", "2026-11-01"],
+                      ["--since", "2026-11-08", "--until", "2026-11-07"],
+                      ["--since", "2026-13-01"]):
+            args = ["activity_update.py", "--repo", "example/demo", *extra]
+            stdout, stderr = io.StringIO(), io.StringIO()
+            with self.subTest(extra=extra), patch("sys.argv", args), \
+                    patch.object(helper, "gh_json") as request:
+                with redirect_stdout(stdout), redirect_stderr(stderr):
+                    self.assertEqual(helper.main(), 1)
+                request.assert_not_called()
+            self.assertEqual(stdout.getvalue(), "")
 
     def test_cli_failure_does_not_emit_partial_update(self):
         args = ["activity_update.py", "--repo", "example/demo", "--repo", "example/private"]

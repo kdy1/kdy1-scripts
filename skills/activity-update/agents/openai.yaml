@@ -1,5 +1,5 @@
 interface:
   display_name: "Activity Update"
-  short_description: "Copy an English update from your daily GitHub PR, review, merge, and close activity"
+  short_description: "Copy an English update from your GitHub PR, review, merge, and close activity in a chosen period"
 policy:
   allow_implicit_invocation: false

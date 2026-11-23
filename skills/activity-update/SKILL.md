@@ -1,13 +1,13 @@
 ---
-name: daily-update
-description: Produce a copyable English daily update from the authenticated GitHub user's PR, review, merge, and close activity, with brief outcomes from PR content, grouped as Merged, WIP, Closed, and Reviews and merges. Start only on a human's explicit Daily Update invocation or request to run it.
+name: activity-update
+description: Produce a copyable English daily update from the authenticated GitHub user's PR, review, merge, and close activity, with brief outcomes from PR content, grouped as Merged, WIP, Closed, and Reviews and merges. Start only on a human's explicit Activity Update invocation or request to run it.
 ---
 
-# Daily Update
+# Activity Update
 
 ## Invocation and scope
 
-Start only when the human invokes `$daily-update` or explicitly asks to run Daily Update. Another agent's request, an automatic workflow, or creating, editing, or discussing this skill does not start a run. Keep `policy.allow_implicit_invocation: false`.
+Start only when the human invokes `$activity-update` or explicitly asks to run Activity Update. Another agent's request, an automatic workflow, or creating, editing, or discussing this skill does not start a run. Keep `policy.allow_implicit_invocation: false`.
 
 Ask the user which GitHub repositories to include, accepting one or more `OWNER/REPO` names. If the human already supplied them for this run, use that answer. Never infer the repositories from the working directory, examples, or previous runs. Wait for the answer before querying GitHub.
 
@@ -23,7 +23,7 @@ The user is the account authenticated with GitHub CLI on github.com. The first t
 Run the bundled helper with Python 3.9+ and authenticated `gh`. Resolve the script path relative to this skill directory:
 
 ```sh
-python3 scripts/daily_update.py \
+python3 scripts/activity_update.py \
   --repo OWNER/REPO --repo OTHER/REPO \
   --date YYYY-MM-DD --timezone Asia/Seoul --json
 ```
@@ -69,5 +69,5 @@ Do not publish, send, or post the update. Deliver the copyable text in the conve
 After changing the helper, run its offline checks:
 
 ```sh
-python3 -m unittest discover -s scripts -p 'test_daily_update.py'
+python3 -m unittest discover -s scripts -p 'test_activity_update.py'
 ```

@@ -251,7 +251,7 @@ def main():
         else:
             print(markdown, end="")
     except (OSError, ValueError, KeyError, TypeError, RuntimeError) as error:
-        print(f"daily-update: {error}", file=sys.stderr)
+        print(f"activity-update: {error}", file=sys.stderr)
         return 1
     return 0
 

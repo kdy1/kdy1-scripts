@@ -6,7 +6,7 @@ import json
 import unittest
 from unittest.mock import patch
 
-import daily_update as daily
+import activity_update as helper
 
 
 def pr(number, **changes):
@@ -40,16 +40,16 @@ def page(records, count=None, cursor=None):
     }}}
 
 
-class DailyUpdateTests(unittest.TestCase):
+class ActivityUpdateTests(unittest.TestCase):
     def setUp(self):
-        self.day, self.start, self.end = daily.day_bounds("2026-11-05", "Asia/Seoul")
+        self.day, self.start, self.end = helper.day_bounds("2026-11-05", "Asia/Seoul")
 
     def test_timezone_boundaries_and_daylight_saving(self):
-        self.assertEqual(daily.stamp(self.start), "2026-11-04T15:00:00Z")
-        self.assertEqual(daily.stamp(self.end), "2026-11-05T15:00:00Z")
-        _, start, end = daily.day_bounds("2026-03-08", "America/New_York")
+        self.assertEqual(helper.stamp(self.start), "2026-11-04T15:00:00Z")
+        self.assertEqual(helper.stamp(self.end), "2026-11-05T15:00:00Z")
+        _, start, end = helper.day_bounds("2026-03-08", "America/New_York")
         self.assertEqual((end - start).total_seconds(), 23 * 3600)
-        _, start, end = daily.day_bounds("2026-11-01", "America/New_York")
+        _, start, end = helper.day_bounds("2026-11-01", "America/New_York")
         self.assertEqual((end - start).total_seconds(), 25 * 3600)
 
     def test_classifies_by_event_and_excludes_other_authors_and_old_activity(self):
@@ -65,15 +65,15 @@ class DailyUpdateTests(unittest.TestCase):
             pr(8, state="CLOSED", closedAt="2026-11-03T00:00:00Z"),
             pr(9, author=None),
         ]
-        sections = daily.classify(records, "SAMPLE-USER", self.start, self.end)
+        sections = helper.classify(records, "SAMPLE-USER", self.start, self.end)
         self.assertEqual({key: [p["number"] for p in value] for key, value in sections.items()},
                          {"Merged": [1], "WIP": [2], "Closed": [3]})
 
     def test_pagination_and_event_search(self):
-        with patch.object(daily, "gh_json", side_effect=[
+        with patch.object(helper, "gh_json", side_effect=[
             page([pr(1)], count=2, cursor="next"), page([pr(2)], count=2)
         ]) as request:
-            records = daily.search_prs("example/demo", "sample-user", self.start,
+            records = helper.search_prs("example/demo", "sample-user", self.start,
                                       self.end, "is:merged", "merged")
         self.assertEqual(len(records), 2)
         self.assertIn("cursor=next", request.call_args.args)
@@ -83,8 +83,8 @@ class DailyUpdateTests(unittest.TestCase):
         self.assertIn("merged:2026-11-04T15:00:00Z..2026-11-05T14:59:59Z", search)
 
     def test_own_closed_search_uses_updated_without_upper_bound(self):
-        with patch.object(daily, "gh_json", return_value=page([pr(1)])) as request:
-            daily.search_prs("example/demo", "sample-user", self.start, self.end,
+        with patch.object(helper, "gh_json", return_value=page([pr(1)])) as request:
+            helper.search_prs("example/demo", "sample-user", self.start, self.end,
                              "is:closed is:unmerged", "closed")
         search = next(arg for arg in request.call_args.args if arg.startswith("search="))
         self.assertIn("author:sample-user is:closed is:unmerged updated:>=2026-11-04T15:00:00Z", search)
@@ -93,22 +93,22 @@ class DailyUpdateTests(unittest.TestCase):
     def test_incomplete_search_and_limit_fail(self):
         truncated = pr(1, reviews={"totalCount": 101, "nodes": []})
         for result in [page([], count=1), page([], count=1001), page([None]), page([truncated])]:
-            with self.subTest(result=result), patch.object(daily, "gh_json", return_value=result):
+            with self.subTest(result=result), patch.object(helper, "gh_json", return_value=result):
                 with self.assertRaises(RuntimeError):
-                    daily.search_prs("example/demo", "sample-user", self.start,
+                    helper.search_prs("example/demo", "sample-user", self.start,
                                      self.end, "is:open", "updated")
 
     def test_repeated_cursor_fails(self):
-        with patch.object(daily, "gh_json", return_value=page([pr(1)], cursor="same")):
+        with patch.object(helper, "gh_json", return_value=page([pr(1)], cursor="same")):
             with self.assertRaisesRegex(RuntimeError, "pagination"):
-                daily.search_prs("example/demo", "sample-user", self.start,
+                helper.search_prs("example/demo", "sample-user", self.start,
                                  self.end, "is:open", "updated")
 
     def test_others_searches_cover_reviews_merges_and_closes(self):
-        with patch.object(daily, "gh_json", side_effect=[
+        with patch.object(helper, "gh_json", side_effect=[
             page([pr(1)]), page([pr(1), pr(2)]), page([pr(3)])
         ]) as request:
-            records = daily.search_others("example/demo", "sample-user", self.start, self.end)
+            records = helper.search_others("example/demo", "sample-user", self.start, self.end)
         self.assertEqual(sorted(p["number"] for p in records), [1, 2, 3])
         searches = [arg for call in request.call_args_list for arg in call.args if arg.startswith("search=")]
         self.assertIn("reviewed-by:sample-user -author:sample-user updated:>=2026-11-04T15:00:00Z", searches[0])
@@ -137,12 +137,12 @@ class DailyUpdateTests(unittest.TestCase):
             pr(7, reviews=reviews(("COMMENTED", "2026-11-05T01:00:00Z"))),
             pr(8, author=None, reviews=reviews(("DISMISSED", "2026-11-05T01:00:00Z"))),
         ]
-        activity = daily.classify_others(records, "sample-user", self.start, self.end)
+        activity = helper.classify_others(records, "sample-user", self.start, self.end)
         self.assertEqual([(p["number"], p["myActivity"]) for p in activity], [
             (8, ["review dismissed"]), (3, ["merged"]), (2, ["commented", "merged"]),
             (1, ["approved"]),
         ])
-        output = daily.render({"Reviews and merges": activity})
+        output = helper.render({"Reviews and merges": activity})
         self.assertIn(" - [example/demo#2](https://github.com/example/demo/pull/2) (commented, merged)\n",
                       output)
 
@@ -168,25 +168,25 @@ class DailyUpdateTests(unittest.TestCase):
             pr(7, state="CLOSED", closedAt="2026-11-05T03:00:00Z",
                lastClose=last_close("sample-user", "2026-11-05T03:00:00Z")),
         ]
-        activity = daily.classify_others(records, "sample-user", self.start, self.end)
+        activity = helper.classify_others(records, "sample-user", self.start, self.end)
         self.assertEqual([(p["number"], p["myActivity"]) for p in activity],
                          [(1, ["changes requested", "closed"])])
         self.assertIn(" - [example/demo#1](https://github.com/example/demo/pull/1) "
                       "(changes requested, closed)\n",
-                      daily.render({"Reviews and merges": activity}))
+                      helper.render({"Reviews and merges": activity}))
 
     def test_extra_update_and_inline_code_are_preserved(self):
-        sections = daily.classify([pr(2, isDraft=True)], "sample-user", self.start, self.end)
+        sections = helper.classify([pr(2, isDraft=True)], "sample-user", self.start, self.end)
         extra = "Team notes:\n\n - Keep `alpha` and **beta**.\n"
-        output = daily.render(sections, extra)
+        output = helper.render(sections, extra)
         self.assertTrue(output.endswith("\n---\n\n" + extra))
         self.assertIn(" - [example/demo#2](https://github.com/example/demo/pull/2) (draft)\n", output)
         self.assertNotIn("fix: retain", output)
         self.assertIn("Merged:\n - None.", output)
-        self.assertNotIn("\n---\n", daily.render(sections))
+        self.assertNotIn("\n---\n", helper.render(sections))
 
     def test_cli_collects_all_categories_and_deduplicates_repositories(self):
-        args = ["daily_update.py", "--repo", "example/demo", "--repo", "EXAMPLE/demo",
+        args = ["activity_update.py", "--repo", "example/demo", "--repo", "EXAMPLE/demo",
                 "--date", "2026-11-05", "--timezone", "Asia/Seoul", "--json"]
         responses = [{"login": "sample-user"}, {"full_name": "example/demo"},
                      page([]), page([pr(2)]), page([]),
@@ -194,9 +194,9 @@ class DailyUpdateTests(unittest.TestCase):
                               reviews=reviews(("APPROVED", "2026-11-05T01:00:00Z")))]),
                      page([]), page([])]
         stdout = io.StringIO()
-        with patch("sys.argv", args), patch.object(daily, "gh_json", side_effect=responses) as request:
+        with patch("sys.argv", args), patch.object(helper, "gh_json", side_effect=responses) as request:
             with redirect_stdout(stdout):
-                self.assertEqual(daily.main(), 0)
+                self.assertEqual(helper.main(), 0)
         result = json.loads(stdout.getvalue())
         self.assertEqual(result["repositories"], ["example/demo"])
         self.assertEqual(len(result["sections"]["WIP"]), 1)
@@ -207,22 +207,22 @@ class DailyUpdateTests(unittest.TestCase):
         self.assertIn("Reviews and merges:\n - [example/demo#3]", result["markdown"])
 
     def test_cli_failure_does_not_emit_partial_update(self):
-        args = ["daily_update.py", "--repo", "example/demo", "--repo", "example/private"]
+        args = ["activity_update.py", "--repo", "example/demo", "--repo", "example/private"]
         responses = [{"login": "sample-user"}, {}, *[page([])] * 6,
                      RuntimeError("repository unavailable")]
         stdout, stderr = io.StringIO(), io.StringIO()
-        with patch("sys.argv", args), patch.object(daily, "gh_json", side_effect=responses):
+        with patch("sys.argv", args), patch.object(helper, "gh_json", side_effect=responses):
             with redirect_stdout(stdout), redirect_stderr(stderr):
-                self.assertEqual(daily.main(), 1)
+                self.assertEqual(helper.main(), 1)
         self.assertEqual(stdout.getvalue(), "")
         self.assertIn("repository unavailable", stderr.getvalue())
 
     def test_graphql_errors_fail_even_when_process_exits_successfully(self):
         response = type("Response", (), {"returncode": 0, "stderr": "", "stdout":
                                         '{"errors": [{"message": "rate limited"}]}'} )()
-        with patch.object(daily.subprocess, "run", return_value=response):
+        with patch.object(helper.subprocess, "run", return_value=response):
             with self.assertRaisesRegex(RuntimeError, "rate limited"):
-                daily.gh_json("api", "graphql")
+                helper.gh_json("api", "graphql")
 
 
 if __name__ == "__main__":

@@ -103,7 +103,14 @@ class PromptTests(unittest.TestCase):
         self.assertIn("git -C /tmp/run/reviewers/opus diff " + "b" * 40 + "..." + "h" * 40, text)
         self.assertIn("gh pr view https://github.com/o/r/pull/1 --comments", text)
         self.assertIn("VERDICT:", text)
+        self.assertIn("(none found for the changed paths)", text)
         self.assertNotIn("{{", text)
+
+    def test_renders_instruction_files_inside_the_checkout(self):
+        manifest = dict(self.manifest, instructionFiles=["AGENTS.md", "crates/x/AGENTS.md"])
+        text = render_prompt(manifest, "opus")
+        self.assertIn("  - `/tmp/run/reviewers/opus/AGENTS.md`\n"
+                      "  - `/tmp/run/reviewers/opus/crates/x/AGENTS.md`", text)
 
     def test_renders_local_prompt_with_intent(self):
         manifest = dict(self.manifest, kind="local", origin=None, sourcePath="/src/app",
@@ -190,6 +197,19 @@ class LocalTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Nothing to review"):
             prepare_local(str(self.repo), base_ref="feature")
         self.assertEqual(set(Path(tempfile.gettempdir()).glob("review-once-*")), before)
+
+    def test_collects_instruction_files_of_changed_paths(self):
+        for path in ("AGENTS.md", "crates/x/AGENTS.md", "crates/x/src/CLAUDE.md",
+                     "crates/y/AGENTS.md", "docs/README.md"):
+            (self.repo / path).parent.mkdir(parents=True, exist_ok=True)
+            (self.repo / path).write_text("rules\n")
+        git(self.repo, "add", ".")
+        git(self.repo, "commit", "--quiet", "-m", "add instructions")
+        git(self.repo, "branch", "--quiet", "-f", "main")
+        (self.repo / "crates/x/src/lib.rs").write_text("fn f() {}\n")
+        self.manifest = prepare_local(str(self.repo), base_ref="main")
+        self.assertEqual(self.manifest["instructionFiles"],
+                         ["AGENTS.md", "crates/x/AGENTS.md", "crates/x/src/CLAUDE.md"])
 
     def test_default_base_falls_back_to_main(self):
         self.manifest = prepare_local(str(self.repo))

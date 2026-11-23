@@ -33,6 +33,8 @@ PR_FIELDS = "number,url,title,state,isDraft,baseRefName,baseRefOid,headRefName,h
 RUN_PREFIX = "review-once-"
 SNAPSHOT_MESSAGE = "Review Once snapshot of uncommitted changes"
 PROMPT_TEMPLATE = Path(__file__).resolve().parent.parent / "references" / "reviewer-prompt.md"
+# Repository instruction files that apply to every path below their directory.
+INSTRUCTION_NAMES = ("AGENTS.md", "CLAUDE.md")
 
 
 def parse_pr(ref, repo=None):
@@ -150,6 +152,27 @@ def in_run_dir(run_dir, build):
         raise
 
 
+def instruction_files(repo, merge_base, head):
+    """Return the instruction files at head that apply to the changed paths, root first.
+
+    An instruction file applies to every path in its directory and below it, so a file
+    in a changed path's directory or in any ancestor directory applies. Nested files
+    (for example `crates/foo/AGENTS.md`) often hold rules that the root file lacks,
+    such as the semantic assumptions of one component.
+    """
+    changed = git(repo, "diff", "--name-only", "--no-renames", merge_base, head).splitlines()
+    directories = {""}
+    for path in changed:
+        parts = path.split("/")[:-1]
+        directories.update("/".join(parts[:depth]) for depth in range(1, len(parts) + 1))
+    found = []
+    for path in git(repo, "ls-tree", "-r", "--name-only", head).splitlines():
+        directory, _, name = path.rpartition("/")
+        if name in INSTRUCTION_NAMES and directory in directories:
+            found.append(path)
+    return sorted(found, key=lambda path: (path.count("/"), path))
+
+
 def finish(root, mirror, base, head, fields):
     """Create one detached checkout per reviewer at head and write the manifest."""
     merge_base = git(mirror, "merge-base", base, head)
@@ -161,7 +184,8 @@ def finish(root, mirror, base, head, fields):
         git(mirror, "worktree", "add", "--quiet", "--detach", str(path), head)
         checkouts[slug] = str(path)
     manifest = dict(fields, runDir=str(root), baseSha=base, headSha=head,
-                    mergeBase=merge_base, checkouts=checkouts)
+                    mergeBase=merge_base, checkouts=checkouts,
+                    instructionFiles=instruction_files(mirror, merge_base, head))
     path = root / "manifest.json"
     path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     manifest["manifest"] = str(path)
@@ -299,6 +323,14 @@ def describe(manifest, checkout):
     return target, context
 
 
+def instruction_lines(manifest, checkout):
+    """Return a Markdown list of the applicable instruction files inside one checkout."""
+    files = manifest.get("instructionFiles") or []
+    if not files:
+        return "  - (none found for the changed paths)"
+    return "\n".join(f"  - `{Path(checkout) / path}`" for path in files)
+
+
 def render_prompt(manifest, slug, template=None):
     """Render the reviewer prompt for one slug from a manifest."""
     if slug not in manifest["checkouts"]:
@@ -310,7 +342,7 @@ def render_prompt(manifest, slug, template=None):
         "TARGET": target, "CONTEXT": context, "BASE_REF": manifest["baseRef"],
         "BASE_SHA": manifest["baseSha"], "HEAD_REF": manifest["headRef"],
         "HEAD_SHA": manifest["headSha"], "MERGE_BASE": manifest["mergeBase"],
-        "CHECKOUT": checkout,
+        "CHECKOUT": checkout, "INSTRUCTION_FILES": instruction_lines(manifest, checkout),
     }
     for key, value in values.items():
         text = text.replace("{{" + key + "}}", str(value))
@@ -378,6 +410,11 @@ def main():
     prompt = sub.add_parser("prompt", help="Render one reviewer prompt")
     prompt.add_argument("manifest")
     prompt.add_argument("slug", choices=[slug for slug, _, _ in REVIEWERS])
+    instructions = sub.add_parser("instructions",
+                                  help="List the instruction files that apply to the changed paths")
+    instructions.add_argument("manifest")
+    instructions.add_argument("--slug", choices=[slug for slug, _, _ in REVIEWERS], default="opus",
+                              help="Checkout to resolve the paths in (default: opus)")
     check = sub.add_parser("verify", help="Check reviewer checkouts and report source changes")
     check.add_argument("manifest")
     clean = sub.add_parser("cleanup", help="Delete the run directory")
@@ -395,6 +432,11 @@ def main():
                              indent=2))
         elif args.command == "prompt":
             print(render_prompt(load_manifest(args.manifest), args.slug))
+        elif args.command == "instructions":
+            manifest = load_manifest(args.manifest)
+            checkout = Path(manifest["checkouts"][args.slug])
+            for path in manifest.get("instructionFiles") or []:
+                print(checkout / path)
         elif args.command == "verify":
             problems, notes = verify(load_manifest(args.manifest))
             for note in notes:

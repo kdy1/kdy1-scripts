@@ -50,7 +50,7 @@ python3 <skill>/scripts/review_once.py prepare-local [--path <dir>] [--base <ref
 - If the user stated what the change is for, write it to a file in your scratch space and pass `--intent-file`. Reviewers have no PR description, so this context matters. Do not invent an intent.
 - `Nothing to review` means the target has no changes against the base. Report it, and ask only if the user expected changes.
 
-Both modes create one detached checkout per reviewer (`astra`, `sol`, `opus`, `sonnet`) in a temporary run directory, and print a manifest that includes the `manifest` path.
+Both modes create one detached checkout per reviewer (`astra`, `sol`, `opus`, `sonnet`) in a temporary run directory, and print a manifest that includes the `manifest` path. The manifest also lists `instructionFiles`: the `AGENTS.md` and `CLAUDE.md` files at the head that apply to the changed paths, from the repository root and from every ancestor directory of a changed path. The reviewer brief names each of them.
 
 ## 2. Validate reviewer models
 
@@ -74,18 +74,20 @@ Both modes create one detached checkout per reviewer (`astra`, `sol`, `opus`, `s
 2. Launch all four in the same response with `delegate_task`: the slug's `target`, the rendered brief as the task, `mode: "async"`, a title like `Review Once: <repo>#<n> (<slug>)` or `Review Once: <repo> <branch> (<slug>)`, and `clientRequestId: review-once-<run-dir-name>-<slug>`. Use the default shared isolation; do not use `isolation: "worktree"`, because the brief points each reviewer at its own pinned checkout. Record each `taskId`.
    - You may use your native subagent tool instead only for a reviewer whose model is your own model and needs no extra settings, and only with a fresh context. Never use a fork that inherits this conversation.
    - Give reviewers only the brief. Do not pass your own opinion, other reviewers' results, or the user's hypothesis.
-3. Async completion wakes you. Do not poll. While reviewers run, read the context yourself so that you can check their claims later: the PR description and linked issues, or the local commit messages and stated intent; applicable `AGENTS.md`; and the diff.
+3. Async completion wakes you. Do not poll. While reviewers run, read the context yourself so that you can check their claims later: the PR description and linked issues, or the local commit messages and stated intent; the existing review threads and the author's replies; and the diff.
+   - Run `python3 <skill>/scripts/review_once.py instructions <manifest>` and read every file it prints. This is required. The instructions that the harness loaded for you cover only the directory you work in, usually the repository root. A nested file (for example `crates/<name>/AGENTS.md`) can document semantic assumptions or a review policy that decides whether a finding is a defect at all.
 4. If a delegation response is lost, retry with the same `clientRequestId`. If a reviewer fails or returns an incomplete review, retry once with a new `clientRequestId` (`...-<slug>-retry`). A second failure leaves that reviewer missing; report it, and never fill its slot with a different model or your own review.
 
 ## 4. Check and compare results
 
 1. Run `python3 <skill>/scripts/review_once.py verify <manifest>`. A reviewer whose checkout moved is incomplete; report that. A `note:` line means the PR head or the local files changed after the review started, or that a reviewer edited its checkout (for example for instrumentation); tell the user that the review applies to the pinned snapshot and mention such edits.
 2. Read every result. Each must have `VERDICT`, `CONFIDENCE`, `SUMMARY`, `FINDINGS`, and `COVERAGE`. A result without a verdict is incomplete.
-3. Check findings against the pinned code before you repeat them. Prioritize findings that only one reviewer reported, findings that conflict with another reviewer, and every P0 or P1. Label each as confirmed, rejected (with the reason), or unverified. Do not silently drop a reviewer's finding.
+3. Check every finding against the instruction files that you read in section 3 before anything else. Reject a finding whose trigger is correct only if a documented assumption is false (for example, it relies on an exception or side effect that the project says it does not preserve), or that does not meet a documented review policy for required fixes. Give the instruction file `path:line` as the reason. A reviewer's `Contract:` line is a claim; check it yourself. A run that shows a base-vs-head difference does not override a documented assumption.
+4. Check findings against the pinned code before you repeat them. Prioritize findings that only one reviewer reported, findings that conflict with another reviewer, and every P0 or P1. Label each as confirmed, rejected (with the reason), or unverified. Do not silently drop a reviewer's finding.
    - **Behavior claims need a run on both sides.** A finding that says the change fixes, breaks, or alters behavior (a regression, a fix, a different output) is `confirmed` only when the same input was run on the base and on the head, by a reviewer or by you. Reading the code, or a PR comment, gives `unverified`. If it is cheap, run the missing side yourself instead of leaving it unverified: build the base and head once, in separate target directories, and run every repro on both.
    - **Check that the change solves what it claims.** Run the motivating input, and the other forms of the same problem (other callers of the changed function), on the base and the head. Report each as fixed, unchanged, or worse. Do not report a bug as "fix first" or "existing" until you know whether this change already fixes it.
    - Classify every behavior finding as **fixed by the change**, **unchanged** (the base is already wrong the same way), or **new in the change** (correct on the base, different on the head). A correct but larger or different output is not a regression.
-4. Group findings with the same root cause and note which reviewers reported each one.
+5. Group findings with the same root cause and note which reviewers reported each one.
 
 ## 5. Report
 
@@ -93,7 +95,7 @@ Write the report in the user's language. Include:
 
 1. The target: PR link, title, and pinned base and head SHAs, plus the PR state if it is not open; or, for local mode, the repository path, branch, base ref and SHA, and whether uncommitted changes were included.
 2. A table with one row per reviewer: model, verdict, confidence, and a one-line reason. Mark missing or incomplete reviewers.
-3. Findings, most severe first. This is the main part of the report: priority, `path:line`, short description, reporting reviewers, confirmed/rejected/unverified status, and for behavior findings the base-vs-head class (fixed by the change, unchanged, new in the change, or not run) with the commands and outputs behind it.
+3. Findings, most severe first. This is the main part of the report: priority, `path:line`, short description, reporting reviewers, confirmed/rejected/unverified status (for a finding rejected by step 4.3, the instruction file `path:line` that excludes it), and for behavior findings the base-vs-head class (fixed by the change, unchanged, new in the change, or not run) with the commands and outputs behind it.
    - Add a short table of the motivating cases: input, base result, head result, and whether the change fixes it.
    - When the user asks a follow-up such as "is this a regression against main?", answer from runs on both sides. Do not answer from code reading and do not hand the check back to the user; run it, then answer.
 4. Synthesis: where reviewers agree and disagree, and your judgment after checking the code. If a reviewer reported a design problem, say which reviewer and why.

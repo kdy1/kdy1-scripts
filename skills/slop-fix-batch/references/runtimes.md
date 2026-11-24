@@ -12,11 +12,20 @@ For running process output, start with a supported interruptible wait of 10 seco
 
 The existing helpers use `codex` as the runtime key for this tool set. Keep that value in ledgers and command arguments.
 
-- Create with `collaboration.spawn_agent`, passing the helper's `model`, `reasoning_effort`, and `fork_turns`, plus `task_name` and the scoped `message`.
-- Send START to an active prepared worker with `collaboration.send_message`; use `collaboration.followup_task` for an idle worker. Preserve the actual agent identity through both phases.
+- For native subagent jobs, create with `collaboration.spawn_agent`, passing the helper's `model`, `reasoning_effort`, and `fork_turns`, plus `task_name` and the scoped `message`.
+- For native subagents, send START to an active prepared worker with `collaboration.send_message`; use `collaboration.followup_task` for an idle worker. Preserve the actual agent identity through both phases.
 - Read delivered results and bounded `collaboration.list_agents` snapshots. Use `collaboration.wait_agent` for updates and `clock.sleep` for external waits, each at most 30 seconds and capped at the next deadline.
 - Stop with `collaboration.interrupt_agent`, then reconcile actual process, Git and remote effects before releasing a slot or replacing the actor. An unavailable handle is not proof of termination.
 - Register every created or updated PR with `link_pull_request`, passing its full URL immediately after creation or when starting work on an existing PR. Register every layer of a stack. Before completing publication, call `list_thread_pull_requests` and link any missing PR from this batch, then query again to verify it. Pass this tool policy to `$create-pr`; do not use or require `attach_artifact`. Publication input uses `attachmentComplete: true` only after the list confirms every expected PR, and stores those verified URLs in `attachments`. A failed link or incomplete list remains unverified; report it without creating another PR.
+
+### T3 Code background delegates
+
+Use `delegate_task` when T3 Code requires it for a background actor such as the merger. Check orchestrator capabilities before the first delegation. Pass the model and effort from the prepared settings in the provider's supported fields. For the merger, use shared isolation and pass the absolute paths to the existing ledger, helper and assigned read-only checkout. This path requires shared access to the batch files. Apply the host's checkout rules for any role that needs a separate checkout.
+
+1. Prepare and reserve the job as usual. Give the delegate its read-only preparation message and the `read-start` input path for that assignment. Do not launch another actor to deliver START.
+2. Record the returned task ID as the worker identity. Run `batch-coordinator.mjs start` with that identity and the exact grant. START becomes available to the delegate when the receipt is committed to the ledger.
+3. The delegate reads START with `batch-coordinator.mjs read-start`. On `awaiting-start`, allow a short bounded wait for the coordinator to commit START. Stop and report if START remains unavailable. On `started`, verify the assignment and execute only its recorded scope. An error grants no permission to proceed.
+4. Use the delegate's documented continuation and cancellation tools. On an uncertain launch or delivery, reconcile the same task ID, grant, and effects before retrying or replacing the actor.
 
 Role models and standard reasoning efforts remain unchanged; simple investigation/implementation uses medium effort as recorded before creation. `fork_turns: "none"` requires a complete first-message handoff.
 

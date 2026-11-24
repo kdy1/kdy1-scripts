@@ -170,7 +170,7 @@ export function renderHandoff(input) {
   placeholders(a);
   const phase = input.phase === 'prepare' ? 'Read-only preparation only. Do not begin implementation, publication, repair, registration or any mutation until a separately recorded START.' : 'START only within the recorded authorization and role constraints.';
   const spawnSettings = workerSettings(input.role, runtime, complexity);
-  const spawnTool = runtime === 'claude-code' ? 'Agent' : 'collaboration.spawn_agent';
+  const spawnTool = runtime === 'claude-code' ? 'Agent' : 'the creation tool selected in references/runtimes.md';
   const attachmentPolicy = runtime === 'claude-code'
     ? 'Codex chat attachment is not applicable. Record attachmentStatus: "not-applicable" and attachments: []; report verified PR URLs. Do not claim an attachment succeeded.'
     : 'Use link_pull_request with the full URL for every created or updated PR, including every stack layer. Verify all expected links with list_thread_pull_requests before completing publication; link missing PRs and query again. Pass this policy to $create-pr; do not use or require attach_artifact. Set attachmentComplete: true and attachments to the verified URLs only after that list confirms them.';

@@ -1,0 +1,6 @@
+interface:
+  display_name: "Post Review"
+  short_description: "Post prioritized PR review findings with a policy-chosen event, after approval"
+  default_prompt: "Use $post-review <PR URL>. 이 리뷰 결과를 GitHub 리뷰로 올려줘. P0/P1은 Request Changes, P2는 팀원이면 Approve with changes, 외부 기여자면 Request Changes, P3는 막지 않게 남겨줘. 올리기 전에 정확한 내용을 보여줘."
+policy:
+  allow_implicit_invocation: false

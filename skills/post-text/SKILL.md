@@ -43,6 +43,7 @@ When the text is a review of a GitHub pull request (findings about its code, for
   - `REQUEST_CHANGES`: only when the human asks to request changes, for example "leave it as a change request".
   - `APPROVE`: only when the human asks to approve.
   - Do not choose `REQUEST_CHANGES` or `APPROVE` yourself, and do not take it from a reviewer's verdict, for example a `$review-once` reviewer's `request-changes`. When the request does not name an event, use `COMMENT`.
+  - When the human invoked [$post-review](../post-review/SKILL.md), use the event that its policy chooses from the finding priorities and the pull request author. The invocation is the human's request for that event, and the approval of the review covers it.
   - When the repository's instructions forbid the event (for example "Never approve" in `AGENTS.md`), tell the human and use `COMMENT` unless they confirm the event.
   - GitHub does not let an account approve or request changes on its own pull request. `prepare-review` stops in that case; offer `COMMENT`.
 - Prepare the review with `prepare-review` (see [Prepare a review](#prepare-a-review)), not with `prepare`.

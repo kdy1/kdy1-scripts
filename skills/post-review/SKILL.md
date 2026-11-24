@@ -1,6 +1,6 @@
 ---
 name: post-review
-description: "Post review findings on a GitHub pull request as one review, through Post Text with its human approval step, and choose the review event from the finding priorities and the pull request author: Request Changes for any P0 or P1; for P2, Approve with changes when the author is a team member and Request Changes when the author is an external contributor (GitHub author association); P3 findings are posted but never block. Use only when a human explicitly invokes $post-review (or /post-review) or asks to run Post Review; never select it automatically."
+description: "Post review findings on a GitHub pull request as one review, through Post Text with its human approval step, and choose the review event from the finding priorities and the pull request author: Request Changes for any P0 or P1; for P2, Request Changes when the author is an external contributor (GitHub author association) and a non-blocking review when the author is a team member; P3 findings are posted but never block. A non-blocking review is a comment, and an approval (Approve with changes, or Approve) only when the human asks to approve. Use only when a human explicitly invokes $post-review (or /post-review) or asks to run Post Review; never select it automatically."
 disable-model-invocation: true
 ---
 
@@ -8,21 +8,24 @@ disable-model-invocation: true
 
 Post the findings of a pull request review as one GitHub review, with the event that the priority policy chooses. [$post-text](../post-text/SKILL.md) drafts, shows, and posts the review: this skill adds the policy, the labels, and the layout.
 
-| Findings | Author | Verdict | Event |
+| Findings | Author | Verdict and event | When the human asks to approve |
 | --- | --- | --- | --- |
-| Any P0 or P1 | Any | Request changes | `REQUEST_CHANGES` |
-| P2 (no P0 or P1) | Team member | Approve with changes | `APPROVE` |
-| P2 (no P0 or P1) | External contributor | Request changes | `REQUEST_CHANGES` |
-| Only P3, or none | Any | Approve | `APPROVE` |
+| Any P0 or P1 | Any | Request changes, `REQUEST_CHANGES` | Not allowed |
+| P2 (no P0 or P1) | External contributor | Request changes, `REQUEST_CHANGES` | Not allowed |
+| P2 (no P0 or P1) | Team member | Changes suggested, `COMMENT` | Approve with changes, `APPROVE` |
+| Only P3 | Any | No blocking problems, `COMMENT` | Approve, `APPROVE` |
+| None | Any | No problems found, `COMMENT` | Approve, `APPROVE` |
 
 P3 findings are always posted, labelled non-blocking, and never change the verdict.
+
+**Approve only when the human asks.** The skill uses `APPROVE` only when the human's own message in this conversation asks to approve the pull request, for example "approve해줘" or "approve with changes로 올려". The `$post-review` invocation, the policy, a reviewer's verdict, and approval of a draft review are not a request to approve.
 
 Helper: `scripts/post_review.py` (Python 3.9+ and `gh`). It imports the `post-text` helper from the sibling skill directory. Run it with its absolute path.
 
 ## Start
 
 - Start only when a human's own message explicitly invokes `$post-review` (or `/post-review` in Claude Code), or asks to run Post Review. A request from another skill, agent, or automation, and creating, editing, or testing this skill, do not start it.
-- The invocation is the human's request for the event that the policy chooses. Post Text still requires human approval of the exact review, its destination, and its event before it posts.
+- The invocation is the human's request for the event that the policy chooses: `REQUEST_CHANGES` or `COMMENT`. It is not a request to approve (see **Approve only when the human asks** above). Post Text still requires human approval of the exact review, its destination, and its event before it posts.
 - The invocation authorizes one review on one pull request. It does not authorize other comments, thread resolutions, merges, pushes, or code changes.
 - If the pull request is not clear from the message or the conversation, ask for its URL. Do not guess.
 
@@ -63,7 +66,7 @@ Write the review in the language that Post Text selects. The helper writes the v
 - `priority` is `P0` to `P3`. `title` is one line. `body` is Markdown that is complete without the review body: the trigger, the impact, the evidence, and a suggested fix. Do not name the reviewer models in it.
 - Give the location of the defect at the reviewed commit: `path` and `line` (the line number in the new file), and `start_line` for a range in the same diff hunk. For a defect on removed lines, use `"side": "LEFT"` and the line number in the old file. Omit the location only for a finding about the whole change or a missing change.
 - When the defect is on a line outside the diff but a changed line causes it or exposes it, put the location on that changed line and name the other location in the body.
-- Use `"findings": []` when there is no finding. The review then approves the pull request.
+- Use `"findings": []` when there is no finding. The review then says that it found no problems.
 
 ## 3. Render the review
 
@@ -77,9 +80,11 @@ python3 <skill>/scripts/post_review.py render \
 
 The command reads the pull request, its author, and its diff, writes `review-body.md`, `comments.json`, and `plan.json` to the new directory, and prints the plan.
 
+- **Approval.** Add `--approve` only when the human asked to approve the pull request. Then a review that the policy does not block is `APPROVE`. When the policy requests changes, `--approve` fails: tell the human why, and ask whether a priority or the author role is wrong. Do not approve against the policy. When the human asks to approve after they saw a draft, render again with `--approve` and a new output directory.
+
 - **Author role.** The author is a team member when the GitHub author association of the pull request is `OWNER`, `MEMBER`, or `COLLABORATOR`, and an external contributor otherwise. The plan shows the login, the role, and its source. The body does not name the role. If the human says that the role is wrong, render again with `--author team` or `--author external` and a new output directory.
 - **Placement.** Each finding whose location is on a line of the diff becomes an inline comment, labelled `P0`/`P1` `Blocking`, `P2` `Fix before merge`, or `P3` `Non-blocking`. The others go into the review body with their file and line, and the plan gives the reason for each. For each body item with a location, check whether a line of the diff is a correct location. If one is, fix the location in the findings file and render again with a new output directory.
-- **Event limits.** When the authenticated account wrote the pull request, GitHub does not allow `APPROVE` or `REQUEST_CHANGES`; the event becomes `COMMENT`, and the body keeps the verdict and says why. When the repository instructions (for example `AGENTS.md`) forbid the event, tell the human. Unless they confirm the event, render again with `--comment-only '<reason>'` and a new output directory.
+- **Event limits.** When the authenticated account wrote the pull request, GitHub does not allow `APPROVE` or `REQUEST_CHANGES`; the event becomes `COMMENT`, and the body keeps the verdict and says why. This applies only to those two events. When the repository instructions (for example `AGENTS.md`) forbid the event, tell the human. Unless they confirm the event, render again with `--comment-only '<reason>'` and a new output directory.
 - If the command says that the head moved, the findings do not apply to the current head. Tell the human and stop. If the pull request is closed or merged, report that and stop.
 
 ## 4. Prepare and approve through Post Text

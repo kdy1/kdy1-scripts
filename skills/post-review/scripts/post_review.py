@@ -15,11 +15,16 @@ priorities, and writes three files to a new output directory:
 The verdict policy:
 
 - A P0 or P1 finding: "Request changes" (REQUEST_CHANGES).
-- Otherwise a P2 finding: "Approve with changes" (APPROVE) when the author is
-  a team member (author association OWNER, MEMBER, or COLLABORATOR), and
-  "Request changes" (REQUEST_CHANGES) for an external contributor.
-- Otherwise (only P3 findings, or none): "Approve" (APPROVE). P3 findings never
-  block the pull request.
+- Otherwise a P2 finding: for an external contributor, "Request changes"
+  (REQUEST_CHANGES). For a team member (author association OWNER, MEMBER, or
+  COLLABORATOR), the pull request is not blocked.
+- Otherwise (only P3 findings, or none): the pull request is not blocked. P3
+  findings never block the pull request.
+
+The helper approves only with `--approve`, which the human must ask for. A
+review that is not blocked is then "Approve with changes" (with P2 findings) or
+"Approve" (APPROVE). Without `--approve`, it is a COMMENT review. `--approve`
+fails when the policy requests changes.
 
 When GitHub does not allow the event (the authenticated account wrote the pull
 request), or `--comment-only` is given, the event is COMMENT and the body says
@@ -45,10 +50,11 @@ GROUPS = (
 )
 TEAM_ASSOCIATIONS = ("OWNER", "MEMBER", "COLLABORATOR")
 ROLES = ("team", "external")
+# Each policy result: its verdict and event with an approval, and without one.
 VERDICTS = {
-    "request-changes": ("Request changes", "REQUEST_CHANGES"),
-    "approve-with-changes": ("Approve with changes", "APPROVE"),
-    "approve": ("Approve", "APPROVE"),
+    "request-changes": (("Request changes", "REQUEST_CHANGES"), ("Request changes", "REQUEST_CHANGES")),
+    "approve-with-changes": (("Approve with changes", "APPROVE"), ("Changes suggested", "COMMENT")),
+    "approve": (("Approve", "APPROVE"), ("No blocking problems", "COMMENT")),
 }
 FINDING_KEYS = {"priority", "title", "body", "path", "line", "start_line", "side", "start_side"}
 LOCATION_KEYS = ("path", "line", "start_line", "side", "start_side")
@@ -116,8 +122,23 @@ def choose_verdict(findings, role):
     return "approve"
 
 
-def verdict_text(verdict, findings):
+def verdict_name(verdict, approve, findings):
+    if verdict == "approve" and not approve and not findings:
+        return "No problems found"
+    return VERDICTS[verdict][0 if approve else 1][0]
+
+
+def verdict_text(verdict, approve, findings):
     priorities = {item["priority"] for item in findings}
+    if verdict != "request-changes" and not approve:
+        if not findings:
+            return "This review found no problems in the reviewed scope."
+        text = "This review does not block the pull request."
+        if "P2" in priorities:
+            text += " Fix the P2 items before merge."
+        if "P3" in priorities:
+            text += " The P3 items are optional and do not block the merge."
+        return text
     if verdict == "request-changes":
         items = []
         if priorities & {"P0", "P1"}:
@@ -136,9 +157,16 @@ def verdict_text(verdict, findings):
     return text
 
 
-def choose_event(verdict, pull, login, comment_only):
+def choose_event(verdict, approve, pull, login, comment_only):
     """Return (event, note). The note says why the event is COMMENT instead of the verdict's event."""
-    event = VERDICTS[verdict][1]
+    if approve and verdict == "request-changes":
+        raise ValueError(
+            "The policy requests changes for these findings (a P0 or P1, or a P2 from an external contributor). "
+            "Do not approve; ask the human whether the priorities or the author role are wrong."
+        )
+    event = VERDICTS[verdict][0 if approve else 1][1]
+    if event == "COMMENT":
+        return event, None
     if comment_only:
         return "COMMENT", comment_only
     if pull["user"]["login"] == login:
@@ -186,8 +214,11 @@ def place(findings, files):
     return inline, body
 
 
-def render_body(summary, head, verdict, findings, inline, body, note):
-    parts = [f"**Verdict: {VERDICTS[verdict][0]}**", "", verdict_text(verdict, findings), "", summary, ""]
+def render_body(summary, head, verdict, approve, findings, inline, body, note):
+    parts = [
+        f"**Verdict: {verdict_name(verdict, approve, findings)}**", "",
+        verdict_text(verdict, approve, findings), "", summary, "",
+    ]
     parts.append(f"Reviewed commit: `{head}`")
     if findings:
         parts.append("")
@@ -210,7 +241,7 @@ def render_body(summary, head, verdict, findings, inline, body, note):
     return "\n".join(parts) + "\n"
 
 
-def render(data, url, head, author=None, comment_only=None):
+def render(data, url, head, author=None, comment_only=None, approve=False):
     target = post_text.parse_pull_target(url)
     if not SHA.fullmatch(head):
         raise ValueError("Provide the full or abbreviated SHA of the reviewed commit.")
@@ -235,13 +266,14 @@ def render(data, url, head, author=None, comment_only=None):
         raise RuntimeError("The pull request head changed while the diff was read. Run render again.")
     role, source = author_role(pull, author)
     verdict = choose_verdict(findings, role)
-    event, note = choose_event(verdict, pull, login, comment_only)
+    event, note = choose_event(verdict, approve, pull, login, comment_only)
     inline, body = place(findings, files)
     plan = {
         "target": post_text.canonical_pull_url(target),
         "head": current,
         "author": {"login": pull["user"]["login"], "role": role, "source": source},
-        "verdict": VERDICTS[verdict][0],
+        "verdict": verdict_name(verdict, approve, findings),
+        "approve": approve,
         "event": event,
         "eventNote": note,
         "counts": {priority: sum(1 for item in findings if item["priority"] == priority) for priority in PRIORITIES},
@@ -252,7 +284,7 @@ def render(data, url, head, author=None, comment_only=None):
         ],
     }
     return {
-        "review-body.md": render_body(summary, current, verdict, findings, inline, body, note),
+        "review-body.md": render_body(summary, current, verdict, approve, findings, inline, body, note),
         "comments.json": json.dumps([comment for _, comment in inline], ensure_ascii=False, indent=2) + "\n",
         "plan.json": json.dumps(plan, ensure_ascii=False, indent=2) + "\n",
     }, plan
@@ -271,13 +303,17 @@ def main():
         help="Author role when the human states it. Default: from the GitHub author association.",
     )
     build.add_argument(
+        "--approve", action="store_true",
+        help="Approve a review that the policy does not block. Use only when the human asks to approve.",
+    )
+    build.add_argument(
         "--comment-only", metavar="REASON",
         help="Post as COMMENT, for example when repository rules forbid the event. The body keeps the verdict.",
     )
     args = parser.parse_args()
     try:
         data = json.loads(args.findings.read_text(encoding="utf-8"))
-        outputs, plan = render(data, args.target, args.head.strip(), args.author, args.comment_only)
+        outputs, plan = render(data, args.target, args.head.strip(), args.author, args.comment_only, args.approve)
         args.out_dir.mkdir(parents=True, exist_ok=False)
         for name, text in outputs.items():
             (args.out_dir / name).write_text(text, encoding="utf-8")

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { initialize, applyEvent } from './batch-ledger.mjs';
 import { readJson, save } from './helper-common.mjs';
-import { observe, dispatch, readStart, waitPolicy } from './batch-coordinator.mjs';
+import { observe, completeInvestigation, dispatch, readStart, waitPolicy } from './batch-coordinator.mjs';
 const sha = 'a'.repeat(40), issue = { key: 'github.com/o/r/1', url: 'https://github.com/o/r/issues/1', canonicalOrder: 0 };
 const at = '2026-10-12T00:00:00Z';
 function fixture(fn) {
@@ -228,4 +228,57 @@ test('changing runtime after preparation cannot silently change an existing work
   assert.throws(() => dispatch('prepare', p), /runtime changed/);
   assert.throws(() => dispatch('start', start(p, r)), /runtime changed/);
   assert.equal(readJson(path).assignments.a.status, 'reserved');
+}));
+
+test('investigation completion releases a slot for implementation and replays without duplicate work', () => fixture(({ input, path, l }) => {
+  const otherIssue = { key: 'github.com/o/r/2', url: 'https://github.com/o/r/issues/2', canonicalOrder: 1 };
+  l.fixedIssues.push(otherIssue);
+  l.maintenance = null;
+  l.scheduler.capacity = 2;
+  save(path, l);
+  const p = preparation(path);
+  dispatch('start', start(p, dispatch('prepare', p)));
+  const other = preparation(path);
+  Object.assign(other, { requestId: 'prepare-other', expectedRevision: 2 });
+  Object.assign(other.assignment, { assignmentId: 'other', issueKeys: [otherIssue.key] });
+  Object.assign(other.reservation, { id: 'other', taskId: 'investigate-other' });
+  dispatch('start', { ...start(other, dispatch('prepare', other)), requestId: 'start-other',
+    assignment: { ...other.assignment, worker: 'worker-other' } });
+  assert.deepEqual(observe(input).next, { status: 'waiting', action: 'await-worker' });
+
+  const group = { id: 'g', issues: [issue.key], requires: [], confirmed: true, acceptance: 'Fix', dependencyEvidence: 'Independent' };
+  const task = { id: 'implement-g', stack: 's', lane: 'implementation', status: 'pending', eligible: true, requires: [] };
+  const completion = { ...input, coordinator: 'root', at, expectedRevision: 4, assignmentId: 'a', worker: 'worker-a',
+    evidence: '/batch/result.json', assessments: [{ issueKey: issue.key, value: { classification: 'actionable', evidence: 'Verified' } }],
+    groups: [group], scheduler: { ...l.scheduler, tasks: [task] } };
+
+  assert.throws(() => completeInvestigation({ ...completion, assessments: [] }), /Incomplete or out-of-scope/);
+  assert.equal(readJson(path).revision, 4);
+  const completed = completeInvestigation(completion);
+  assert.deepEqual(completed.next, { status: 'runnable', action: 'continue' });
+  assert.deepEqual(completed.changes.control.allocations.map(a => a.id), [task.id]);
+  assert.equal(readJson(path).assignments.other.status, 'active');
+
+  let ledger = readJson(path);
+  ledger = event(ledger, 'assignment', { id: 'build', taskId: task.id, lane: task.lane, status: 'reserved', slots: 1 });
+  save(path, ledger);
+  const duplicate = completeInvestigation(completion);
+  assert.equal(duplicate.replayed, true);
+  assert.deepEqual(duplicate.changes.control.allocations, []);
+  assert.equal(duplicate.next.action, 'await-worker');
+  assert.equal(readJson(path).revision, ledger.revision);
+  assert.throws(() => completeInvestigation({ ...completion, evidence: '/batch/different.json' }), /Conflicting/);
+}));
+
+test('terminal inventory cannot stand in for fixed issue accounting', () => fixture(({ input, path, l }) => {
+  l.implementationEnded = true;
+  l.checkpoints.inventory = { complete: true, prs: [] };
+  save(path, l);
+  assert.deepEqual(observe(input).next, { status: 'blocked', action: 'reconcile-work-list', unassessed: 1 });
+  l.assessments[issue.key] = { classification: 'actionable', evidence: 'Defect confirmed' };
+  save(path, l);
+  assert.equal(observe(input).next.action, 'reconcile-work-list');
+  l.assessments[issue.key] = { classification: 'already-closed', evidence: 'Tracker verified' };
+  save(path, l);
+  assert.deepEqual(observe(input).next, { status: 'terminal-candidate', action: 'verify-accounting' });
 }));

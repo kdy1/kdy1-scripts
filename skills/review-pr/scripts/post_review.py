@@ -30,6 +30,13 @@ gives for a list of priorities, with the approval: "Request changes", "Approve
 with changes", or "Approve". The review report uses it for its leaning. It
 posts nothing.
 
+The policy is the default. The human's decision overrides it: `--event
+REQUEST_CHANGES` or `--event APPROVE` sets the verdict and the event that the
+human chose, whatever the priorities give. A human request for changes with
+no P0–P2 finding makes the P3 findings the items to fix before merge, and they
+are labelled that way. A human approval with P0–P2 findings is "Approve with
+changes". The plan shows the policy verdict beside the chosen one.
+
 When GitHub does not allow the event (the authenticated account wrote the pull
 request), or `--comment-only` is given (the human asked for a comment-only
 review, or confirmed it for repository rules that forbid the event), the event
@@ -56,12 +63,14 @@ GROUPS = (
 )
 TEAM_ASSOCIATIONS = ("OWNER", "MEMBER", "COLLABORATOR")
 ROLES = ("team", "external")
-# Each policy result: its verdict and its event.
+# Each verdict and its event.
 VERDICTS = {
     "request-changes": ("Request changes", "REQUEST_CHANGES"),
     "approve-with-changes": ("Approve with changes", "APPROVE"),
     "approve": ("Approve", "APPROVE"),
 }
+# The events a human can choose for the review with `--event`, and the verdict each one sets.
+HUMAN_EVENTS = ("REQUEST_CHANGES", "APPROVE")
 FINDING_KEYS = {"priority", "title", "body", "path", "line", "start_line", "side", "start_side"}
 LOCATION_KEYS = ("path", "line", "start_line", "side", "start_side")
 SHA = re.compile(r"[0-9a-f]{7,64}")
@@ -138,6 +147,22 @@ def choose_verdict(findings, role):
     return "approve"
 
 
+def human_verdict(event, findings):
+    """Return the verdict for the event the human chose."""
+    if event not in HUMAN_EVENTS:
+        raise ValueError(f"The human event must be one of: {', '.join(HUMAN_EVENTS)}.")
+    if event == "REQUEST_CHANGES":
+        return "request-changes"
+    blocking = {item["priority"] for item in findings} & {"P0", "P1", "P2"}
+    return "approve-with-changes" if blocking else "approve"
+
+
+def p3_blocks(verdict, findings):
+    """True when the review requests changes and only P3 findings can be the reason."""
+    priorities = {item["priority"] for item in findings}
+    return verdict == "request-changes" and not priorities & {"P0", "P1", "P2"}
+
+
 def verdict_name(verdict):
     return VERDICTS[verdict][0]
 
@@ -145,6 +170,10 @@ def verdict_name(verdict):
 def verdict_text(verdict, findings):
     priorities = {item["priority"] for item in findings}
     if verdict == "request-changes":
+        if p3_blocks(verdict, findings):
+            if findings:
+                return "This review requests changes. Fix the P3 items before merge."
+            return "This review requests changes."
         items = []
         if priorities & {"P0", "P1"}:
             items.append("the blocking P0–P1 items")
@@ -152,7 +181,12 @@ def verdict_text(verdict, findings):
             items.append("the P2 items")
         text = f"This review requests changes. Fix {' and '.join(items)} before merge."
     elif verdict == "approve-with-changes":
-        text = "This review approves the pull request with changes. Fix the P2 items before merge."
+        items = []
+        if priorities & {"P0", "P1"}:
+            items.append("the P0–P1 items")
+        if "P2" in priorities:
+            items.append("the P2 items")
+        text = f"This review approves the pull request with changes. Fix {' and '.join(items)} before merge."
     elif findings:
         return "This review approves the pull request. The P3 items are optional and do not block the merge."
     else:
@@ -182,20 +216,25 @@ def where(location):
     return f"`{location['path']}:{lines}`{side}"
 
 
-def heading(finding):
-    return f"{finding['priority']} · {LABELS[finding['priority']]} · {finding['title']}"
+def label(finding, blocking_p3):
+    return LABELS["P2"] if blocking_p3 and finding["priority"] == "P3" else LABELS[finding["priority"]]
 
 
-def inline_body(finding):
-    note = "\n\n_Optional. This does not block the merge._" if finding["priority"] == "P3" else ""
-    return f"**{heading(finding)}**{note}\n\n{finding['body']}\n"
+def heading(finding, blocking_p3=False):
+    return f"{finding['priority']} · {label(finding, blocking_p3)} · {finding['title']}"
+
+
+def inline_body(finding, blocking_p3=False):
+    optional = finding["priority"] == "P3" and not blocking_p3
+    note = "\n\n_Optional. This does not block the merge._" if optional else ""
+    return f"**{heading(finding, blocking_p3)}**{note}\n\n{finding['body']}\n"
 
 
 def indent(text):
     return "\n".join(f"  {line}" if line else "" for line in text.split("\n"))
 
 
-def place(findings, files):
+def place(findings, files, blocking_p3=False):
     """Split findings into inline comments and body items, with the reason for each body item."""
     inline, body = [], []
     for finding in findings:
@@ -203,7 +242,7 @@ def place(findings, files):
         if location is None:
             body.append((finding, "no single location in the diff"))
             continue
-        comment = {**location, "body": inline_body(finding)}
+        comment = {**location, "body": inline_body(finding, blocking_p3)}
         problems = post_text.diff_problems([comment], files)
         if problems:
             body.append((finding, problems[0].split(": ", 1)[1]))
@@ -212,7 +251,7 @@ def place(findings, files):
     return inline, body
 
 
-def render_body(summary, head, verdict, findings, inline, body, note):
+def render_body(summary, head, verdict, findings, inline, body, note, blocking_p3=False):
     parts = [
         f"**Verdict: {verdict_name(verdict)}**", "",
         verdict_text(verdict, findings), "", summary, "",
@@ -221,6 +260,8 @@ def render_body(summary, head, verdict, findings, inline, body, note):
     if findings:
         parts.append("")
         for priorities, name in GROUPS:
+            if blocking_p3 and priorities == ("P3",):
+                name = "P3 (fix before merge)"
             total = sum(1 for item in findings if item["priority"] in priorities)
             placed = sum(1 for item, _ in inline if item["priority"] in priorities)
             if total:
@@ -230,7 +271,7 @@ def render_body(summary, head, verdict, findings, inline, body, note):
     if body:
         parts += ["", "### Items that cannot be inline", ""]
         for finding, _ in body:
-            parts.append(f"- **{heading(finding)}** — {where(finding.get('location'))}")
+            parts.append(f"- **{heading(finding, blocking_p3)}** — {where(finding.get('location'))}")
             parts.append("")
             parts.append(indent(finding["body"]))
             parts.append("")
@@ -239,10 +280,14 @@ def render_body(summary, head, verdict, findings, inline, body, note):
     return "\n".join(parts) + "\n"
 
 
-def render(data, url, head, author=None, comment_only=None):
+def render(data, url, head, author=None, comment_only=None, event=None):
     target = post_text.parse_pull_target(url)
     if not SHA.fullmatch(head):
         raise ValueError("Provide the full or abbreviated SHA of the reviewed commit.")
+    if comment_only is not None and event is not None:
+        raise ValueError("Give --event or --comment-only, not both.")
+    if event is not None and event not in HUMAN_EVENTS:
+        raise ValueError(f"The human event must be one of: {', '.join(HUMAN_EVENTS)}.")
     if comment_only is not None:
         comment_only = post_text.single_line("comment-only reason", comment_only).rstrip(".")
     summary, findings = load_findings(data)
@@ -263,14 +308,18 @@ def render(data, url, head, author=None, comment_only=None):
     if post_text.pull_head(target) != current:
         raise RuntimeError("The pull request head changed while the diff was read. Run render again.")
     role, source = author_role(pull, author)
-    verdict = choose_verdict(findings, role)
+    policy = choose_verdict(findings, role)
+    verdict = policy if event is None else human_verdict(event, findings)
+    blocking_p3 = p3_blocks(verdict, findings)
     event, note = choose_event(verdict, pull, login, comment_only)
-    inline, body = place(findings, files)
+    inline, body = place(findings, files, blocking_p3)
     plan = {
         "target": post_text.canonical_pull_url(target),
         "head": current,
         "author": {"login": pull["user"]["login"], "role": role, "source": source},
         "verdict": verdict_name(verdict),
+        "verdictSource": "policy" if verdict == policy else "human",
+        "policyVerdict": verdict_name(policy),
         "event": event,
         "eventNote": note,
         "counts": {priority: sum(1 for item in findings if item["priority"] == priority) for priority in PRIORITIES},
@@ -281,7 +330,7 @@ def render(data, url, head, author=None, comment_only=None):
         ],
     }
     return {
-        "review-body.md": render_body(summary, current, verdict, findings, inline, body, note),
+        "review-body.md": render_body(summary, current, verdict, findings, inline, body, note, blocking_p3),
         "comments.json": json.dumps([comment for _, comment in inline], ensure_ascii=False, indent=2) + "\n",
         "plan.json": json.dumps(plan, ensure_ascii=False, indent=2) + "\n",
     }, plan
@@ -315,6 +364,10 @@ def main():
         help="Author role when the human states it. Default: from the GitHub author association.",
     )
     build.add_argument(
+        "--event", choices=HUMAN_EVENTS,
+        help="The event the human chose. It overrides the policy and sets the verdict.",
+    )
+    build.add_argument(
         "--comment-only", metavar="REASON",
         help="Post as COMMENT when the human asks for that, or confirms it for repository rules that forbid "
         "the event. The body keeps the verdict.",
@@ -338,7 +391,7 @@ def main():
         return 0
     try:
         data = json.loads(args.findings.read_text(encoding="utf-8"))
-        outputs, plan = render(data, args.target, args.head.strip(), args.author, args.comment_only)
+        outputs, plan = render(data, args.target, args.head.strip(), args.author, args.comment_only, args.event)
         args.out_dir.mkdir(parents=True, exist_ok=False)
         for name, text in outputs.items():
             (args.out_dir / name).write_text(text, encoding="utf-8")

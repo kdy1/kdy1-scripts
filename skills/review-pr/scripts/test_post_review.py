@@ -22,10 +22,10 @@ def finding(priority="P1", title="Bug", **location):
     return {"priority": priority, "title": title, "body": f"{title} details.", **location}
 
 
-def run(findings, association="MEMBER", login="me", author="author", role=None, comment_only=None):
+def run(findings, association="MEMBER", login="me", author="author", role=None, comment_only=None, event=None):
     responses = [pull(author=author, association=association), {"login": login}, FILES, pull()]
     with mock.patch.object(post_text, "gh_api", side_effect=responses):
-        return render({"summary": "Adds a parser.", "findings": findings}, PULL, HEAD, role, comment_only)
+        return render({"summary": "Adds a parser.", "findings": findings}, PULL, HEAD, role, comment_only, event)
 
 
 class PolicyTests(unittest.TestCase):
@@ -180,6 +180,57 @@ class RenderTests(unittest.TestCase):
         self.assertIn(
             "posted as a comment because AGENTS.md says never approve. The verdict", outputs["review-body.md"],
         )
+
+    def test_policy_verdict_is_the_default(self):
+        _, plan = run([finding("P3", "Nit")], association="NONE")
+        self.assertEqual((plan["verdictSource"], plan["policyVerdict"]), ("policy", "Approve"))
+
+    def test_human_request_for_changes_overrides_a_p3_only_approval(self):
+        outputs, plan = run(
+            [finding("P3", "Nit", path="src/a.py", line=11), finding("P3", "Outside", path="src/a.py", line=40)],
+            association="NONE", event="REQUEST_CHANGES",
+        )
+        self.assertEqual((plan["verdict"], plan["event"]), ("Request changes", "REQUEST_CHANGES"))
+        self.assertEqual((plan["verdictSource"], plan["policyVerdict"]), ("human", "Approve"))
+        body = outputs["review-body.md"]
+        self.assertTrue(body.startswith(
+            "**Verdict: Request changes**\n\nThis review requests changes. Fix the P3 items before merge.\n"
+        ))
+        self.assertIn("- P3 (fix before merge): 2 (1 inline)", body)
+        self.assertIn("- **P3 · Fix before merge · Outside** — `src/a.py:40`", body)
+        self.assertNotIn("optional", body)
+        comment = json.loads(outputs["comments.json"])[0]["body"]
+        self.assertTrue(comment.startswith("**P3 · Fix before merge · Nit**\n\nNit details."))
+        self.assertNotIn("Optional", comment)
+        outputs, _ = run([], event="REQUEST_CHANGES")
+        self.assertTrue(outputs["review-body.md"].startswith(
+            "**Verdict: Request changes**\n\nThis review requests changes.\n"
+        ))
+
+    def test_human_request_for_changes_keeps_p3_optional_beside_p2(self):
+        outputs, plan = run([finding("P2", "Edge"), finding("P3", "Nit", path="src/a.py", line=11)], event="REQUEST_CHANGES")
+        self.assertEqual((plan["event"], plan["policyVerdict"]), ("REQUEST_CHANGES", "Approve with changes"))
+        self.assertIn("Fix the P2 items before merge. The P3 items are optional", outputs["review-body.md"])
+        self.assertIn("_Optional. This does not block the merge._", json.loads(outputs["comments.json"])[0]["body"])
+
+    def test_human_approval_overrides_a_request_for_changes(self):
+        outputs, plan = run([finding("P1", "Crash"), finding("P2", "Edge")], association="NONE", event="APPROVE")
+        self.assertEqual((plan["verdict"], plan["event"]), ("Approve with changes", "APPROVE"))
+        self.assertEqual((plan["verdictSource"], plan["policyVerdict"]), ("human", "Request changes"))
+        self.assertIn(
+            "approves the pull request with changes. Fix the P0–P1 items and the P2 items before merge.",
+            outputs["review-body.md"],
+        )
+        _, plan = run([finding("P3", "Nit")], event="APPROVE")
+        self.assertEqual((plan["verdict"], plan["verdictSource"]), ("Approve", "policy"))
+
+    def test_human_event_limits(self):
+        _, plan = run([finding("P3", "Nit")], login="author", event="REQUEST_CHANGES")
+        self.assertEqual((plan["verdict"], plan["event"]), ("Request changes", "COMMENT"))
+        with self.assertRaisesRegex(ValueError, "not both"):
+            render({"summary": "S", "findings": []}, PULL, HEAD, None, "reason", "APPROVE")
+        with self.assertRaisesRegex(ValueError, "must be one of"):
+            render({"summary": "S", "findings": []}, PULL, HEAD, None, None, "COMMENT")
 
     def test_stops_when_the_head_moved_or_the_pull_request_is_closed(self):
         with mock.patch.object(post_text, "gh_api", side_effect=[pull(sha="fff9999")]):

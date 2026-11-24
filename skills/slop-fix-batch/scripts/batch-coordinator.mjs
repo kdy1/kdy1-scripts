@@ -46,6 +46,37 @@ function requestStatus(path, at) {
   } catch (error) { return { known: false, reason: error.message, retryAt: null }; }
 }
 
+function nextAction(ledger, { actionable, stopped, cp, api, tasks, schedulerError, managementStarted }) {
+  if (stopped) return { status: 'stopped', action: 'report' };
+  if (actionable) return { status: 'runnable', action: 'continue' };
+  if (Object.values(ledger.assignments).some(a => a.status === 'uncertain') || api.uncertainWrites?.length) {
+    return { status: 'blocked', action: 'reconcile' };
+  }
+  if (cp.activePass || Object.values(ledger.assignments).some(a => ['reserved', 'active'].includes(a.status))) {
+    return { status: 'waiting', action: 'await-worker' };
+  }
+  const unassessed = ledger.fixedIssues.filter(issue => !ledger.assessments[issue.key]).length;
+  const publishedGroups = new Set(Object.values(ledger.stacks).flatMap(stack => stack.layers
+    .filter(layer => layer.publication?.complete === true).map(layer => layer.groupId)));
+  const accounted = ledger.fixedIssues.every(({ key }) => {
+    const assessment = ledger.assessments[key];
+    if (!assessment) return false;
+    if (assessment.closure || ['already-closed', 'existing-pr', 'blocked'].includes(assessment.classification)) return true;
+    const groups = Object.values(ledger.groups).filter(group => group.issues.includes(key));
+    return groups.length > 0 && groups.every(group => publishedGroups.has(group.id));
+  });
+  if (cp.stop) return accounted ? { status: 'terminal-candidate', action: 'verify-accounting' }
+    : { status: 'blocked', action: 'reconcile-work-list', unassessed };
+  if (schedulerError) return { status: 'blocked', action: 'refresh-schedule', reason: schedulerError };
+  if (api.retryAt !== null || tasks?.some(task => task.status === 'waiting')) {
+    return { status: 'waiting', action: 'await-deadline-or-event' };
+  }
+  if (managementStarted && Object.values(ledger.stacks).some(stack => stack.phase === 'ready')) {
+    return { status: 'waiting', action: 'await-deadline-or-event' };
+  }
+  return { status: 'blocked', action: 'reconcile-work-list', unassessed };
+}
+
 export function coordinatorView(ledger, { ledgerPath, requestState, at }) {
   validateLedger(ledger); check(Number.isFinite(at), 'Invalid observation time');
   const cp = checkpointPlan(ledger, at), api = requestStatus(requestState, at);
@@ -91,7 +122,8 @@ export function coordinatorView(ledger, { ledgerPath, requestState, at }) {
       nextFullAt: ledger.checkpoints.nextFullAt, refresh: ledger.checkpoints.refresh, candidatesHash: hash(semantic(cp.candidates)) },
     remoteRefreshRunnable: remoteRunnable, terminalAccountingCandidate: cp.stop,
   };
-  return { planning: { snapshot, plan: scheduling, schedulerError }, assignments, stacks, tasks, control, timing: { nextCheckAt, waitMs: waitPolicy({ at, nextCheckAt, actionable }) } };
+  const next = nextAction(ledger, { actionable, stopped, cp, api, tasks: snapshot?.tasks, schedulerError, managementStarted });
+  return { planning: { snapshot, plan: scheduling, schedulerError }, assignments, stacks, tasks, control, next, timing: { nextCheckAt, waitMs: waitPolicy({ at, nextCheckAt, actionable }) } };
 }
 
 export function observe(input, forceRecovery = false) {
@@ -102,7 +134,7 @@ export function observe(input, forceRecovery = false) {
   try {
     const ledger = validateLedger(readJson(path)), at = input.at ?? Date.now();
     const requestState = input.requestState ?? ledger.context?.requestState;
-    const { planning, ...view } = coordinatorView(ledger, { ledgerPath: path, requestState, at });
+    const { planning, next, ...view } = coordinatorView(ledger, { ledgerPath: path, requestState, at });
     save(join(dirname(path), 'coordinator-plan.json'), { version: 1, batchId: ledger.batchId, revision: ledger.revision, ...planning });
     let previous = null, reason = forceRecovery ? 'explicit-resume' : 'missing-or-invalid-cursor';
     try {
@@ -122,7 +154,7 @@ export function observe(input, forceRecovery = false) {
     const changed = Object.values(delta).some(v => Object.keys(v).length > 0);
     const result = { version: 1, complete: true, schedulingOnly: true, mergeEvidenceReusable: false,
       ledgerPath: path, revision: ledger.revision, cursorPath, mode: previous ? 'delta' : 'recovery', changed,
-      changes: delta, ...view.timing };
+      changes: delta, next, ...view.timing };
     if (!previous) result.recovery = { reason, batchId: ledger.batchId, runtime: ledgerRuntime(ledger),
       authorization: ledger.authorization, query: ledger.query, fixedIssueCount: ledger.fixedIssues.length,
       fixedScope: pointer(path, 'fixedIssues'), constraints: pointer(path, 'context'),
@@ -132,6 +164,62 @@ export function observe(input, forceRecovery = false) {
       revision: ledger.revision, eventHash: hash(ledger.events), view, viewHash: hash(view) });
     return result;
   } finally { release(); }
+}
+
+// A duplicate completion observes the current schedule without changing the
+// ledger, even after another assignment has consumed the freed slot.
+export function completeInvestigation(input) {
+  version(input); absolute(input.ledgerPath);
+  nonempty(input.assignmentId, 'investigation assignment id');
+  nonempty(input.worker, 'actual worker identity');
+  nonempty(input.evidence, 'investigation completion evidence');
+  check(Array.isArray(input.assessments), 'Missing investigation assessments');
+  check(Number.isFinite(Date.parse(input.at)), 'Missing completion timestamp');
+  const path = resolve(input.ledgerPath), release = lock(path);
+  if (!release) return { version: 1, complete: false, status: 'busy', reason: 'Ledger busy; retry the same completion' };
+  let replayed = false;
+  try {
+    let ledger = validateLedger(readJson(path));
+    check(input.coordinator === ledger.coordinator, 'Only recorded coordinator may complete investigation');
+    const a = ledger.assignments[input.assignmentId];
+    check(a?.role === 'investigation' && a.worker === input.worker, 'Investigation identity mismatch');
+    const id = `investigation-result:${a.id}`;
+    const fingerprint = hash([input.worker, input.evidence, input.assessments, input.groups ?? [], input.scheduler ?? null]);
+    const receipt = ledger.events.find(event => event.id === id);
+    if (receipt) {
+      check(receipt.investigationResult === fingerprint, 'Conflicting investigation completion');
+      replayed = true;
+    } else {
+      check(a.status === 'active' && input.expectedRevision === ledger.revision, 'Investigation is inactive or ledger revision changed');
+      const start = ledger.events.find(event => event.coordinatorDispatch?.phase === 'start'
+        && event.coordinatorDispatch.assignmentId === a.id)?.coordinatorDispatch;
+      check(start, 'Missing investigation START receipt');
+      const handoff = readJson(start.handoffPath);
+      check(hash(handoff) === start.handoffHash, 'Investigation START handoff changed');
+      const scope = new Set(handoff.assignment.issueKeys);
+      const reported = new Set(input.assessments.map(item => item.issueKey));
+      check(input.assessments.length === scope.size && [...scope].every(issueKey => reported.has(issueKey)), 'Incomplete or out-of-scope investigation results');
+      const at = new Date(Math.max(Date.parse(input.at), Date.parse(ledger.events.at(-1).at))).toISOString();
+      const apply = event => {
+        ledger = applyEvent(ledger, { ...event, expectedRevision: ledger.revision, at }, input.coordinator);
+      };
+      for (const [index, { issueKey, value }] of input.assessments.entries()) {
+        apply({ type: 'assessment', id: `${id}:assessment:${index}`, issueKey, value });
+      }
+      for (const [index, group] of (input.groups ?? []).entries()) {
+        check(group.issues.some(issueKey => scope.has(issueKey))
+          && group.issues.every(issueKey => ledger.assessments[issueKey]?.classification === 'actionable'),
+        'Confirmed group needs actionable assessments and an issue from this investigation');
+        apply({ type: 'group', id: `${id}:group:${index}`, value: group });
+      }
+      apply({ type: 'assignment', id, investigationResult: fingerprint, value: {
+        ...a, status: 'finished', slots: 0, outcome: 'succeeded', evidence: input.evidence,
+      } });
+      if (input.scheduler) apply({ type: 'scheduler', id: `${id}:scheduler`, value: input.scheduler });
+      save(path, ledger);
+    }
+  } finally { release(); }
+  return { ...observe({ version: 1, ledgerPath: path, requestState: input.requestState }, true), replayed };
 }
 
 // Files are staged before one atomic ledger save. The final event holds the
@@ -175,6 +263,8 @@ export function dispatch(phase, input) {
       const r = input.reservation;
       check(r?.id === a.assignmentId && r.role === input.role && r.lane === laneFor(input.role), 'Reservation identity/role mismatch');
       check(r.status === 'reserved' && !r.worker && !a.worker, 'Preparation requires an unstarted reservation');
+      check(!Object.values(ledger.assignments).some(existing => existing.taskId === r.taskId && existing.status !== 'finished'),
+        'Task already has a live assignment; recover its recorded dispatch');
       check(r.worktree === a.checkout && r.startSha === a.startSha && r.stackId === a.stackId && r.groupId === a.groupId, 'Reservation scope/checkout/SHA mismatch');
       check(r.mergeOwner === a.mergeOwner, 'Reservation merge owner mismatch');
       check((r.complexity ?? 'standard') === (a.complexity ?? 'standard') && r.complexityReason === a.complexityReason, 'Reservation settings mismatch');
@@ -235,10 +325,11 @@ export function readStart(input) {
     message: renderHandoff({ ...packed, ledger }) };
 }
 
-cli(import.meta.url, 'batch-coordinator.mjs <observe|resume|prepare|start|read-start|wait> input.json', ([command, path, ...extra]) => {
+cli(import.meta.url, 'batch-coordinator.mjs <observe|resume|complete-investigation|prepare|start|read-start|wait> input.json', ([command, path, ...extra]) => {
   check(path && !extra.length, 'Expected command and input file');
   const input = readJson(path);
   if (command === 'observe' || command === 'resume') return observe(input, command === 'resume');
+  if (command === 'complete-investigation') return completeInvestigation(input);
   if (command === 'prepare' || command === 'start') return dispatch(command, input);
   if (command === 'read-start') return readStart(input);
   check(command === 'wait', 'Unknown coordinator command'); version(input);

@@ -21,19 +21,20 @@ The verdict policy:
 - Otherwise (only P3 findings, or none): the pull request is not blocked. P3
   findings never block the pull request.
 
-The helper approves only with `--approve`, which the human must ask for. A
-review that is not blocked is then "Approve with changes" (with P2 findings) or
-"Approve" (APPROVE). Without `--approve`, it is a COMMENT review. `--approve`
-fails when the policy requests changes.
+A review that the policy does not block is "Approve with changes" (with P2
+findings) or "Approve", and its event is APPROVE. The human's request to post
+the review is the request for this event.
 
 `leaning` reads the pull request author and prints the verdict that the policy
 gives for a list of priorities, with the approval: "Request changes", "Approve
 with changes", or "Approve". The review report uses it for its leaning. It
-posts nothing and does not authorize an approval.
+posts nothing.
 
 When GitHub does not allow the event (the authenticated account wrote the pull
-request), or `--comment-only` is given, the event is COMMENT and the body says
-why. Prepare, approve, and post the result with `post-text`.
+request), or `--comment-only` is given (the human asked for a comment-only
+review, or confirmed it for repository rules that forbid the event), the event
+is COMMENT and the body says why. Prepare, approve, and post the result with
+`post-text`.
 """
 
 import argparse
@@ -55,11 +56,11 @@ GROUPS = (
 )
 TEAM_ASSOCIATIONS = ("OWNER", "MEMBER", "COLLABORATOR")
 ROLES = ("team", "external")
-# Each policy result: its verdict and event with an approval, and without one.
+# Each policy result: its verdict and its event.
 VERDICTS = {
-    "request-changes": (("Request changes", "REQUEST_CHANGES"), ("Request changes", "REQUEST_CHANGES")),
-    "approve-with-changes": (("Approve with changes", "APPROVE"), ("Changes suggested", "COMMENT")),
-    "approve": (("Approve", "APPROVE"), ("No blocking problems", "COMMENT")),
+    "request-changes": ("Request changes", "REQUEST_CHANGES"),
+    "approve-with-changes": ("Approve with changes", "APPROVE"),
+    "approve": ("Approve", "APPROVE"),
 }
 FINDING_KEYS = {"priority", "title", "body", "path", "line", "start_line", "side", "start_side"}
 LOCATION_KEYS = ("path", "line", "start_line", "side", "start_side")
@@ -137,23 +138,12 @@ def choose_verdict(findings, role):
     return "approve"
 
 
-def verdict_name(verdict, approve, findings):
-    if verdict == "approve" and not approve and not findings:
-        return "No problems found"
-    return VERDICTS[verdict][0 if approve else 1][0]
+def verdict_name(verdict):
+    return VERDICTS[verdict][0]
 
 
-def verdict_text(verdict, approve, findings):
+def verdict_text(verdict, findings):
     priorities = {item["priority"] for item in findings}
-    if verdict != "request-changes" and not approve:
-        if not findings:
-            return "This review found no problems in the reviewed scope."
-        text = "This review does not block the pull request."
-        if "P2" in priorities:
-            text += " Fix the P2 items before merge."
-        if "P3" in priorities:
-            text += " The P3 items are optional and do not block the merge."
-        return text
     if verdict == "request-changes":
         items = []
         if priorities & {"P0", "P1"}:
@@ -172,16 +162,9 @@ def verdict_text(verdict, approve, findings):
     return text
 
 
-def choose_event(verdict, approve, pull, login, comment_only):
+def choose_event(verdict, pull, login, comment_only):
     """Return (event, note). The note says why the event is COMMENT instead of the verdict's event."""
-    if approve and verdict == "request-changes":
-        raise ValueError(
-            "The policy requests changes for these findings (a P0 or P1, or a P2 from an external contributor). "
-            "Do not approve; ask the human whether the priorities or the author role are wrong."
-        )
-    event = VERDICTS[verdict][0 if approve else 1][1]
-    if event == "COMMENT":
-        return event, None
+    event = VERDICTS[verdict][1]
     if comment_only:
         return "COMMENT", comment_only
     if pull["user"]["login"] == login:
@@ -229,10 +212,10 @@ def place(findings, files):
     return inline, body
 
 
-def render_body(summary, head, verdict, approve, findings, inline, body, note):
+def render_body(summary, head, verdict, findings, inline, body, note):
     parts = [
-        f"**Verdict: {verdict_name(verdict, approve, findings)}**", "",
-        verdict_text(verdict, approve, findings), "", summary, "",
+        f"**Verdict: {verdict_name(verdict)}**", "",
+        verdict_text(verdict, findings), "", summary, "",
     ]
     parts.append(f"Reviewed commit: `{head}`")
     if findings:
@@ -256,7 +239,7 @@ def render_body(summary, head, verdict, approve, findings, inline, body, note):
     return "\n".join(parts) + "\n"
 
 
-def render(data, url, head, author=None, comment_only=None, approve=False):
+def render(data, url, head, author=None, comment_only=None):
     target = post_text.parse_pull_target(url)
     if not SHA.fullmatch(head):
         raise ValueError("Provide the full or abbreviated SHA of the reviewed commit.")
@@ -281,14 +264,13 @@ def render(data, url, head, author=None, comment_only=None, approve=False):
         raise RuntimeError("The pull request head changed while the diff was read. Run render again.")
     role, source = author_role(pull, author)
     verdict = choose_verdict(findings, role)
-    event, note = choose_event(verdict, approve, pull, login, comment_only)
+    event, note = choose_event(verdict, pull, login, comment_only)
     inline, body = place(findings, files)
     plan = {
         "target": post_text.canonical_pull_url(target),
         "head": current,
         "author": {"login": pull["user"]["login"], "role": role, "source": source},
-        "verdict": verdict_name(verdict, approve, findings),
-        "approve": approve,
+        "verdict": verdict_name(verdict),
         "event": event,
         "eventNote": note,
         "counts": {priority: sum(1 for item in findings if item["priority"] == priority) for priority in PRIORITIES},
@@ -299,14 +281,14 @@ def render(data, url, head, author=None, comment_only=None, approve=False):
         ],
     }
     return {
-        "review-body.md": render_body(summary, current, verdict, approve, findings, inline, body, note),
+        "review-body.md": render_body(summary, current, verdict, findings, inline, body, note),
         "comments.json": json.dumps([comment for _, comment in inline], ensure_ascii=False, indent=2) + "\n",
         "plan.json": json.dumps(plan, ensure_ascii=False, indent=2) + "\n",
     }, plan
 
 
 def leaning(url, priorities, author=None):
-    """Return the author and the verdict, with the approval, that the policy gives for the priorities."""
+    """Return the author and the verdict that the policy gives for the priorities."""
     for priority in priorities:
         if priority not in PRIORITIES:
             raise ValueError(f"A priority must be one of: {', '.join(PRIORITIES)}.")
@@ -315,7 +297,7 @@ def leaning(url, priorities, author=None):
     verdict = choose_verdict([{"priority": priority} for priority in priorities], role)
     return {
         "author": {"login": pull["user"]["login"], "role": role, "source": source},
-        "verdict": VERDICTS[verdict][0][0],
+        "verdict": verdict_name(verdict),
         "counts": {priority: priorities.count(priority) for priority in PRIORITIES},
     }
 
@@ -333,14 +315,11 @@ def main():
         help="Author role when the human states it. Default: from the GitHub author association.",
     )
     build.add_argument(
-        "--approve", action="store_true",
-        help="Approve a review that the policy does not block. Use only when the human asks to approve.",
-    )
-    build.add_argument(
         "--comment-only", metavar="REASON",
-        help="Post as COMMENT, for example when repository rules forbid the event. The body keeps the verdict.",
+        help="Post as COMMENT when the human asks for that, or confirms it for repository rules that forbid "
+        "the event. The body keeps the verdict.",
     )
-    lean = commands.add_parser("leaning", help="Print the policy verdict, with the approval, for the priorities.")
+    lean = commands.add_parser("leaning", help="Print the policy verdict for the priorities.")
     lean.add_argument("--target", required=True, help="GitHub pull request URL.")
     lean.add_argument(
         "--priority", action="append", default=[], metavar="P0-P3",
@@ -359,7 +338,7 @@ def main():
         return 0
     try:
         data = json.loads(args.findings.read_text(encoding="utf-8"))
-        outputs, plan = render(data, args.target, args.head.strip(), args.author, args.comment_only, args.approve)
+        outputs, plan = render(data, args.target, args.head.strip(), args.author, args.comment_only)
         args.out_dir.mkdir(parents=True, exist_ok=False)
         for name, text in outputs.items():
             (args.out_dir / name).write_text(text, encoding="utf-8")

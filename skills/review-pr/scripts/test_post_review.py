@@ -2,7 +2,7 @@ import json
 import unittest
 from unittest import mock
 
-from post_review import author_role, choose_verdict, load_findings, render
+from post_review import author_role, choose_verdict, leaning, load_findings, render
 import post_text
 
 PULL = "https://github.com/o/r/pull/5"
@@ -53,6 +53,32 @@ class PolicyTests(unittest.TestCase):
             with self.subTest(priorities=priorities, role=role):
                 found = [{"priority": priority} for priority in priorities]
                 self.assertEqual(choose_verdict(found, role), expected)
+
+
+class LeaningTests(unittest.TestCase):
+    def lean(self, priorities, association="MEMBER", role=None):
+        with mock.patch.object(post_text, "gh_api", side_effect=[pull(association=association)]):
+            return leaning(PULL, priorities, role)
+
+    def test_gives_the_approval_verdicts(self):
+        cases = [
+            (["P1", "P3"], "MEMBER", "Request changes"),
+            (["P2"], "CONTRIBUTOR", "Request changes"),
+            (["P2", "P3"], "MEMBER", "Approve with changes"),
+            (["P3"], "NONE", "Approve"),
+            ([], "NONE", "Approve"),
+        ]
+        for priorities, association, verdict in cases:
+            with self.subTest(priorities=priorities, association=association):
+                self.assertEqual(self.lean(priorities, association)["verdict"], verdict)
+        result = self.lean(["P2", "P3", "P3"], "CONTRIBUTOR", "team")
+        self.assertEqual(result["verdict"], "Approve with changes")
+        self.assertEqual(result["author"]["role"], "team")
+        self.assertEqual(result["counts"], {"P0": 0, "P1": 0, "P2": 1, "P3": 2})
+
+    def test_rejects_unknown_priorities(self):
+        with self.assertRaises(ValueError):
+            leaning(PULL, ["P4"])
 
 
 class LoadTests(unittest.TestCase):

@@ -26,6 +26,11 @@ review that is not blocked is then "Approve with changes" (with P2 findings) or
 "Approve" (APPROVE). Without `--approve`, it is a COMMENT review. `--approve`
 fails when the policy requests changes.
 
+`leaning` reads the pull request author and prints the verdict that the policy
+gives for a list of priorities, with the approval: "Request changes", "Approve
+with changes", or "Approve". The review report uses it for its leaning. It
+posts nothing and does not authorize an approval.
+
 When GitHub does not allow the event (the authenticated account wrote the pull
 request), or `--comment-only` is given, the event is COMMENT and the body says
 why. Prepare, approve, and post the result with `post-text`.
@@ -300,6 +305,21 @@ def render(data, url, head, author=None, comment_only=None, approve=False):
     }, plan
 
 
+def leaning(url, priorities, author=None):
+    """Return the author and the verdict, with the approval, that the policy gives for the priorities."""
+    for priority in priorities:
+        if priority not in PRIORITIES:
+            raise ValueError(f"A priority must be one of: {', '.join(PRIORITIES)}.")
+    pull = post_text.pull_request(post_text.parse_pull_target(url))
+    role, source = author_role(pull, author)
+    verdict = choose_verdict([{"priority": priority} for priority in priorities], role)
+    return {
+        "author": {"login": pull["user"]["login"], "role": role, "source": source},
+        "verdict": VERDICTS[verdict][0][0],
+        "counts": {priority: priorities.count(priority) for priority in PRIORITIES},
+    }
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -320,7 +340,23 @@ def main():
         "--comment-only", metavar="REASON",
         help="Post as COMMENT, for example when repository rules forbid the event. The body keeps the verdict.",
     )
+    lean = commands.add_parser("leaning", help="Print the policy verdict, with the approval, for the priorities.")
+    lean.add_argument("--target", required=True, help="GitHub pull request URL.")
+    lean.add_argument(
+        "--priority", action="append", default=[], metavar="P0-P3",
+        help="Priority of one finding. Repeat for each finding; omit when there is none.",
+    )
+    lean.add_argument(
+        "--author", choices=ROLES,
+        help="Author role when the human states it. Default: from the GitHub author association.",
+    )
     args = parser.parse_args()
+    if args.command == "leaning":
+        try:
+            print(json.dumps(leaning(args.target, args.priority, args.author), ensure_ascii=False, indent=2))
+        except (OSError, ValueError, RuntimeError, KeyError) as error:
+            parser.exit(1, f"{error}\n")
+        return 0
     try:
         data = json.loads(args.findings.read_text(encoding="utf-8"))
         outputs, plan = render(data, args.target, args.head.strip(), args.author, args.comment_only, args.approve)

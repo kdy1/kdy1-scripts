@@ -22,7 +22,7 @@ Do not start for a request from another agent, an automatic workflow, a request 
 Helpers (run them with their absolute paths):
 
 - `scripts/review_pr.py` (Python 3.9+, Git 2.31+, authenticated `gh`) prepares and cleans up the review.
-- `scripts/post_review.py` (Python 3.9+ and `gh`) renders the review for posting. It imports the `post-text` helper from the sibling skill directory.
+- `scripts/post_review.py` (Python 3.9+ and `gh`) gives the leaning of the report and renders the review for posting. It imports the `post-text` helper from the sibling skill directory.
 
 ## Boundaries
 
@@ -99,7 +99,7 @@ Use this structure:
 2. **What it does**: two to four sentences. Say whether the change does what it claims, based on the purpose check.
 3. **Agent's results**: findings, most severe first. Each has a priority (P0 data loss, security hole, or common-path crash; P1 wrong behavior that users will hit; P2 edge-case bug or missing test for changed behavior; P3 small defect), `path:line`, description, evidence (`ran` with the commands and outputs, or `read`), status (confirmed, unverified, or rejected), and a suggested fix. Then short lines for CI triage, review threads, and the commands you ran. If you found nothing, say that no reportable issues were found in the reviewed scope.
 4. **For you to check**: the numbered checklist from step 3.
-5. **Leaning**: your current view (approve, approve with changes, or request changes) and what would change it. State that the decision is the human's.
+5. **Leaning**: the verdict that the posting policy in step 6 gives for the confirmed findings: request changes, approve with changes, or approve. Give an approve or approve-with-changes leaning when the policy gives it, even when the human did not ask about approval: the human reads the report and makes the decision. Get the verdict and the author role with `python3 <skill>/scripts/post_review.py leaning --target <PR URL> --priority <P0-P3>` (one `--priority` for each confirmed finding; none when there is no finding), and give the author role with it. Then say what would change it, for example an unverified finding, a priority, the author role, or a checklist answer. State that the decision is the human's.
 6. **Limits**: what you could not run or read, and why.
 
 Do not say that the change is proven correct.
@@ -128,7 +128,7 @@ Do this step only when the human's own message in this conversation asks you to 
 
 P3 findings are always posted, labelled non-blocking, and never change the verdict.
 
-- The request to post is the human's request for the event that the policy chooses: `REQUEST_CHANGES` or `COMMENT`. Use `APPROVE` only when the human's own message asks to approve the pull request, for example "approve해줘". Your leaning, the policy, and approval of a draft review are not a request to approve. Post Text still requires human approval of the exact review, its destination, and its event before it posts.
+- The request to post is the human's request for the event that the policy chooses: `REQUEST_CHANGES` or `COMMENT`. Use `APPROVE` only when the human's own message asks to approve the pull request, for example "approve해줘". An approve leaning in the report, the policy, and approval of a draft review are not a request to approve. Post Text still requires human approval of the exact review, its destination, and its event before it posts.
 - The request authorizes one review on this pull request. It does not authorize other comments, thread resolutions, merges, pushes, or code changes.
 
 ### Write the findings file

@@ -104,7 +104,7 @@ python3 <skill-dir>/scripts/post_text.py prepare-review \
   --output /absolute/path/review.json
 ```
 
-`--event` is `COMMENT` (the default), `REQUEST_CHANGES`, or `APPROVE`. The event is part of the review file, so the digest and the approval cover it. To change the event after approval, run `prepare-review` again with a new output file and get approval again.
+`--event` is `COMMENT` (the default), `REQUEST_CHANGES`, or `APPROVE`. When the review is for a known commit (for example the pinned head of a review), add `--head <full SHA>`: the helper stops when the pull request head is another commit. The event is part of the review file, so the digest and the approval cover it. To change the event after approval, run `prepare-review` again with a new output file and get approval again.
 
 The helper adds the info panel to the review body only, reads the pull request diff at its current head, and checks that each inline comment is on a line of the diff. If a comment is not, it stops and lists the comments. Fix the location, or move that finding into the review body with its file and line, and run it again with a new output file. On success, it writes the review file with the head commit and prints its SHA-256 digest.
 

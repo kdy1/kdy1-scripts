@@ -373,6 +373,9 @@ def main():
         "--event", choices=tuple(REVIEW_STATES), default="COMMENT",
         help="Review event the human asked for (default COMMENT).",
     )
+    review.add_argument(
+        "--head", help="Full SHA of the reviewed commit. Stop when the pull request head is another commit.",
+    )
     review.add_argument("--output", required=True, type=Path, help="New file for the review JSON. Must not exist.")
     show = commands.add_parser("show-review", help="Print a review file as Markdown for approval.")
     show.add_argument("--review", required=True, type=Path)
@@ -395,6 +398,7 @@ def main():
             comments = json.loads(args.comments.read_text(encoding="utf-8"))
             body = prepare_review(
                 args.text.read_text(encoding="utf-8"), comments, args.target, args.harness, args.agent, args.event,
+                expected_head=args.head.strip() if args.head else None,
             )
             with args.output.open("xb") as output:
                 output.write(body)

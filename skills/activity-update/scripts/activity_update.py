@@ -204,10 +204,25 @@ def closed_by(pr, author, start, end):
     return bool(events) and login_of(events[-1].get("actor")) == author.casefold()
 
 
+def summarize_activity(prs):
+    """One line that counts other authors' PRs by the user's review, merge, and close notes."""
+    order = [*REVIEW_LABELS.values(), "merged", "closed"]
+    counts = {}
+    for pr in prs:
+        key = tuple(pr["myActivity"])
+        counts[key] = counts.get(key, 0) + 1
+    kinds = sorted(counts, key=lambda notes: [order.index(note) for note in notes])
+    parts = [f"{counts[notes]} {' and '.join(notes)}" for notes in kinds]
+    return f"{len(prs)} PR{'s' if len(prs) != 1 else ''} in total: {', '.join(parts)}."
+
+
 def render(sections, title, extra=None):
     lines = [title]
     for section, prs in sections.items():
         lines.extend(["", f"{section}:"])
+        if section == "Reviews and merges" and prs:
+            lines.append(f" - {summarize_activity(prs)}")
+            continue
         for pr in prs:
             label = f"{pr['repository']['nameWithOwner']}#{pr['number']}"
             notes = pr.get("myActivity") or (["draft"] if pr["isDraft"] else [])

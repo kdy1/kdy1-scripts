@@ -166,8 +166,9 @@ class ActivityUpdateTests(unittest.TestCase):
             (1, ["approved"]),
         ])
         output = helper.render({"Reviews and merges": activity}, "Update:")
-        self.assertIn(" - [example/demo#2](https://github.com/example/demo/pull/2) (commented, merged)\n",
-                      output)
+        self.assertIn("Reviews and merges:\n - 4 PRs in total: 1 approved, 1 commented and merged, "
+                      "1 review dismissed, 1 merged.\n", output)
+        self.assertNotIn("example/demo#2", output)
 
     def test_classifies_closes_on_others_prs(self):
         other = {"login": "someone-else"}
@@ -194,8 +195,7 @@ class ActivityUpdateTests(unittest.TestCase):
         activity = helper.classify_others(records, "sample-user", self.start, self.end)
         self.assertEqual([(p["number"], p["myActivity"]) for p in activity],
                          [(1, ["changes requested", "closed"])])
-        self.assertIn(" - [example/demo#1](https://github.com/example/demo/pull/1) "
-                      "(changes requested, closed)\n",
+        self.assertIn(" - 1 PR in total: 1 changes requested and closed.\n",
                       helper.render({"Reviews and merges": activity}, "Update:"))
 
     def test_extra_update_and_inline_code_are_preserved(self):
@@ -228,7 +228,7 @@ class ActivityUpdateTests(unittest.TestCase):
         self.assertEqual(len(queries), 6)
         self.assertIn("is:closed is:unmerged updated:>=2026-11-04T15:00:00Z", queries[2])
         self.assertEqual([p["number"] for p in result["sections"]["Reviews and merges"]], [3])
-        self.assertIn("Reviews and merges:\n - [example/demo#3]", result["markdown"])
+        self.assertIn("Reviews and merges:\n - 1 PR in total: 1 approved.", result["markdown"])
 
     def test_cli_searches_the_whole_period(self):
         args = ["activity_update.py", "--repo", "example/demo", "--since", "2026-11-01",

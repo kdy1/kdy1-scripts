@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { initialize, applyEvent } from './batch-ledger.mjs';
 import { readJson, save } from './helper-common.mjs';
-import { observe, dispatch, waitPolicy } from './batch-coordinator.mjs';
+import { observe, dispatch, readStart, waitPolicy } from './batch-coordinator.mjs';
 const sha = 'a'.repeat(40), issue = { key: 'github.com/o/r/1', url: 'https://github.com/o/r/issues/1', canonicalOrder: 0 };
 const at = '2026-10-12T00:00:00Z';
 function fixture(fn) {
@@ -152,6 +152,8 @@ test('delegated START atomically binds grant identity; revoked grants cannot be 
   l = applyEvent(l, { id: 'enable', expectedRevision: 0, at, type: 'delegation-enable', capacity: 3, evidence: { operationsClear: true, ownersReconciled: true, summary: 'Idle' } }, 'root'); save(path, l);
   const p = preparation(path, 'inventory'); p.expectedRevision = 1;
   const prepared = dispatch('prepare', p), s = start(p, prepared);
+  const lookup = { version: 1, ledgerPath: path, assignmentId: 'a' };
+  assert.equal(readStart(lookup).status, 'awaiting-start');
   s.assignment.grantId = 'grant'; s.assignment.generation = 1;
   s.grant = { id: 'grant', assignmentId: 'a', worker: 'worker-a', role: 'inventory', stackIds: ['s'], generation: 1, allowedEvents: ['checkpoint', 'assignment'] };
   const invalid = { ...s, grant: { ...s.grant, worker: 'other' } };
@@ -159,8 +161,13 @@ test('delegated START atomically binds grant identity; revoked grants cannot be 
   const started = dispatch('start', s); assert.equal(started.revision, prepared.revision + 2);
   assert.equal(readJson(path).delegation.grants.grant.worker, 'worker-a');
   assert.equal(dispatch('start', s).replayed, true);
+  const delivered = readStart(lookup);
+  assert.equal(delivered.status, 'started');
+  assert.equal(delivered.worker, 'worker-a');
+  assert.equal(delivered.message, readJson(started.messagePath).message);
   l = readJson(path); l.delegation.grants.grant.status = 'revoked'; save(path, l);
   assert.throws(() => dispatch('start', s), /delegation/);
+  assert.throws(() => readStart(lookup), /delegation/);
 }));
 
 test('Claude dispatch keeps recorded runtime settings and uncertain assignment blocks START', () => fixture(({ path, l }) => {

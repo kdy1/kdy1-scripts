@@ -213,11 +213,34 @@ export function dispatch(phase, input) {
   } finally { release(); }
 }
 
-cli(import.meta.url, 'batch-coordinator.mjs <observe|resume|prepare|start|wait> input.json', ([command, path, ...extra]) => {
+// A delegate can read its START from the committed ledger without a thread message.
+export function readStart(input) {
+  version(input);
+  absolute(input.ledgerPath);
+  nonempty(input.assignmentId, 'assignment id');
+  const ledger = validateLedger(readJson(input.ledgerPath));
+  check(ledger.maintenance?.state !== 'stopped', 'Management is stopped');
+  const assignment = ledger.assignments[input.assignmentId];
+  check(assignment, 'Unknown assignment');
+  if (assignment.status === 'reserved') return { version: 1, complete: true, status: 'awaiting-start' };
+  check(assignment.status === 'active', 'START requires an active assignment');
+  const receipt = ledger.events.find(event => event.coordinatorDispatch?.phase === 'start'
+    && event.coordinatorDispatch.assignmentId === input.assignmentId)?.coordinatorDispatch;
+  check(receipt, 'Missing committed START receipt');
+  const packed = readJson(receipt.handoffPath);
+  check(hash(packed) === receipt.handoffHash, 'START handoff changed');
+  check(packed.assignment.worker === assignment.worker, 'START worker differs from active assignment');
+  check(ledgerRuntime(packed.ledger) === ledgerRuntime(ledger), 'Dispatch runtime changed');
+  return { version: 1, complete: true, status: 'started', worker: assignment.worker,
+    message: renderHandoff({ ...packed, ledger }) };
+}
+
+cli(import.meta.url, 'batch-coordinator.mjs <observe|resume|prepare|start|read-start|wait> input.json', ([command, path, ...extra]) => {
   check(path && !extra.length, 'Expected command and input file');
   const input = readJson(path);
   if (command === 'observe' || command === 'resume') return observe(input, command === 'resume');
   if (command === 'prepare' || command === 'start') return dispatch(command, input);
+  if (command === 'read-start') return readStart(input);
   check(command === 'wait', 'Unknown coordinator command'); version(input);
   return { version: 1, waitMs: waitPolicy(input) };
 });

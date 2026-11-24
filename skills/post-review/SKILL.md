@@ -56,14 +56,15 @@ Write the review in the language that Post Text selects. The helper writes the v
       "title": "Empty input skips the cache update",
       "path": "src/cache.py",
       "line": 42,
-      "body": "Trigger, impact, and evidence...\n\nSuggested fix: ..."
+      "body": "Trigger, impact, and evidence..."
     },
     {"priority": "P3", "title": "The error message names the old option", "body": "..."}
   ]
 }
 ```
 
-- `priority` is `P0` to `P3`. `title` is one line. `body` is Markdown that is complete without the review body: the trigger, the impact, the evidence, and a suggested fix. Do not name the reviewer models in it.
+- `priority` is `P0` to `P3`. `title` is one line. `body` is Markdown that is complete without the review body: the trigger, the impact, and the evidence. Do not name the reviewer models in it.
+- Do not write a fix. A finding states the problem only: no suggested fix, no patch or replacement code, and no GitHub ```` ```suggestion ```` block. When a source finding has a suggested fix, leave it out. `render` stops when a body has a `suggestion` block or a line that starts with `Suggested fix`.
 - Give the location of the defect at the reviewed commit: `path` and `line` (the line number in the new file), and `start_line` for a range in the same diff hunk. For a defect on removed lines, use `"side": "LEFT"` and the line number in the old file. Omit the location only for a finding about the whole change or a missing change.
 - When the defect is on a line outside the diff but a changed line causes it or exposes it, put the location on that changed line and name the other location in the body.
 - Use `"findings": []` when there is no finding. The review then says that it found no problems.

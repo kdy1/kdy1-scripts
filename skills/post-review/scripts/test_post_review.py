@@ -56,6 +56,11 @@ class PolicyTests(unittest.TestCase):
 
 
 class LoadTests(unittest.TestCase):
+    def test_allows_problem_statements_that_mention_fixes(self):
+        load_findings({"summary": "S", "findings": [
+            {**finding(), "body": "The change fixed the parser but the suggested fix in #3 is missing."},
+        ]})
+
     def test_sorts_by_priority(self):
         _, findings = load_findings({"summary": "S", "findings": [finding("P3", "A"), finding("P0", "B")]})
         self.assertEqual([item["title"] for item in findings], ["B", "A"])
@@ -65,6 +70,10 @@ class LoadTests(unittest.TestCase):
             finding(priority="P5"), finding(title=""), {**finding(), "body": " "},
             finding(path="src/a.py"), finding(line=3), {**finding(), "class": "follow-up"},
             finding(path="/abs", line=1),
+            {**finding(), "body": "Crash.\n\nSuggested fix: check for None."},
+            {**finding(), "body": "Crash.\n\n**Suggested fix:** check for None."},
+            {**finding(), "body": "Crash.\n\n```suggestion\nif x is None:\n```"},
+            {**finding(), "body": "Crash.\n\n~~~ Suggestion\nx\n~~~"},
         ):
             with self.subTest(bad=bad), self.assertRaises(ValueError):
                 load_findings({"summary": "S", "findings": [bad]})

@@ -59,6 +59,11 @@ VERDICTS = {
 FINDING_KEYS = {"priority", "title", "body", "path", "line", "start_line", "side", "start_side"}
 LOCATION_KEYS = ("path", "line", "start_line", "side", "start_side")
 SHA = re.compile(r"[0-9a-f]{7,64}")
+# A finding states the problem only. These patterns find a suggested fix in a body.
+FIX_PATTERNS = (
+    re.compile(r"^\s*(?:`{3,}|~{3,})\s*suggestion\b", re.IGNORECASE | re.MULTILINE),
+    re.compile(r"^[\s>*_#-]*suggested fix", re.IGNORECASE | re.MULTILINE),
+)
 
 
 def normalize_finding(index, finding):
@@ -74,6 +79,11 @@ def normalize_finding(index, finding):
     body = finding.get("body")
     if not isinstance(body, str) or not body.strip():
         raise ValueError(f"{label}.body must be nonempty Markdown text.")
+    if any(pattern.search(body) for pattern in FIX_PATTERNS):
+        raise ValueError(
+            f"{label}.body has a suggested fix. State the problem only: remove the suggested fix "
+            "and any suggestion block."
+        )
     normalized = {"priority": finding["priority"], "title": title, "body": body.replace("\r\n", "\n").strip()}
     location = {key: finding[key] for key in LOCATION_KEYS if key in finding}
     if location:

@@ -1,6 +1,6 @@
 ---
 name: review-pr
-description: "Review a GitHub pull request together with a human. The agent does every check it can do itself (reading the diff and context, running builds, tests, and base-vs-head repros, triaging CI failures and open review threads), by default also runs $review-once on the PR and checks its findings, and then gives the human a short, prioritized checklist of what only the human can check. Use when the human invokes $review-pr in T3 Chat or /review-pr in Claude Code, or when the human's own message gives a GitHub PR URL and asks to review it, for example \"<PR_URL> 리뷰하자\" or \"Let's review <PR_URL>\". Do not use it for a request from another agent or an automatic workflow, for a request for only the independent multi-model reviews ($review-once), or for a fully automatic review ($auto-review-pr, $auto-review-pr-strict, or $auto-review-pr-query). Reports in the language the user writes in, or in English when the request has no natural-language text. Never posts to GitHub unless the user asks. When the human asks to post the review, posts it as one pull request review through $post-text, with the event that a priority policy chooses from the findings and the pull request author: Request Changes for any P0 or P1, and for a P2 from an external contributor; otherwise a non-blocking review, which is an approval only when the human asks to approve."
+description: "Review a GitHub pull request together with a human. The agent does every check it can do itself (reading the diff and context, running builds, tests, and base-vs-head repros, triaging CI failures and open review threads), by default also runs $review-once on the PR and checks its findings, and then gives the human a short, prioritized checklist of what only the human can check. Use when the human invokes $review-pr in T3 Chat or /review-pr in Claude Code, or when the human's own message gives a GitHub PR URL and asks to review it, for example \"<PR_URL> 리뷰하자\" or \"Let's review <PR_URL>\". Do not use it for a request from another agent or an automatic workflow, for a request for only the independent multi-model reviews ($review-once), or for a fully automatic review ($auto-review-pr, $auto-review-pr-strict, or $auto-review-pr-query). Reports in the language the user writes in, or in English when the request has no natural-language text. Never posts to GitHub unless the user asks. When the human asks to post the review, posts it as one pull request review through $post-text, with the event that a priority policy chooses from the findings and the pull request author: Request Changes for any P0 or P1, and for a P2 from an external contributor; otherwise Approve (approve with changes for a P2 from a team member). The request to post is the request for that event; a comment-only review only when the human asks for one."
 ---
 
 # Review PR
@@ -126,7 +126,7 @@ Use this structure:
 3. **Agent's results**: findings, most severe first, from your checks and from Review Once together. Each has a priority (P0 data loss, security hole, or common-path crash; P1 wrong behavior that users will hit; P2 edge-case bug or missing test for changed behavior; P3 small defect), `path:line`, description, who found it (you, the Review Once reviewers by model, or both), evidence (`ran` with the commands and outputs, or `read`), status (confirmed, unverified, or rejected), and a suggested fix. Then short lines for CI triage, review threads, and the commands you ran. If you found nothing, say that no reportable issues were found in the reviewed scope.
    - **Review Once**: a table with one row per reviewer: model, verdict, confidence, and a one-line reason. Mark missing or incomplete reviewers. Then one or two sentences on where the reviewers and you agree and disagree. If Review Once did not run, say why (turned off by the human, or a missing model).
 4. **For you to check**: the numbered checklist from step 3.
-5. **Leaning**: the verdict that the posting policy in step 6 gives for the confirmed findings: request changes, approve with changes, or approve. Give an approve or approve-with-changes leaning when the policy gives it, even when the human did not ask about approval: the human reads the report and makes the decision. Get the verdict and the author role with `python3 <skill>/scripts/post_review.py leaning --target <PR URL> --priority <P0-P3>` (one `--priority` for each confirmed finding; none when there is no finding), and give the author role with it. Then say what would change it, for example an unverified finding, a priority, the author role, or a checklist answer. State that the decision is the human's.
+5. **Leaning**: the verdict that the posting policy in step 6 gives for the confirmed findings: request changes, approve with changes, or approve. Give an approve or approve-with-changes leaning when the policy gives it, even when the human did not ask about approval: the human reads the report and makes the decision. Get the verdict and the author role with `python3 <skill>/scripts/post_review.py leaning --target <PR URL> --priority <P0-P3>` (one `--priority` for each confirmed finding; none when there is no finding), and give the author role with it. Then say what would change it, for example an unverified finding, a priority, the author role, or a checklist answer. State that the decision is the human's, and that a request to post the review posts it with this verdict's event.
 6. **Limits**: what you could not run or read, and why. Include the Review Once model settings, retries, and any `note:` from its `verify`.
 
 Do not say that the change is proven correct.
@@ -145,17 +145,18 @@ The review is a conversation. After the report:
 
 Do this step only when the human's own message in this conversation asks you to post the review, for example "리뷰 올려줘" or "Post the review". Post it as one GitHub pull request review through [$post-text](../post-text/SKILL.md). Post Text drafts, shows, and posts the review; this step adds the event policy, the labels, and the layout. Read `$post-text` before you start and resolve its `SKILL.md` to an absolute path. If it is missing, report that and stop. Use [$write-ste](../write-ste/SKILL.md) for the summary and the finding bodies when it is installed.
 
-| Findings | Author | Verdict and event | When the human asks to approve |
-| --- | --- | --- | --- |
-| Any P0 or P1 | Any | Request changes, `REQUEST_CHANGES` | Not allowed |
-| P2 (no P0 or P1) | External contributor | Request changes, `REQUEST_CHANGES` | Not allowed |
-| P2 (no P0 or P1) | Team member | Changes suggested, `COMMENT` | Approve with changes, `APPROVE` |
-| Only P3 | Any | No blocking problems, `COMMENT` | Approve, `APPROVE` |
-| None | Any | No problems found, `COMMENT` | Approve, `APPROVE` |
+| Findings | Author | Verdict and event |
+| --- | --- | --- |
+| Any P0 or P1 | Any | Request changes, `REQUEST_CHANGES` |
+| P2 (no P0 or P1) | External contributor | Request changes, `REQUEST_CHANGES` |
+| P2 (no P0 or P1) | Team member | Approve with changes, `APPROVE` |
+| Only P3 | Any | Approve, `APPROVE` |
+| None | Any | Approve, `APPROVE` |
 
 P3 findings are always posted, labelled non-blocking, and never change the verdict.
 
-- The request to post is the human's request for the event that the policy chooses: `REQUEST_CHANGES` or `COMMENT`. Use `APPROVE` only when the human's own message asks to approve the pull request, for example "approve해줘". An approve leaning in the report, the policy, and approval of a draft review are not a request to approve. Post Text still requires human approval of the exact review, its destination, and its event before it posts.
+- The request to post is the human's request for the event that the policy chooses, `APPROVE` included. Do not change it to `COMMENT` on your own, and do not ask for a separate request to approve. The event in the review is the leaning of the report. Post Text still requires human approval of the exact review, its destination, and its event before it posts.
+- Use `COMMENT` only when the human asks for a comment-only review, or when GitHub does not allow the event (see Event limits). Then render with `--comment-only '<reason>'`; the body keeps the verdict and says why.
 - The request authorizes one review on this pull request. It does not authorize other comments, thread resolutions, merges, pushes, or code changes.
 
 ### Write the findings file
@@ -200,10 +201,10 @@ python3 <skill>/scripts/post_review.py render \
 
 The command reads the pull request, its author, and its diff, writes `review-body.md`, `comments.json`, and `plan.json` to the new directory, and prints the plan. Use a new output directory for each render.
 
-- **Approval.** Add `--approve` only when the human asked to approve the pull request. Then a review that the policy does not block is `APPROVE`. When the policy requests changes, `--approve` fails: tell the human why, and ask whether a priority or the author role is wrong. Do not approve against the policy.
+- **Event.** `render` gives the policy event without a flag. When the human asks to approve a review that the policy requests changes for, do not approve: tell the human why, and ask whether a priority or the author role is wrong.
 - **Author role.** The author is a team member when the GitHub author association of the pull request is `OWNER`, `MEMBER`, or `COLLABORATOR`, and an external contributor otherwise. The plan shows the login, the role, and its source. The body does not name the role. If the human says that the role is wrong, render again with `--author team` or `--author external`.
 - **Placement.** Each finding whose location is on a line of the diff becomes an inline comment, labelled `P0`/`P1` `Blocking`, `P2` `Fix before merge`, or `P3` `Non-blocking`. The others go into the review body with their file and line, and the plan gives the reason for each. For each body item with a location, check whether a line of the diff is a correct location. If one is, fix the location in the findings file and render again.
-- **Event limits.** When the authenticated account wrote the pull request, GitHub does not allow `APPROVE` or `REQUEST_CHANGES`; the event becomes `COMMENT`, and the body keeps the verdict and says why. When the repository instructions (for example `AGENTS.md`) forbid the event, tell the human. Unless they confirm the event, render again with `--comment-only '<reason>'`.
+- **Event limits.** When the authenticated account wrote the pull request, GitHub does not allow `APPROVE` or `REQUEST_CHANGES`; the event becomes `COMMENT`, and the body keeps the verdict and says why. When the repository instructions (for example `AGENTS.md`) forbid the event, say so with the draft, and keep the event. The human's approval of the draft confirms it. If the human asks for a comment instead, render again with `--comment-only '<reason>'`.
 - If the command says that the head moved, the findings do not apply to the current head. Tell the human, and offer to review the new head (step 5). If the pull request is closed or merged, report that and stop.
 
 ### Prepare, approve, and post through Post Text

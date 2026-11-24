@@ -22,10 +22,10 @@ def finding(priority="P1", title="Bug", **location):
     return {"priority": priority, "title": title, "body": f"{title} details.", **location}
 
 
-def run(findings, association="MEMBER", login="me", author="author", role=None, comment_only=None, approve=False):
+def run(findings, association="MEMBER", login="me", author="author", role=None, comment_only=None):
     responses = [pull(author=author, association=association), {"login": login}, FILES, pull()]
     with mock.patch.object(post_text, "gh_api", side_effect=responses):
-        return render({"summary": "Adds a parser.", "findings": findings}, PULL, HEAD, role, comment_only, approve)
+        return render({"summary": "Adds a parser.", "findings": findings}, PULL, HEAD, role, comment_only)
 
 
 class PolicyTests(unittest.TestCase):
@@ -109,12 +109,12 @@ class LoadTests(unittest.TestCase):
 
 
 class RenderTests(unittest.TestCase):
-    def test_team_p2_approves_with_changes_when_asked_and_p3_does_not_block(self):
+    def test_team_p2_approves_with_changes_and_p3_does_not_block(self):
         outputs, plan = run([
             finding("P2", "Edge case", path="src/a.py", line=11),
             finding("P3", "Stale comment", path="src/a.py", line=10),
             finding("P3", "Outside", path="src/a.py", line=40),
-        ], approve=True)
+        ])
         self.assertEqual((plan["verdict"], plan["event"], plan["eventNote"]), ("Approve with changes", "APPROVE", None))
         self.assertEqual(plan["author"], {
             "login": "author", "role": "team", "source": "GitHub author association: MEMBER",
@@ -131,26 +131,16 @@ class RenderTests(unittest.TestCase):
         self.assertEqual(plan["body"][0]["reason"], "the line is not in the pull request diff.")
         self.assertNotIn("MEMBER", body)
 
-    def test_does_not_approve_unless_asked(self):
+    def test_unblocked_reviews_approve_without_a_flag(self):
         outputs, plan = run([finding("P2", "Edge case"), finding("P3", "Nit")])
-        self.assertEqual((plan["verdict"], plan["event"], plan["eventNote"]), ("Changes suggested", "COMMENT", None))
-        body = outputs["review-body.md"]
-        self.assertTrue(body.startswith(
-            "**Verdict: Changes suggested**\n\nThis review does not block the pull request. "
+        self.assertEqual((plan["verdict"], plan["event"], plan["eventNote"]), ("Approve with changes", "APPROVE", None))
+        self.assertTrue(outputs["review-body.md"].startswith(
+            "**Verdict: Approve with changes**\n\nThis review approves the pull request with changes. "
             "Fix the P2 items before merge. The P3 items are optional and do not block the merge.\n"
         ))
-        self.assertNotIn("approve", body.lower())
-        outputs, plan = run([finding("P3", "Nit")], association="NONE")
-        self.assertEqual((plan["verdict"], plan["event"]), ("No blocking problems", "COMMENT"))
-        outputs, plan = run([], login="author")
-        self.assertEqual((plan["verdict"], plan["event"], plan["eventNote"]), ("No problems found", "COMMENT", None))
-        self.assertIn("This review found no problems", outputs["review-body.md"])
-        self.assertNotIn("posted as a comment", outputs["review-body.md"])
-
-    def test_approve_fails_when_the_policy_requests_changes(self):
-        for findings, association in (([finding("P1", "Crash")], "MEMBER"), ([finding("P2", "Edge")], "NONE")):
-            with self.subTest(findings=findings), self.assertRaisesRegex(ValueError, "Do not approve"):
-                run(findings, association=association, approve=True)
+        self.assertNotIn("approve", plan)
+        _, plan = run([finding("P3", "Nit")], association="NONE")
+        self.assertEqual((plan["verdict"], plan["event"]), ("Approve", "APPROVE"))
 
     def test_external_p2_requests_changes(self):
         outputs, plan = run([finding("P2", "Edge case", path="src/a.py", line=11)], association="CONTRIBUTOR")
@@ -158,7 +148,7 @@ class RenderTests(unittest.TestCase):
         self.assertIn("Fix the P2 items before merge.", outputs["review-body.md"])
 
     def test_role_override_changes_the_verdict(self):
-        _, plan = run([finding("P2", "Edge case")], association="CONTRIBUTOR", role="team", approve=True)
+        _, plan = run([finding("P2", "Edge case")], association="CONTRIBUTOR", role="team")
         self.assertEqual((plan["verdict"], plan["event"]), ("Approve with changes", "APPROVE"))
         self.assertIn("set by the human", plan["author"]["source"])
 
@@ -169,11 +159,11 @@ class RenderTests(unittest.TestCase):
         self.assertIn("Fix the blocking P0–P1 items and the P2 items before merge.", body)
         self.assertIn("- **P1 · Blocking · Crash** — the whole change", body)
 
-    def test_p3_only_and_empty_reviews_approve_when_asked(self):
-        outputs, plan = run([finding("P3", "Nit")], association="NONE", approve=True)
+    def test_p3_only_and_empty_reviews_approve(self):
+        outputs, plan = run([finding("P3", "Nit")], association="NONE")
         self.assertEqual((plan["verdict"], plan["event"]), ("Approve", "APPROVE"))
         self.assertIn("The P3 items are optional and do not block the merge.", outputs["review-body.md"])
-        outputs, plan = run([], association="NONE", approve=True)
+        outputs, plan = run([], association="NONE")
         self.assertEqual(plan["event"], "APPROVE")
         self.assertIn("It found no problems", outputs["review-body.md"])
         self.assertEqual(json.loads(outputs["comments.json"]), [])
@@ -182,8 +172,11 @@ class RenderTests(unittest.TestCase):
         outputs, plan = run([finding("P1", "Crash")], login="author")
         self.assertEqual((plan["verdict"], plan["event"]), ("Request changes", "COMMENT"))
         self.assertIn("own pull request. The verdict above still applies.", outputs["review-body.md"])
-        outputs, plan = run([], comment_only="AGENTS.md says never approve.", approve=True)
-        self.assertEqual(plan["event"], "COMMENT")
+        outputs, plan = run([], login="author")
+        self.assertEqual((plan["verdict"], plan["event"]), ("Approve", "COMMENT"))
+        self.assertIn("own pull request. The verdict above still applies.", outputs["review-body.md"])
+        outputs, plan = run([], comment_only="AGENTS.md says never approve.")
+        self.assertEqual((plan["verdict"], plan["event"]), ("Approve", "COMMENT"))
         self.assertIn(
             "posted as a comment because AGENTS.md says never approve. The verdict", outputs["review-body.md"],
         )

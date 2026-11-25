@@ -22,10 +22,12 @@ def finding(priority="P1", title="Bug", **location):
     return {"priority": priority, "title": title, "body": f"{title} details.", **location}
 
 
-def run(findings, association="MEMBER", login="me", author="author", role=None, comment_only=None, event=None):
+def run(findings, association="MEMBER", login="me", author="author", role=None, comment_only=None, event=None,
+        summary="The empty-input path needs a fix."):
     responses = [pull(author=author, association=association), {"login": login}, FILES, pull()]
+    data = {"findings": findings} if summary is None else {"summary": summary, "findings": findings}
     with mock.patch.object(post_text, "gh_api", side_effect=responses):
-        return render({"summary": "Adds a parser.", "findings": findings}, PULL, HEAD, role, comment_only, event)
+        return render(data, PULL, HEAD, role, comment_only, event)
 
 
 class PolicyTests(unittest.TestCase):
@@ -87,6 +89,11 @@ class LoadTests(unittest.TestCase):
             {**finding(), "body": "The change fixed the parser but the suggested fix in #3 is missing."},
         ]})
 
+    def test_summary_is_optional(self):
+        for data in ({"findings": []}, {"summary": "", "findings": []}, {"summary": "  ", "findings": []}):
+            with self.subTest(data=data):
+                self.assertEqual(load_findings(data)[0], "")
+
     def test_sorts_by_priority(self):
         _, findings = load_findings({"summary": "S", "findings": [finding("P3", "A"), finding("P0", "B")]})
         self.assertEqual([item["title"] for item in findings], ["B", "A"])
@@ -103,7 +110,7 @@ class LoadTests(unittest.TestCase):
         ):
             with self.subTest(bad=bad), self.assertRaises(ValueError):
                 load_findings({"summary": "S", "findings": [bad]})
-        for data in ({"findings": []}, {"summary": "S"}, {"summary": "S", "findings": [], "x": 1}, []):
+        for data in ({"summary": 1, "findings": []}, {"summary": "S"}, {"summary": "S", "findings": [], "x": 1}, []):
             with self.subTest(data=data), self.assertRaises(ValueError):
                 load_findings(data)
 
@@ -130,6 +137,16 @@ class RenderTests(unittest.TestCase):
         self.assertIn("- **P3 · Non-blocking · Outside** — `src/a.py:40`\n\n  Outside details.", body)
         self.assertEqual(plan["body"][0]["reason"], "the line is not in the pull request diff.")
         self.assertNotIn("MEMBER", body)
+
+    def test_summary_paragraph_is_left_out_when_omitted(self):
+        outputs, _ = run([], summary=None)
+        self.assertEqual(outputs["review-body.md"], (
+            "**Verdict: Approve**\n\n"
+            "This review approves the pull request. It found no problems in the reviewed scope.\n\n"
+            f"Reviewed commit: `{HEAD}`\n"
+        ))
+        outputs, _ = run([], summary="The empty-input path needs a fix.")
+        self.assertIn("scope.\n\nThe empty-input path needs a fix.\n\nReviewed commit:", outputs["review-body.md"])
 
     def test_unblocked_reviews_approve_without_a_flag(self):
         outputs, plan = run([finding("P2", "Edge case"), finding("P3", "Nit")])

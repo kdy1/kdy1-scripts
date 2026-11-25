@@ -6,7 +6,8 @@ diff at the reviewed head, chooses the verdict and the review event from the
 priorities, and writes three files to a new output directory:
 
 - `review-body.md`: the review body without the info panel. It has the
-  verdict, the summary, the counts, and the findings that cannot be inline.
+  verdict, the optional summary, the counts, and the findings that cannot be
+  inline.
 - `comments.json`: one inline comment for each finding whose location is on a
   line of the diff, in the `post-text` comment format.
 - `plan.json`: the author and their role, the verdict, the event, the head,
@@ -116,9 +117,9 @@ def load_findings(data):
     unknown = set(data) - {"summary", "findings"}
     if unknown:
         raise ValueError(f"The findings file has unknown keys: {', '.join(sorted(unknown))}.")
-    summary = data.get("summary")
-    if not isinstance(summary, str) or not summary.strip():
-        raise ValueError("summary must be nonempty Markdown text.")
+    summary = data.get("summary", "")
+    if not isinstance(summary, str):
+        raise ValueError("summary must be Markdown text (omit it or use \"\" for no summary).")
     findings = data.get("findings")
     if not isinstance(findings, list):
         raise ValueError("findings must be a JSON array ([] when there is no finding).")
@@ -252,10 +253,9 @@ def place(findings, files, blocking_p3=False):
 
 
 def render_body(summary, head, verdict, findings, inline, body, note, blocking_p3=False):
-    parts = [
-        f"**Verdict: {verdict_name(verdict)}**", "",
-        verdict_text(verdict, findings), "", summary, "",
-    ]
+    parts = [f"**Verdict: {verdict_name(verdict)}**", "", verdict_text(verdict, findings), ""]
+    if summary:
+        parts += [summary, ""]
     parts.append(f"Reviewed commit: `{head}`")
     if findings:
         parts.append("")
@@ -355,7 +355,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest="command", required=True)
     build = commands.add_parser("render", help="Choose the verdict and write the review body, comments, and plan.")
-    build.add_argument("--findings", required=True, type=Path, help="JSON file with the summary and findings.")
+    build.add_argument("--findings", required=True, type=Path, help="JSON file with the findings and an optional summary.")
     build.add_argument("--target", required=True, help="GitHub pull request URL.")
     build.add_argument("--head", required=True, help="SHA of the reviewed commit.")
     build.add_argument("--out-dir", required=True, type=Path, help="New directory for the output files.")

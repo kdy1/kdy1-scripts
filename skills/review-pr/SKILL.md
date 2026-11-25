@@ -172,7 +172,7 @@ Write the review in the language that Post Text selects. The helper writes the v
 
 ```json
 {
-  "summary": "One short paragraph: what the pull request does and the overall result of the review.",
+  "summary": "Optional. One or two sentences on the review result that the verdict line and the findings do not already give.",
   "findings": [
     {
       "priority": "P2",
@@ -186,7 +186,9 @@ Write the review in the language that Post Text selects. The helper writes the v
 }
 ```
 
-- `priority` is `P0` to `P3`. `title` is one line. `body` is Markdown that is complete without the review body: the trigger, the impact, and the evidence. Do not name AI models in it.
+- Do not explain the pull request to its author. The author and the other reviewers already know what it does. Do not describe what the pull request does or changes, and do not restate its title, description, commits, linked issues, or the "What it does" part of the report. This applies to the summary and to each finding body. The chat report of step 4 still has "What it does"; that part is for the human and does not go into the posted review.
+- `summary` is optional. The helper already writes the verdict, the reason for it, and the counts. Write a summary only for a result that the verdict line and the findings do not give, for example a cross-cutting risk, a common root cause of several findings, or a limit of the review that the author must know. Otherwise omit `summary` or use `""`.
+- `priority` is `P0` to `P3`. `title` is one line. `body` is Markdown that is complete without the review body: the trigger, the impact, and the evidence. Refer to the changed code by its location; describe only as much of the change as the defect needs. Do not name AI models in it.
 - Do not write a fix. A finding states the problem only: no suggested fix, no patch or replacement code, and no GitHub ```` ```suggestion ```` block. Leave out the suggested fixes and trial patches of the report. `render` stops when a body has a `suggestion` block or a line that starts with `Suggested fix`.
 - Give the location of the defect at the reviewed commit: `path` and `line` (the line number in the new file), and `start_line` for a range in the same diff hunk. For a defect on removed lines, use `"side": "LEFT"` and the line number in the old file. Omit the location only for a finding about the whole change or a missing change.
 - When the defect is on a line outside the diff but a changed line causes it or exposes it, put the location on that changed line and name the other location in the body.

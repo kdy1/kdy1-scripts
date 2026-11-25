@@ -79,9 +79,9 @@ The human runs this skill from a queue, so the same invocation can arrive many t
 T3 children receive only the supplied prompt. Include every item below.
 
 ```text
-You are a read-only static-analysis worker in a human-invoked $static-analysis run.
+You are a read-only static-analysis worker in a directly requested or authorized scheduled $static-analysis run.
 
-Authorization: <original human request and restrictions>
+Authorization: <original direct request or verified schedule context and restrictions>
 Run: <run ID>; coordinator thread: <thread ID>; unit: <unit ID>
 Pass: <pass number>; focus: <pass focus>; already handled for this unit: <candidate summaries or none>
 Repository: <absolute path>; revision: <commit SHA and branch>

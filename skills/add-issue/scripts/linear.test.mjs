@@ -49,7 +49,9 @@ class FakeLinear {
     if (op === 'comment') return this.comments.has(v.id) ? ok({ comment: this.comments.get(v.id) }) : fail('Entity not found: Comment');
     if (op === 'issues(first') {
       const terms = v.filter.or.filter(x => x.title).map(x => x.title.containsIgnoreCase.toLowerCase());
-      const nodes = [...this.issues.values()].filter(x => !['completed', 'canceled'].includes(x.state.type) && terms.some(t => x.title.toLowerCase().includes(t) || x.description.toLowerCase().includes(t)));
+      // Like Linear, a team ID filter also matches the issues of sub-teams; a team key filter matches only that team.
+      const inTeam = x => v.filter.team.key ? x.team.key === v.filter.team.key.eq : x.team.id === v.filter.team.id.eq || x.team.parentId === v.filter.team.id.eq;
+      const nodes = [...this.issues.values()].filter(x => inTeam(x) && !['completed', 'canceled'].includes(x.state.type) && terms.some(t => x.title.toLowerCase().includes(t) || x.description.toLowerCase().includes(t)));
       return ok({ issues: { nodes: nodes.slice(0, v.first), pageInfo: { hasNextPage: nodes.length > v.first } } });
     }
     if (op === 'issue') { const x = this.find(v.id); return x ? ok({ issue: x }) : fail('Entity not found: Issue'); }
@@ -212,6 +214,16 @@ test('collect observes discovery, duplicates, and metadata', async t => {
   assert.deepEqual(value.observations['metadata:label'].value.definition, { id: LABEL, name: 'bug', teamId: null });
   const overflow = await collect({ version: 1, target: { workspace: 'acme', team: 'ENG' }, duplicate: { terms: ['flags'], limit: 1 } }, new Linear({ token: KEY, fetch: (fake.addIssue({ title: 'flags again' }), fake.fetch) }));
   assert.equal(overflow.observations.duplicates.available, false);
+});
+
+test('duplicate search excludes the issues of sub-teams', async t => {
+  const fake = new FakeLinear(); fake.addIssue({ title: 'flags stable', description: '' });
+  fake.addIssue({ identifier: 'SUB-1', url: 'https://linear.app/acme/issue/SUB-1/slug', title: 'flags in a sub-team', description: '', team: { id: OTHER, key: 'SUB', parentId: TEAM } });
+  const value = await collect({ version: 1, target: { workspace: 'acme', team: 'ENG' }, duplicate: { terms: ['flags'], limit: 10 } }, new Linear({ token: KEY, fetch: fake.fetch }));
+  assert.equal(value.status, 'verified', value.errors.join('\n'));
+  assert.deepEqual(value.observations.duplicates.value.issues.map(x => x.identifier), ['ENG-1']);
+  const s = setup(t); s.c.duplicate.issues = value.observations.duplicates.value.issues;
+  assert.equal(validateLinearPayload(s.payload).status, 'verified');
 });
 
 test('preflight blocks a changed workspace', async t => {

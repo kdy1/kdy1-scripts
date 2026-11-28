@@ -70,11 +70,14 @@ export class Linear {
     return nodes.map(observeComment).sort((a, b) => a.id.localeCompare(b.id));
   }
   // Deterministic keyword query over open issues in the team. An overflowing result set is unavailable, not empty.
-  async duplicates(teamId, terms, limit) {
-    const filter = { team: { id: { eq: teamId } }, state: { type: { nin: CLOSED } }, or: terms.flatMap(t => [{ title: { containsIgnoreCase: t } }, { description: { containsIgnoreCase: t } }]) };
-    const d = await this.request('query($filter:IssueFilter!,$first:Int!){ issues(first:$first, filter:$filter){ nodes { id identifier url title state { type } } pageInfo { hasNextPage } } }', { filter, first: limit });
+  // A team ID filter also matches the issues of its sub-teams, which payload validation rejects as another team's
+  // issues. The unique team key filter matches only the team itself, and nodes of another team are dropped in case
+  // the API widens that filter later. A dropped node cannot hide an overflow: the bound applies to the wider result.
+  async duplicates(team, terms, limit) {
+    const filter = { team: { key: { eq: team.key } }, state: { type: { nin: CLOSED } }, or: terms.flatMap(t => [{ title: { containsIgnoreCase: t } }, { description: { containsIgnoreCase: t } }]) };
+    const d = await this.request('query($filter:IssueFilter!,$first:Int!){ issues(first:$first, filter:$filter){ nodes { id identifier url title state { type } team { id } } pageInfo { hasNextPage } } }', { filter, first: limit });
     check(!d.issues.pageInfo.hasNextPage, 'Duplicate query exceeded its bound; use narrower terms');
-    return d.issues.nodes.map(x => ({ id: x.id, identifier: x.identifier, url: x.url, title: x.title, state: x.state.type })).sort(byIdentifier);
+    return d.issues.nodes.filter(x => x.team?.id === team.id).map(x => ({ id: x.id, identifier: x.identifier, url: x.url, title: x.title, state: x.state.type })).sort(byIdentifier);
   }
   async discover(team) {
     const scoped = (field, fields) => this.connection(`query($id:String!,$after:String){ team(id:$id){ ${field}(first:100, after:$after){ nodes { ${fields} } pageInfo { hasNextPage endCursor } } } }`, { id: team.id }, d => d.team?.[field]);
@@ -310,7 +313,7 @@ export async function collect(input, client) {
   if (team) {
     const full = { ...t, teamId: team.id };
     if (input.discover) await observe('discovery', () => client.discover(team));
-    if (input.duplicate) await observe('duplicates', async () => ({ terms: input.duplicate.terms, limit: input.duplicate.limit, issues: await client.duplicates(team.id, input.duplicate.terms, input.duplicate.limit) }));
+    if (input.duplicate) await observe('duplicates', async () => ({ terms: input.duplicate.terms, limit: input.duplicate.limit, issues: await client.duplicates(team, input.duplicate.terms, input.duplicate.limit) }));
     if (input.issueUrl) {
       await observe('issue', async () => { const x = await client.issue(identifierOf(input.issueUrl, full)); check(x, 'Linear issue not found'); return { ...observeIssue(x), open: isOpen(x), labelIds: x.labelIds }; });
       if (input.includeComments && observations.issue.available) await observe('comments', () => client.comments(observations.issue.value.id));
@@ -353,7 +356,7 @@ export async function preflight(p, c, client, context, cs = { ops: {} }) {
   let duplicates;
   if (!plan && team) {
     const mine = new Set([cs.issueId, cs.ops?.create?.clientId].filter(Boolean));
-    duplicates = await attempt('duplicates', () => client.duplicates(team.id, c.duplicate.terms, c.duplicate.limit));
+    duplicates = await attempt('duplicates', () => client.duplicates(team, c.duplicate.terms, c.duplicate.limit));
     duplicates = duplicates?.filter(x => !(c.action === 'new issue' && mine.has(x.id)));
     if (duplicates && !same(duplicates, c.duplicate.issues)) changes.push({ surface: 'search', before: c.duplicate.issues, after: duplicates });
   }
